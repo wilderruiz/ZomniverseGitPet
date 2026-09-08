@@ -46,6 +46,8 @@ public sealed class GuardianForm : Form
         BackColor = LavenderSurface;
         Font = new Font("Segoe UI", 9);
 
+        var menu = BuildMainMenu();
+
         var summaryPanel = new Panel
         {
             Dock = DockStyle.Top,
@@ -205,7 +207,37 @@ public sealed class GuardianForm : Form
         Controls.Add(options);
         Controls.Add(buttons);
         Controls.Add(summaryPanel);
+        Controls.Add(menu);
+        MainMenuStrip = menu;
         FormClosing += OnFormClosing;
+    }
+
+    private MenuStrip BuildMainMenu()
+    {
+        var menu = new MenuStrip
+        {
+            Dock = DockStyle.Top,
+            BackColor = Color.FromArgb(43, 29, 66),
+            ForeColor = Color.White,
+            GripStyle = ToolStripGripStyle.Hidden,
+            RenderMode = ToolStripRenderMode.Professional,
+            Padding = new Padding(8, 2, 0, 2)
+        };
+
+        var help = new ToolStripMenuItem("Help")
+        {
+            ForeColor = Color.White,
+            BackColor = Color.FromArgb(43, 29, 66)
+        };
+        var about = new ToolStripMenuItem("About ZomniverseGitPet…");
+        about.Click += (_, _) =>
+        {
+            using var dialog = new AboutForm();
+            dialog.ShowDialog(this);
+        };
+        help.DropDownItems.Add(about);
+        menu.Items.Add(help);
+        return menu;
     }
 
     private static Button MakeButton(string text, Func<Task> action, int width = 88)
