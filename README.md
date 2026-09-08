@@ -8,9 +8,29 @@
 
 ZomniverseGitPet is a lightweight Windows desktop companion that keeps a small purple fox near your workspace and turns Git safety into a visible, low-friction habit. It is designed for experienced developers, people working with AI coding agents, and users who do not want to memorize Git commands just to keep their projects safe.
 
-Double-click the pet to open the Guardian dashboard. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files and diffs, run project-specific test hooks, create local restore points, explicitly push committed history to an existing `origin` remote, display recent commits, and run Git health checks.
+Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files and diffs, run project-specific test hooks, create local restore points, explicitly push committed history to an existing `origin` remote, display recent commits, and run Git health checks.
 
 GitPet never pushes automatically, never creates remotes automatically, and never uses destructive operations such as `reset --hard` or `clean`.
+
+## Guardian Console — 0.3
+
+Version 0.3 introduces the visual system used by the real desktop application:
+
+- dark graphite / near-black working surfaces
+- violet structure and status surfaces
+- hot-pink emphasis for deliberate state-changing actions
+- human-readable file states instead of exposing Git porcelain codes as the primary UI
+- compact repository status chips for health, branch, and changed-item state
+- a dedicated **Guardian Activity** console for command output
+- dark hover help that explains actions in plain language
+- a clean-project state instead of a large empty file table
+- operation-only **Cancel**, visible only when something can actually be cancelled
+- a subtle `GUARDIAN ONLINE` pulse
+- native resizable Windows behavior with dark caption styling where Windows supports it
+
+The application also ships with a canonical purple fox-head Windows icon used by the executable, taskbar, Guardian window, and system tray.
+
+The pet itself follows the same visual language: its speech bubble is now a dark violet status surface, minimize is integrated into the bubble chrome, and Exit is a small hot-pink ribbon control on the fox rather than a detached Windows-style button.
 
 ## Meet the guardian
 
@@ -19,7 +39,7 @@ GitPet never pushes automatically, never creates remotes automatically, and neve
 | <img src="mockups/pet/svg/pet_idle_01.svg" width="120" alt="Idle fox"> | <img src="mockups/pet/svg/pet_happy_01.svg" width="120" alt="Happy fox"> | <img src="mockups/pet/svg/pet_review_ready_01.svg" width="120" alt="Review-ready fox"> | <img src="mockups/pet/svg/pet_warning_01.svg" width="120" alt="Warning fox"> |
 | Waiting / checking | Clean repository | Changes ready to review | Git needs attention |
 
-Two additional approved mascot states, `pet_idle_02` and `pet_sleep_01`, are reserved for later idle/sleep behavior.
+Two additional approved mascot states, `pet_idle_02` and `pet_sleep_01`, remain reserved for later idle/sleep behavior.
 
 ## Designed for humans, not just Git experts
 
@@ -30,7 +50,7 @@ GitPet tries to explain *what will happen before it happens*.
 - **Prepare folder for Git** can safely turn an ordinary local folder into a Git repository with `git init -b main` after confirmation.
 - **What Git should ignore** explains `.gitignore` as Git's “do not track these files” list instead of assuming the user already knows the term.
 - **Before / After preview** shows the exact `.gitignore` content before anything is written.
-- **Restore Point** creates an ordinary local Git commit after showing the files and asking for confirmation.
+- **Checkpoint** creates an ordinary local Git commit after showing the files and asking for confirmation.
 - **Git Identity** appears automatically when Git does not yet know the commit author's name/email, with a safe project-only default and an optional PC-wide setting.
 - **Push ↑** is always manual and shows the destination branch and commit before sending committed history to `origin`.
 - **Help → About ZomniverseGitPet** shows the installed version, builder, build date, platform, MIT license, repository link, and copyright information.
@@ -53,7 +73,7 @@ Review what Git should ignore
         ↓
 See .gitignore BEFORE and AFTER
         ↓
-Monitor changes → Review → Restore Point → optional Push
+Monitor → Review → Checkpoint → optional Push
 ```
 
 When a folder is selected, GitPet classifies it before doing anything:
@@ -73,15 +93,7 @@ git init -b main
 
 It then verifies the repository root and applies only the `.gitignore` rules you explicitly accepted.
 
-Project preparation does **not**:
-
-- create a GitHub/GitLab/Bitbucket repository
-- configure `origin`
-- stage files
-- create the first commit
-- push anything
-
-Those remain separate, deliberate user actions.
+Project preparation does **not** create a hosting repository, configure `origin`, stage files, create the first commit, or push anything. Those remain separate, deliberate user actions.
 
 ## Friendly `.gitignore` hygiene
 
@@ -110,22 +122,22 @@ Environment templates such as `.env.example`, `.env.sample`, `.env.template`, an
 
 ## Friendly Git identity setup
 
-Git requires an author identity before it can create a commit. If a user tries to create a Restore Point and Git does not yet know `user.name` and `user.email`, GitPet shows a normal form instead of exposing Git's raw terminal instructions.
+Git requires an author identity before it can create a commit. If a user tries to create a Checkpoint and Git does not yet know `user.name` and `user.email`, GitPet shows a normal form instead of exposing Git's raw terminal instructions.
 
 The user enters:
 
-- **Name** — the author name stored in commit history
-- **Email** — the address stored in commit history; Git hosting noreply addresses are supported
+- **Display name** — the author name stored in commit history
+- **Email address** — the address stored in commit history; Git hosting noreply addresses are supported
 - **This project only** — the default and safest option
 - **All Git projects on this PC** — optional, explicit global configuration
 
-GitPet explains that commit metadata can become public if a commit is later pushed. After the user saves a valid identity, the interrupted Restore Point continues without asking them to open a terminal.
-
-GitPet does not invent a name/email and does not copy account credentials into Git configuration.
+GitPet explains that commit metadata can become public if a commit is later pushed. The privacy explanation remains available in a scrollable read-only panel, and the identity window itself is resizable within sensible limits.
 
 ## Core features
 
-- Friendly purple fox desktop pet with repository-state visuals and system tray integration
+- Friendly purple fox desktop pet with repository-state visuals
+- Canonical fox-head executable, taskbar, window, and tray icon
+- Dark Guardian Console visual system
 - Single-instance behavior; a second launch activates the existing Guardian
 - Quiet background repository monitoring
 - Recent-project registry with up to 20 repositories
@@ -133,20 +145,19 @@ GitPet does not invent a name/email and does not copy account credentials into G
 - Nested-repository protection
 - Reviewable `.gitignore` advisor with exact before/after preview
 - Friendly first-time Git identity setup
-- Built-in Help/About panel with version, build, license, repository, and builder information
-- Branch and changed-file overview
-- Diff review and small untracked-file previews
+- Human-readable changed-file states and diff review
 - Configurable test hooks
 - Recent commit history
 - `git fsck` repository health checks
-- Confirmed full-working-tree restore points using ordinary local Git commits
+- Confirmed full-working-tree checkpoints using ordinary local Git commits
 - Explicit, confirmed manual push to an existing `origin` remote on the current branch
 - Suspicious-file safeguards and append-only local audit logging
+- Built-in Help/About panel
 - Typed per-user configuration under `%LOCALAPPDATA%\ZomniverseGitPet`
 
 ## Safety philosophy
 
-A restore point previews all current non-ignored changes, asks for confirmation, ensures Git has an author identity, stages with `git add -A`, and creates a normal **local** Git commit.
+A checkpoint previews all current non-ignored changes, asks for confirmation, ensures Git has an author identity, stages with `git add -A`, and creates a normal **local** Git commit.
 
 The separate **Push ↑** action verifies that an existing `origin` remote and named current branch are available, shows the destination and latest commit, and asks for explicit confirmation before running the equivalent of:
 
@@ -158,7 +169,7 @@ Push sends committed history only. It does not stage or commit working-tree chan
 
 ## Project status
 
-ZomniverseGitPet is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
+ZomniverseGitPet 0.3 is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
 
 Current platform support: Windows 10/11, x64, with Git for Windows available as `git.exe`.
 
@@ -177,11 +188,9 @@ Create a self-contained single executable:
 dotnet publish src/ZomniverseGitPet/ZomniverseGitPet.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-The single executable is written beneath `src/ZomniverseGitPet/bin/Release/net8.0-windows/win-x64/publish/`.
-
 ## Local development build
 
-Run `scripts/publish-local.ps1` to create the runnable self-contained executable in the sibling `ZomniverseGitPet_Releases/current` directory. The output location is derived from the repository location, so no machine-specific path is stored in the project.
+Run `scripts/publish-local.ps1` to create the runnable self-contained executable in the sibling `ZomniverseGitPet_Releases/current` directory.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/publish-local.ps1
@@ -197,11 +206,9 @@ Test hooks are ordinary command strings run from the selected repository. Edit `
 
 ## Roadmap
 
-- Futuristic Guardian visual-system pass and custom application chrome
-- Canonical fox application/taskbar/tray icon
-- Micro-animation and repository-state transitions
+- Micro-animation and richer repository-state transitions
 - Richer shared repository snapshot/state model across pet and Guardian
-- Curated public screenshot/feature gallery without private machine paths
+- Curated public screenshot/feature gallery using a safe demo repository
 - In-app settings editor for tests and checkpoint policy
 - File-system-assisted refresh with polling fallback
 - Signed release artifacts and installer packaging

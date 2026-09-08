@@ -7,9 +7,10 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ZomniverseGitPet</RootNamespace>
     <AssemblyName>ZomniverseGitPet</AssemblyName>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Wilder Ruiz</Authors>
     <Description>A lightweight desktop Git guardian for Windows.</Description>
+    <ApplicationIcon>Assets\App\ZomniverseGitPet.ico</ApplicationIcon>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
@@ -19,4 +20,3 @@
     <EmbeddedResource Include="Assets\Pet\*.png" />
   </ItemGroup>
 </Project>
-

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-09-09
+
+- Introduced the dark **Guardian Console** visual system with graphite surfaces, violet structure, hot-pink action accents, dark tooltips, status chips, and a dedicated Guardian Activity console.
+- Replaced raw Git status codes in the main file list with human-readable states while preserving the underlying porcelain codes in hover help.
+- Added a clean-repository empty state and a subtle `GUARDIAN ONLINE` pulse without changing repository polling behavior.
+- Changed **Cancel** into an operation-only action that appears only while a cancellable task is running.
+- Added Windows dark-caption integration where supported while preserving normal resizable Windows window behavior.
+- Added the canonical purple fox-head application icon for the executable, taskbar, Guardian window, and tray icon.
+- Integrated pet chrome into the mascot: minimize now lives in the speech-bubble chrome and Exit is a hot-pink ribbon control on the fox.
+- Restyled the pet speech bubble as a dark violet status surface and made pet messages more explicit (`CLEAN`, `CHANGES DETECTED`, `GIT NEEDS ATTENTION`).
+- Bumped the public application version to **0.3.0**.
 - Added Guardian dashboard hover tooltips for repository status and actions.
 - Added the approved purple fox desktop-pet states to the native launcher.
 - Added an explicit manual **Push** action for the existing `origin` remote and current branch, with destination preview and confirmation.
@@ -13,15 +24,11 @@
 - Added reviewable `.gitignore` recommendations for common generated files, IDE state, caches, logs, environment files, and key material.
 - `.gitignore` recommendations require explicit selection and acceptance; existing file content is preserved and only missing accepted rules are appended.
 - Added a repository-hygiene command for reviewing `.gitignore` suggestions on existing projects.
-- Improved visible Guardian/pet refresh coordination while the Guardian is open.
 - Reworked `.gitignore` review for non-programmers with plain-language labels and an exact read-only **CURRENT / AFTER** file preview before changes are applied.
-- Added preview-generation regression coverage to prove that viewing proposed `.gitignore` content does not modify the file.
-- Changed the Guardian project action to **Projects ▾** and clarified its recent-project/onboarding purpose.
 - Made Guardian background polling silent so routine repository monitoring no longer repeatedly displays the Windows wait cursor or overwrites the operation panel with refresh messages.
 - Added friendly Git identity setup when a Restore Point needs `user.name`/`user.email`, with project-only scope as the default and an explicit optional global scope.
-- Git identity setup explains commit-metadata privacy, supports hosting-provider noreply emails, validates input, and resumes the Restore Point after configuration.
-- Expanded the public README into a human-first product page with mascot states, project workflow, safety model, onboarding, Git-hygiene explanations, and first-time Git identity guidance.
-- Expanded the lightweight regression suite for recent-project registration and `.gitignore` recommendation/preview behavior.
+- Added **Help → About ZomniverseGitPet** with version, builder, build date, platform, license, repository, and copyright information.
+- Expanded the public README into a human-first product page and expanded regression coverage for project registration and `.gitignore` preview behavior.
 
 ## 0.2.0 - 2026-09-08
 
