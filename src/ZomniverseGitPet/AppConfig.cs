@@ -7,20 +7,25 @@ public sealed class RecentRepositoryEntry
     public string Path { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public DateTimeOffset LastOpenedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public List<string> TestCommands { get; set; } = [];
 }
 
 public sealed class AppConfig
 {
     public const int RecentRepositoryLimit = 20;
 
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public string? RepositoryPath { get; set; }
     public List<RecentRepositoryEntry> RecentRepositories { get; set; } = [];
     public int PollSeconds { get; set; } = 20;
     public bool AutomaticCheckpointsEnabled { get; set; }
     public int QuietMinutes { get; set; } = 10;
     public bool RequireTestsForAutomaticCheckpoint { get; set; } = true;
+
+    // Legacy v1/v2 field. Kept only so existing config.json files can migrate
+    // their test commands into the currently active project.
     public List<string> TestCommands { get; set; } = [];
+
     public List<string> SuspiciousPathPatterns { get; set; } =
     [
         @"(^|/)\.env($|\.)", @"\.pem$", @"\.key$", "id_rsa",
@@ -33,17 +38,52 @@ public sealed class AppConfig
         var normalized = NormalizePath(path);
         RepositoryPath = normalized;
 
+        var previous = RecentRepositories.FirstOrDefault(item =>
+            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
+        var testCommands = previous is null ? [] : NormalizeCommands(previous.TestCommands);
+
         RecentRepositories.RemoveAll(item =>
             string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
         RecentRepositories.Insert(0, new RecentRepositoryEntry
         {
             Path = normalized,
             DisplayName = GetDisplayName(normalized),
-            LastOpenedUtc = openedAt ?? DateTimeOffset.UtcNow
+            LastOpenedUtc = openedAt ?? DateTimeOffset.UtcNow,
+            TestCommands = testCommands
         });
 
         if (RecentRepositories.Count > RecentRepositoryLimit)
             RecentRepositories.RemoveRange(RecentRepositoryLimit, RecentRepositories.Count - RecentRepositoryLimit);
+    }
+
+    public IReadOnlyList<string> GetTestCommandsForRepository(string? path = null)
+    {
+        var value = string.IsNullOrWhiteSpace(path) ? RepositoryPath : path;
+        if (string.IsNullOrWhiteSpace(value)) return [];
+        var normalized = NormalizePath(value);
+        var entry = RecentRepositories.FirstOrDefault(item =>
+            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
+        return entry is null ? [] : NormalizeCommands(entry.TestCommands);
+    }
+
+    public void SetTestCommandsForRepository(string path, IEnumerable<string> commands)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var normalized = NormalizePath(path);
+        var entry = RecentRepositories.FirstOrDefault(item =>
+            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            entry = new RecentRepositoryEntry
+            {
+                Path = normalized,
+                DisplayName = GetDisplayName(normalized),
+                LastOpenedUtc = DateTimeOffset.UtcNow
+            };
+            RecentRepositories.Insert(0, entry);
+        }
+
+        entry.TestCommands = NormalizeCommands(commands);
     }
 
     public void ForgetUnavailableRepositories()
@@ -55,7 +95,7 @@ public sealed class AppConfig
 
     internal void Normalize()
     {
-        SchemaVersion = 2;
+        SchemaVersion = 3;
         var normalized = new List<RecentRepositoryEntry>();
         foreach (var item in RecentRepositories
                      .Where(item => !string.IsNullOrWhiteSpace(item.Path))
@@ -67,7 +107,8 @@ public sealed class AppConfig
             {
                 Path = path,
                 DisplayName = string.IsNullOrWhiteSpace(item.DisplayName) ? GetDisplayName(path) : item.DisplayName,
-                LastOpenedUtc = item.LastOpenedUtc
+                LastOpenedUtc = item.LastOpenedUtc,
+                TestCommands = NormalizeCommands(item.TestCommands)
             });
             if (normalized.Count == RecentRepositoryLimit) break;
         }
@@ -77,19 +118,36 @@ public sealed class AppConfig
         {
             var active = NormalizePath(RepositoryPath);
             RepositoryPath = active;
-            if (Directory.Exists(active) && !RecentRepositories.Any(item => string.Equals(item.Path, active, StringComparison.OrdinalIgnoreCase)))
+            var existing = RecentRepositories.FirstOrDefault(item =>
+                string.Equals(item.Path, active, StringComparison.OrdinalIgnoreCase));
+            if (Directory.Exists(active) && existing is null)
             {
-                RecentRepositories.Insert(0, new RecentRepositoryEntry
+                existing = new RecentRepositoryEntry
                 {
                     Path = active,
                     DisplayName = GetDisplayName(active),
                     LastOpenedUtc = DateTimeOffset.UtcNow
-                });
+                };
+                RecentRepositories.Insert(0, existing);
                 if (RecentRepositories.Count > RecentRepositoryLimit)
                     RecentRepositories.RemoveRange(RecentRepositoryLimit, RecentRepositories.Count - RecentRepositoryLimit);
             }
+
+            // Migrate the old global test list into the active project once.
+            if (existing is not null && existing.TestCommands.Count == 0 && TestCommands.Count > 0)
+            {
+                existing.TestCommands = NormalizeCommands(TestCommands);
+                TestCommands.Clear();
+            }
         }
     }
+
+    private static List<string> NormalizeCommands(IEnumerable<string>? commands) =>
+        (commands ?? [])
+            .Select(command => command.Trim())
+            .Where(command => command.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static string NormalizePath(string path)
     {
