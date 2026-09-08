@@ -13,6 +13,13 @@ public sealed class GuardianForm : Form
     private readonly DataGridView _files = new();
     private readonly RichTextBox _output = new();
     private readonly CheckBox _automatic = new();
+    private readonly ToolTip _toolTips = new()
+    {
+        InitialDelay = 350,
+        ReshowDelay = 100,
+        AutoPopDelay = 15000,
+        ShowAlways = true
+    };
     private readonly Button[] _operationButtons;
     private CancellationTokenSource? _operation;
     private RepositoryStatus? _status;
@@ -37,6 +44,10 @@ public sealed class GuardianForm : Form
         _summary.Padding = new Padding(14, 10, 10, 4);
         _summary.Font = new Font("Segoe UI", 10, FontStyle.Bold);
         _summary.Text = "Checking repository...";
+        _toolTips.SetToolTip(_summary,
+            "Repository summary: current Git health, branch, changed-item count, and latest commit.\r\n\r\n" +
+            "Closing this Guardian window with X only hides it; ZomniverseGitPet keeps running.\r\n" +
+            "Use the pet/tray Exit command when you actually want to quit the application.");
 
         var buttons = new FlowLayoutPanel
         {
@@ -53,6 +64,36 @@ public sealed class GuardianForm : Form
         buttons.Controls.AddRange([choose, refresh, diff, tests, checkpoint, recent, health, cancel]);
         _operationButtons = [choose, refresh, diff, tests, checkpoint, recent, health];
 
+        _toolTips.SetToolTip(choose,
+            "Choose Repo\r\n\r\nSelect the local Git repository ZomniverseGitPet should watch.\r\n" +
+            "The selected folder is verified as a readable Git repository.\r\n" +
+            "This does not create or configure any Git remote.");
+        _toolTips.SetToolTip(refresh,
+            "Refresh\r\n\r\nRe-read the repository's current branch and working-tree status.\r\n" +
+            "This updates the changed-file list without modifying repository files.");
+        _toolTips.SetToolTip(diff,
+            "View Diff\r\n\r\nSelect a changed file first, then use this to inspect what changed.\r\n" +
+            "Tracked files show their Git diff. Small untracked text files can be previewed directly.\r\n" +
+            "Viewing does not edit the file.");
+        _toolTips.SetToolTip(tests,
+            "Run Tests\r\n\r\nRun the test commands configured for this repository in config.json.\r\n" +
+            "If no commands are configured, Guardian will tell you instead of running anything.");
+        _toolTips.SetToolTip(checkpoint,
+            "Restore Point — SAVE the current state; this is not a rollback command.\r\n\r\n" +
+            "After showing the files and asking for confirmation, ZomniverseGitPet stages all current\r\n" +
+            "non-ignored changes and creates an ordinary LOCAL Git commit.\r\n\r\n" +
+            "Think: 'Everything works right now — save this state before the next big change.'\r\n" +
+            "ZomniverseGitPet never pushes this commit to GitHub automatically.");
+        _toolTips.SetToolTip(recent,
+            "Recent Commits\r\n\r\nShow the latest 12 local Git commits, including normal commits and restore-point checkpoints.\r\n" +
+            "This is read-only and does not change repository history.");
+        _toolTips.SetToolTip(health,
+            "Health Check\r\n\r\nRun 'git fsck --no-progress' to check the internal integrity of the Git repository.\r\n" +
+            "This is a diagnostic check and does not push, reset, or clean the repository.");
+        _toolTips.SetToolTip(cancel,
+            "Cancel\r\n\r\nRequest cancellation of the Git, test, or health operation currently running.\r\n" +
+            "Nothing happens when there is no active cancellable operation.");
+
         _files.Dock = DockStyle.Fill;
         _files.ReadOnly = true;
         _files.AllowUserToAddRows = false;
@@ -60,10 +101,15 @@ public sealed class GuardianForm : Form
         _files.MultiSelect = false;
         _files.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _files.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _files.ShowCellToolTips = true;
         _files.Columns.Add("Status", "Status");
         _files.Columns.Add("Path", "Path");
         _files.Columns[0].FillWeight = 15;
         _files.Columns[1].FillWeight = 85;
+        _files.Columns[0].HeaderCell.ToolTipText =
+            "Git status code. For example: .M = tracked file modified locally; ?? = new untracked item.";
+        _files.Columns[1].HeaderCell.ToolTipText =
+            "Path of the changed item. Select a row and choose View Diff, or double-click the row.";
         _files.CellDoubleClick += async (_, e) => { if (e.RowIndex >= 0) await ShowDiffAsync(); };
 
         var options = new Panel { Dock = DockStyle.Bottom, Height = 42 };
@@ -71,6 +117,12 @@ public sealed class GuardianForm : Form
         _automatic.AutoSize = true;
         _automatic.Location = new Point(14, 11);
         _automatic.Checked = _config.AutomaticCheckpointsEnabled;
+        _toolTips.SetToolTip(_automatic,
+            "Automatic verified checkpoints\r\n\r\n" +
+            "OFF by default. When enabled, ZomniverseGitPet may create LOCAL checkpoint commits after\r\n" +
+            "the configured quiet period when changes are present. If required, configured tests must pass first.\r\n\r\n" +
+            "Automatic checkpoints never push to GitHub and never configure remotes.\r\n" +
+            "Leave this off if you prefer to create Restore Points manually.");
         _automatic.CheckedChanged += async (_, _) =>
         {
             _config.AutomaticCheckpointsEnabled = _automatic.Checked;
@@ -84,6 +136,9 @@ public sealed class GuardianForm : Form
         _output.ReadOnly = true;
         _output.Font = new Font("Consolas", 9);
         _output.BackColor = Color.White;
+        _toolTips.SetToolTip(_output,
+            "Operation output\r\n\r\nResults from View Diff, Run Tests, Restore Point, Recent Commits, and Health Check appear here.\r\n" +
+            "This panel is read-only.");
 
         Controls.Add(_files);
         Controls.Add(_output);
@@ -111,9 +166,28 @@ public sealed class GuardianForm : Form
             ? $"Repository: healthy ✓    Branch: {_status.Branch}    Changed items: {_status.Files.Count}\r\nLast commit: {(commit.Success ? commit.Output : "unavailable")}" 
             : "Repository problem: " + _status.Error;
         _files.Rows.Clear();
-        foreach (var file in _status.Files) _files.Rows.Add(file.Status, file.Path);
+        foreach (var file in _status.Files)
+        {
+            var rowIndex = _files.Rows.Add(file.Status, file.Path);
+            var row = _files.Rows[rowIndex];
+            row.Cells[0].ToolTipText = DescribeGitStatus(file.Status);
+            row.Cells[1].ToolTipText =
+                $"{file.Path}\r\n\r\nSelect this row and choose View Diff, or double-click the row, to inspect the change.";
+        }
         if (!_status.Healthy) _output.Text = _status.Error;
     });
+
+    private static string DescribeGitStatus(string status) => status switch
+    {
+        "??" => "?? — Untracked item.\r\n\r\nThis file or folder is new and is not yet tracked by Git.",
+        ".M" => ".M — Modified in the working tree.\r\n\r\nThis is an existing tracked file with local unstaged changes.",
+        "M." => "M. — Modified and staged.\r\n\r\nThis tracked file has changes already staged in Git's index.",
+        ".D" => ".D — Deleted in the working tree.\r\n\r\nThis tracked file has been deleted locally but the deletion is not staged.",
+        "D." => "D. — Deletion staged.\r\n\r\nThe deletion of this tracked file is already staged.",
+        "A." => "A. — Added and staged.\r\n\r\nThis new item has already been staged for commit.",
+        "MM" => "MM — Staged and modified again.\r\n\r\nThe file has staged changes plus additional unstaged changes.",
+        _ => $"{status} — Git porcelain status code.\r\n\r\nFor two-character codes, the first position describes the index (staged state) and the second describes the working tree."
+    };
 
     private async Task ShowDiffAsync() => await RunOperationAsync("Loading diff...", async token =>
     {
@@ -244,6 +318,12 @@ public sealed class GuardianForm : Form
         _exitRequested = true;
         _operation?.Cancel();
         Close();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _toolTips.Dispose();
+        base.Dispose(disposing);
     }
 }
 
