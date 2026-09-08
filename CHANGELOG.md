@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added Guardian dashboard hover tooltips for repository status and actions.
+- Added the approved purple fox desktop-pet states to the native launcher.
+- Added an explicit manual **Push** action for the existing `origin` remote and current branch, with destination preview and confirmation.
+- Manual push sends committed history only and never creates/configures remotes or runs automatically.
+
 ## 0.2.0 - 2026-09-08
 
 - Rebuilt ZomniverseGitPet as a native .NET 8 WinForms application.

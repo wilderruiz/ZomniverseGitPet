@@ -61,6 +61,29 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> HealthCheckAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["fsck", "--no-progress"], TimeSpan.FromMinutes(3), token);
 
+    public Task<CommandResult> GetCurrentBranchAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["branch", "--show-current"], cancellationToken: token);
+
+    public Task<CommandResult> GetOriginUrlAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["remote", "get-url", "origin"], cancellationToken: token);
+
+    public async Task<CommandResult> PushToOriginAsync(string path, string branch, CancellationToken token = default)
+    {
+        if (string.IsNullOrWhiteSpace(branch))
+            return new(-1, "Cannot push because the current branch could not be determined.");
+
+        var result = await RunGitAsync(path, ["push", "origin", branch], TimeSpan.FromMinutes(5), token);
+        await audit.WriteAsync("manual_push", new
+        {
+            remote = "origin",
+            branch,
+            success = result.Success,
+            result.ExitCode,
+            result.TimedOut
+        });
+        return result;
+    }
+
     public async Task<CheckpointResult> CreateCheckpointAsync(string path, string message, CancellationToken token = default)
     {
         var stage = await RunGitAsync(path, ["add", "-A"], TimeSpan.FromMinutes(1), token);
@@ -170,4 +193,3 @@ public sealed class GitService(AuditLog audit)
         return builder.ToString();
     }
 }
-

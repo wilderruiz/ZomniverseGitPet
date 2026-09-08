@@ -58,11 +58,12 @@ public sealed class GuardianForm : Form
         var diff = MakeButton("View Diff", ShowDiffAsync);
         var tests = MakeButton("Run Tests", RunTestsAsync);
         var checkpoint = MakeButton("Restore Point", CreateCheckpointAsync, 112);
+        var push = MakePushButton("Push ↑", PushToOriginAsync, 88);
         var recent = MakeButton("Recent Commits", RecentCommitsAsync, 112);
         var health = MakeButton("Health Check", HealthCheckAsync, 105);
         var cancel = MakeButton("Cancel", () => { _operation?.Cancel(); return Task.CompletedTask; }, 75);
-        buttons.Controls.AddRange([choose, refresh, diff, tests, checkpoint, recent, health, cancel]);
-        _operationButtons = [choose, refresh, diff, tests, checkpoint, recent, health];
+        buttons.Controls.AddRange([choose, refresh, diff, tests, checkpoint, push, recent, health, cancel]);
+        _operationButtons = [choose, refresh, diff, tests, checkpoint, push, recent, health];
 
         _toolTips.SetToolTip(choose,
             "Choose Repo\r\n\r\nSelect the local Git repository ZomniverseGitPet should watch.\r\n" +
@@ -83,7 +84,13 @@ public sealed class GuardianForm : Form
             "After showing the files and asking for confirmation, ZomniverseGitPet stages all current\r\n" +
             "non-ignored changes and creates an ordinary LOCAL Git commit.\r\n\r\n" +
             "Think: 'Everything works right now — save this state before the next big change.'\r\n" +
-            "ZomniverseGitPet never pushes this commit to GitHub automatically.");
+            "ZomniverseGitPet never pushes this commit automatically.");
+        _toolTips.SetToolTip(push,
+            "Push ↑ — MANUAL ONLY\r\n\r\nPush committed history to the existing 'origin' remote on the CURRENT branch.\r\n" +
+            "For this repository on main, this is equivalent to: git push origin main\r\n\r\n" +
+            "You will see the remote, branch, and latest commit and must confirm before the push runs.\r\n" +
+            "Uncommitted changes are never included. ZomniverseGitPet will not stage, commit, create/configure\r\n" +
+            "a remote, or push automatically.");
         _toolTips.SetToolTip(recent,
             "Recent Commits\r\n\r\nShow the latest 12 local Git commits, including normal commits and restore-point checkpoints.\r\n" +
             "This is read-only and does not change repository history.");
@@ -91,7 +98,7 @@ public sealed class GuardianForm : Form
             "Health Check\r\n\r\nRun 'git fsck --no-progress' to check the internal integrity of the Git repository.\r\n" +
             "This is a diagnostic check and does not push, reset, or clean the repository.");
         _toolTips.SetToolTip(cancel,
-            "Cancel\r\n\r\nRequest cancellation of the Git, test, or health operation currently running.\r\n" +
+            "Cancel\r\n\r\nRequest cancellation of the Git, test, push, or health operation currently running.\r\n" +
             "Nothing happens when there is no active cancellable operation.");
 
         _files.Dock = DockStyle.Fill;
@@ -121,7 +128,7 @@ public sealed class GuardianForm : Form
             "Automatic verified checkpoints\r\n\r\n" +
             "OFF by default. When enabled, ZomniverseGitPet may create LOCAL checkpoint commits after\r\n" +
             "the configured quiet period when changes are present. If required, configured tests must pass first.\r\n\r\n" +
-            "Automatic checkpoints never push to GitHub and never configure remotes.\r\n" +
+            "Automatic checkpoints never push to a remote and never configure remotes.\r\n" +
             "Leave this off if you prefer to create Restore Points manually.");
         _automatic.CheckedChanged += async (_, _) =>
         {
@@ -137,7 +144,7 @@ public sealed class GuardianForm : Form
         _output.Font = new Font("Consolas", 9);
         _output.BackColor = Color.White;
         _toolTips.SetToolTip(_output,
-            "Operation output\r\n\r\nResults from View Diff, Run Tests, Restore Point, Recent Commits, and Health Check appear here.\r\n" +
+            "Operation output\r\n\r\nResults from View Diff, Run Tests, Restore Point, Push, Recent Commits, and Health Check appear here.\r\n" +
             "This panel is read-only.");
 
         Controls.Add(_files);
@@ -151,6 +158,13 @@ public sealed class GuardianForm : Form
     private static Button MakeButton(string text, Func<Task> action, int width = 88)
     {
         var button = new Button { Text = text, Width = width, Height = 30, Margin = new Padding(3) };
+        button.Click += async (_, _) => await action();
+        return button;
+    }
+
+    private static Button MakePushButton(string text, Func<Task> action, int width)
+    {
+        var button = new GuardianPushButton { Text = text, Width = width, Height = 30, Margin = new Padding(3) };
         button.Click += async (_, _) => await action();
         return button;
     }
@@ -260,6 +274,77 @@ public sealed class GuardianForm : Form
         await RefreshAsync();
     });
 
+    private async Task PushToOriginAsync() => await RunOperationAsync("Checking push destination...", async token =>
+    {
+        if (!HasRepository()) return;
+        var repositoryPath = _config.RepositoryPath!;
+
+        var branchResult = await _git.GetCurrentBranchAsync(repositoryPath, token);
+        var branch = branchResult.Success ? branchResult.Output.Trim() : "";
+        if (string.IsNullOrWhiteSpace(branch))
+        {
+            _output.Text = "Push unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            return;
+        }
+
+        var originResult = await _git.GetOriginUrlAsync(repositoryPath, token);
+        if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
+        {
+            _output.Text =
+                "Push unavailable: this repository does not have a readable 'origin' remote.\r\n\r\n" +
+                "ZomniverseGitPet will not create or configure remotes automatically.";
+            return;
+        }
+
+        var commit = await _git.GetLastCommitAsync(repositoryPath, token);
+        var status = await _git.GetStatusAsync(repositoryPath, token);
+        var uncommittedCount = status.Healthy ? status.Files.Count : 0;
+        var uncommittedNote = uncommittedCount > 0
+            ? $"\r\n\r\nUncommitted changes: {uncommittedCount}\r\nThese changes will remain local and will NOT be included in this push."
+            : "";
+        var commitPreview = FormatCommitPreview(commit);
+
+        var answer = MessageBox.Show(this,
+            $"Push committed history to the configured origin remote?\r\n\r\n" +
+            $"Remote: origin\r\nBranch: {branch}\r\nCommit: {commitPreview}" +
+            uncommittedNote +
+            $"\r\n\r\nCommand:\r\ngit push origin {branch}\r\n\r\n" +
+            "ZomniverseGitPet will not stage, commit, create/configure a remote, or push automatically.",
+            "Confirm manual push", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes)
+        {
+            _output.Text = "Push cancelled. Nothing was sent to the remote.";
+            return;
+        }
+
+        _output.Text = $"Pushing committed history to origin/{branch}...";
+        var result = await _git.PushToOriginAsync(repositoryPath, branch, token);
+        var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
+        _output.Text = result.Success
+            ? $"Push completed ✓\r\norigin/{branch}\r\n\r\n{details}"
+            : $"Push failed.\r\norigin/{branch}\r\n\r\n{details}";
+
+        MessageBox.Show(this,
+            result.Success ? $"Push completed successfully.\r\n\r\norigin/{branch}" : "Push failed. See the Guardian output panel for details.",
+            "Push to origin", MessageBoxButtons.OK,
+            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+    });
+
+    private static string FormatCommitPreview(CommandResult commit)
+    {
+        if (!commit.Success || string.IsNullOrWhiteSpace(commit.Output)) return "unavailable";
+        var fields = commit.Output.Split('\t');
+        if (fields.Length < 4)
+        {
+            var fallback = commit.Output.Trim();
+            return fallback.Length <= 90 ? fallback : fallback[..87] + "...";
+        }
+
+        var subject = fields[3].Trim();
+        if (subject.Length > 70) subject = subject[..67] + "...";
+        return $"{fields[1].Trim()} — {subject}";
+    }
+
     private async Task RecentCommitsAsync() => await RunOperationAsync("Loading recent commits...", async token =>
     {
         if (!HasRepository()) return;
@@ -326,4 +411,3 @@ public sealed class GuardianForm : Form
         base.Dispose(disposing);
     }
 }
-
