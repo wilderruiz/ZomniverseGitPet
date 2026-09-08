@@ -49,6 +49,15 @@ public sealed class GitService(AuditLog audit)
         return ParsePorcelainV2(result.Output);
     }
 
+    public Task<CommandResult> GetGitVersionAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["--version"], cancellationToken: token);
+
+    public Task<CommandResult> GetRepositoryRootAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+
+    public Task<CommandResult> InitializeRepositoryAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["init", "-b", "main"], TimeSpan.FromMinutes(1), token);
+
     public Task<CommandResult> GetLastCommitAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-1", "--format=%H%x09%h%x09%ad%x09%s", "--date=iso-strict"], cancellationToken: token);
 
