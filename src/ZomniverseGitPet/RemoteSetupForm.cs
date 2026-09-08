@@ -23,8 +23,9 @@ internal sealed class RemoteSetupForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        Size = new Size(980, 780);
-        MinimumSize = new Size(760, 620);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        Size = new Size(1000, 830);
+        MinimumSize = new Size(780, 680);
         MaximumSize = new Size(1300, 1000);
         BackColor = Surface;
         ForeColor = Ink;
@@ -43,7 +44,7 @@ internal sealed class RemoteSetupForm : Form
 
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 116));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 240));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
 
@@ -140,13 +141,14 @@ internal sealed class RemoteSetupForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 4,
             Padding = new Padding(22, 16, 22, 14),
             BackColor = CardSurface
         };
 
         card.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         card.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         card.Controls.Add(new Label
@@ -166,15 +168,27 @@ internal sealed class RemoteSetupForm : Form
         _remoteUrl.Font = new Font("Cascadia Mono", 10.5f);
         card.Controls.Add(_remoteUrl, 0, 1);
 
+        var instruction = new Label
+        {
+            Text = "Paste the clone URL shown by your Git hosting service.",
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0, 8, 0, 0),
+            ForeColor = SoftPink,
+            Font = new Font("Segoe UI", 9),
+            TextAlign = ContentAlignment.TopLeft
+        };
+        card.Controls.Add(instruction, 0, 2);
+
         _validation.Dock = DockStyle.Fill;
-        _validation.Padding = new Padding(0, 8, 0, 0);
-        _validation.ForeColor = SoftPink;
-        _validation.Font = new Font("Segoe UI", 9);
+        _validation.Padding = new Padding(0, 3, 0, 0);
+        _validation.ForeColor = Color.FromArgb(203, 190, 222);
+        _validation.Font = new Font("Segoe UI", 8.8f);
         _validation.TextAlign = ContentAlignment.TopLeft;
         _validation.Text =
-            "Paste the clone URL shown by your Git hosting service.\n" +
-            "Examples:  https://github.com/user/project.git    or    git@github.com:user/project.git";
-        card.Controls.Add(_validation, 0, 2);
+            "Examples:\n" +
+            "https://github.com/user/project.git\n" +
+            "git@github.com:user/project.git";
+        card.Controls.Add(_validation, 0, 3);
 
         outer.Controls.Add(card);
         return outer;
@@ -257,6 +271,7 @@ internal sealed class RemoteSetupForm : Form
         var value = RemoteUrl;
         if (value.Length == 0)
         {
+            _validation.ForeColor = SoftPink;
             _validation.Text = "Paste the clone URL of the existing remote repository.";
             _remoteUrl.Focus();
             return;
@@ -264,6 +279,7 @@ internal sealed class RemoteSetupForm : Form
 
         if (value.Length > 2048 || value.Contains('\r') || value.Contains('\n'))
         {
+            _validation.ForeColor = SoftPink;
             _validation.Text = "That remote address does not look valid. Paste one clone URL only.";
             _remoteUrl.Focus();
             return;
