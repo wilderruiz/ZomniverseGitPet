@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.3.1 - 2026-09-09
+
+- Added a friendly **Connect Remote** step when the user presses **Push ↑** and the current project has no `origin` remote.
+- The user pastes the clone URL of an already-existing GitHub, GitLab, Bitbucket, private-server, HTTPS, SSH, or other Git repository and explicitly confirms the connection.
+- GitPet adds only `origin` and then continues to the normal manual Push confirmation; it does not create an online repository, replace an existing remote, stage files, commit, or push automatically.
+- Remote URLs are not written to GitPet's audit log; the audit records only whether explicit remote configuration succeeded.
+- Bumped the application version to **0.3.1**.
+
 ## 0.3.0 - 2026-09-09
 
 - Introduced the dark **Guardian Console** visual system with graphite surfaces, violet structure, hot-pink action accents, dark tooltips, status chips, and a dedicated Guardian Activity console.
