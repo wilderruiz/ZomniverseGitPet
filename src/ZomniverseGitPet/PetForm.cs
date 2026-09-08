@@ -2,15 +2,17 @@ namespace ZomniverseGitPet;
 
 public sealed class PetForm : Form
 {
-    private static readonly Color TransparencyColor = Color.Magenta;
+    // A deep brand-violet key keeps anti-aliased PNG edges visually compatible
+    // with the fox outline instead of producing a bright magenta fringe.
+    private static readonly Color TransparencyColor = Color.FromArgb(32, 20, 48);
 
     private readonly PetMessageBubble _bubble;
     private readonly PictureBox _fox;
     private readonly NotifyIcon _tray;
     private readonly PetAssets _assets;
     private readonly ToolTip _toolTip;
-    private readonly Label _minimize;
-    private readonly Label _close;
+    private readonly PetChromeButton _minimize;
+    private readonly PetChromeButton _close;
     private Rectangle _normalFoxBounds = new(40, 0, 160, 160);
     private Point _dragOffset;
     private bool _dragging;
@@ -134,18 +136,13 @@ public sealed class PetForm : Form
         base.Dispose(disposing);
     }
 
-    private Label CreatePetButton(string text, Point location, EventHandler onClick)
+    private static PetChromeButton CreatePetButton(string text, Point location, EventHandler onClick)
     {
-        var button = new Label
+        var button = new PetChromeButton
         {
             Text = text,
             Location = location,
-            Size = new Size(24, 24),
-            TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI", 11, FontStyle.Bold),
-            ForeColor = Color.FromArgb(66, 39, 108),
-            BackColor = Color.FromArgb(238, 229, 251),
-            Cursor = Cursors.Hand
+            AccessibleName = text == "×" ? "Close ZomniverseGitPet" : "Minimize ZomniverseGitPet"
         };
         button.Click += onClick;
         return button;
@@ -164,8 +161,8 @@ public sealed class PetForm : Form
         var bottom = Bottom;
         _normalFoxBounds = new Rectangle(40, _bubble.Bottom - 2, 160, 160);
         _fox.Bounds = _normalFoxBounds;
-        _minimize.Location = new Point(178, _normalFoxBounds.Top + 5);
-        _close.Location = new Point(204, _normalFoxBounds.Top + 5);
+        _minimize.Location = new Point(176, _normalFoxBounds.Top + 4);
+        _close.Location = new Point(205, _normalFoxBounds.Top + 4);
         _minimize.BringToFront();
         _close.BringToFront();
         ClientSize = new Size(240, _fox.Bottom + 4);

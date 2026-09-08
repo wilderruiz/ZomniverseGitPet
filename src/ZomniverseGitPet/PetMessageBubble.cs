@@ -53,9 +53,10 @@ internal sealed class PetMessageBubble : UserControl
     {
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
         using var path = RoundedRectangle(new Rectangle(1, 1, Width - 3, Height - 13), 16);
         using var fill = new SolidBrush(Color.FromArgb(255, 252, 245));
-        using var border = new Pen(Color.FromArgb(220, 210, 235), 1.5f);
+        using var border = new Pen(Color.FromArgb(112, 79, 163), 2f);
         e.Graphics.FillPath(fill, path);
         e.Graphics.DrawPath(border, path);
         var tail = new[] { new Point(99, Height - 13), new Point(116, Height - 13), new Point(108, Height - 2) };

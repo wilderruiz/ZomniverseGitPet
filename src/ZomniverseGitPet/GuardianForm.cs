@@ -4,6 +4,11 @@ namespace ZomniverseGitPet;
 
 public sealed class GuardianForm : Form
 {
+    private static readonly Color Ink = Color.FromArgb(38, 25, 61);
+    private static readonly Color Purple = Color.FromArgb(91, 58, 145);
+    private static readonly Color PurpleHover = Color.FromArgb(115, 76, 175);
+    private static readonly Color LavenderSurface = Color.FromArgb(247, 244, 251);
+    private static readonly Color DarkSurface = Color.FromArgb(31, 24, 46);
     private readonly AppConfig _config;
     private readonly ConfigStore _configStore;
     private readonly GitService _git;
@@ -35,15 +40,26 @@ public sealed class GuardianForm : Form
 
         Text = "ZomniverseGitPet Guardian";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(820, 620);
-        Size = new Size(980, 760);
-        BackColor = Color.FromArgb(245, 245, 247);
+        MinimumSize = new Size(900, 650);
+        Size = new Size(1120, 800);
+        BackColor = LavenderSurface;
+        Font = new Font("Segoe UI", 9);
 
-        _summary.Dock = DockStyle.Top;
-        _summary.Height = 66;
-        _summary.Padding = new Padding(14, 10, 10, 4);
+        var summaryPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 92,
+            Padding = new Padding(18, 12, 18, 10),
+            BackColor = Color.FromArgb(55, 37, 84)
+        };
+        _summary.Dock = DockStyle.Fill;
+        _summary.Padding = new Padding(0);
         _summary.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+        _summary.ForeColor = Color.White;
+        _summary.TextAlign = ContentAlignment.MiddleLeft;
+        _summary.AutoEllipsis = true;
         _summary.Text = "Checking repository...";
+        summaryPanel.Controls.Add(_summary);
         _toolTips.SetToolTip(_summary,
             "Repository summary: current Git health, branch, changed-item count, and latest commit.\r\n\r\n" +
             "Closing this Guardian window with X only hides it; ZomniverseGitPet keeps running.\r\n" +
@@ -51,17 +67,18 @@ public sealed class GuardianForm : Form
 
         var buttons = new FlowLayoutPanel
         {
-            Dock = DockStyle.Top, Height = 48, Padding = new Padding(10, 7, 4, 4), WrapContents = false
+            Dock = DockStyle.Top, Height = 82, Padding = new Padding(12, 10, 8, 8),
+            WrapContents = true, AutoScroll = true, BackColor = Color.FromArgb(234, 226, 246)
         };
-        var choose = MakeButton("Choose Repo", async () => await _chooseRepository());
-        var refresh = MakeButton("Refresh", RefreshAsync);
-        var diff = MakeButton("View Diff", ShowDiffAsync);
-        var tests = MakeButton("Run Tests", RunTestsAsync);
-        var checkpoint = MakeButton("Restore Point", CreateCheckpointAsync, 112);
-        var push = MakePushButton("Push ↑", PushToOriginAsync, 88);
-        var recent = MakeButton("Recent Commits", RecentCommitsAsync, 112);
-        var health = MakeButton("Health Check", HealthCheckAsync, 105);
-        var cancel = MakeButton("Cancel", () => { _operation?.Cancel(); return Task.CompletedTask; }, 75);
+        var choose = MakeButton("Choose Repo", async () => await _chooseRepository(), 112);
+        var refresh = MakeButton("Refresh", RefreshAsync, 96);
+        var diff = MakeButton("View Diff", ShowDiffAsync, 100);
+        var tests = MakeButton("Run Tests", RunTestsAsync, 104);
+        var checkpoint = MakeButton("Restore Point", CreateCheckpointAsync, 124);
+        var push = MakePushButton("Push ↑", PushToOriginAsync, 92);
+        var recent = MakeButton("Recent Commits", RecentCommitsAsync, 126);
+        var health = MakeButton("Health Check", HealthCheckAsync, 112);
+        var cancel = MakeButton("Cancel", () => { _operation?.Cancel(); return Task.CompletedTask; }, 88);
         buttons.Controls.AddRange([choose, refresh, diff, tests, checkpoint, push, recent, health, cancel]);
         _operationButtons = [choose, refresh, diff, tests, checkpoint, push, recent, health];
 
@@ -108,6 +125,21 @@ public sealed class GuardianForm : Form
         _files.MultiSelect = false;
         _files.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _files.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _files.BackgroundColor = Color.FromArgb(241, 237, 247);
+        _files.BorderStyle = BorderStyle.None;
+        _files.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+        _files.GridColor = Color.FromArgb(222, 213, 235);
+        _files.RowHeadersVisible = false;
+        _files.EnableHeadersVisualStyles = false;
+        _files.ColumnHeadersHeight = 38;
+        _files.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(78, 51, 116);
+        _files.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+        _files.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9, FontStyle.Bold);
+        _files.DefaultCellStyle.BackColor = Color.White;
+        _files.DefaultCellStyle.ForeColor = Ink;
+        _files.DefaultCellStyle.SelectionBackColor = Color.FromArgb(220, 205, 242);
+        _files.DefaultCellStyle.SelectionForeColor = Ink;
+        _files.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(249, 247, 252);
         _files.ShowCellToolTips = true;
         _files.Columns.Add("Status", "Status");
         _files.Columns.Add("Path", "Path");
@@ -119,10 +151,11 @@ public sealed class GuardianForm : Form
             "Path of the changed item. Select a row and choose View Diff, or double-click the row.";
         _files.CellDoubleClick += async (_, e) => { if (e.RowIndex >= 0) await ShowDiffAsync(); };
 
-        var options = new Panel { Dock = DockStyle.Bottom, Height = 42 };
+        var options = new Panel { Dock = DockStyle.Bottom, Height = 48, BackColor = Color.FromArgb(234, 226, 246) };
         _automatic.Text = "Automatic verified checkpoints (disabled by default)";
         _automatic.AutoSize = true;
-        _automatic.Location = new Point(14, 11);
+        _automatic.Location = new Point(16, 14);
+        _automatic.ForeColor = Ink;
         _automatic.Checked = _config.AutomaticCheckpointsEnabled;
         _toolTips.SetToolTip(_automatic,
             "Automatic verified checkpoints\r\n\r\n" +
@@ -138,33 +171,62 @@ public sealed class GuardianForm : Form
         };
         options.Controls.Add(_automatic);
 
-        _output.Dock = DockStyle.Bottom;
-        _output.Height = 220;
+        _output.Dock = DockStyle.Fill;
         _output.ReadOnly = true;
-        _output.Font = new Font("Consolas", 9);
-        _output.BackColor = Color.White;
+        _output.Font = new Font("Cascadia Mono", 9.5f);
+        _output.BackColor = DarkSurface;
+        _output.ForeColor = Color.FromArgb(235, 228, 248);
+        _output.BorderStyle = BorderStyle.None;
+        _output.Padding = new Padding(10);
         _toolTips.SetToolTip(_output,
             "Operation output\r\n\r\nResults from View Diff, Run Tests, Restore Point, Push, Recent Commits, and Health Check appear here.\r\n" +
             "This panel is read-only.");
 
-        Controls.Add(_files);
-        Controls.Add(_output);
+        var content = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            SplitterWidth = 8,
+            Size = new Size(1000, 600),
+            SplitterDistance = 360,
+            Panel1MinSize = 140,
+            Panel2MinSize = 120,
+            BackColor = Color.FromArgb(173, 151, 204),
+            BorderStyle = BorderStyle.None
+        };
+        content.Panel1.Padding = new Padding(12, 10, 12, 4);
+        content.Panel2.Padding = new Padding(12, 4, 12, 10);
+        content.Panel1.BackColor = LavenderSurface;
+        content.Panel2.BackColor = LavenderSurface;
+        content.Panel1.Controls.Add(_files);
+        content.Panel2.Controls.Add(_output);
+
+        Controls.Add(content);
         Controls.Add(options);
         Controls.Add(buttons);
-        Controls.Add(_summary);
+        Controls.Add(summaryPanel);
         FormClosing += OnFormClosing;
     }
 
     private static Button MakeButton(string text, Func<Task> action, int width = 88)
     {
-        var button = new Button { Text = text, Width = width, Height = 30, Margin = new Padding(3) };
+        var button = new Button
+        {
+            Text = text, Width = width, Height = 34, Margin = new Padding(4),
+            FlatStyle = FlatStyle.Flat, BackColor = Purple, ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold), Cursor = Cursors.Hand,
+            UseVisualStyleBackColor = false
+        };
+        button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.MouseOverBackColor = PurpleHover;
+        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(70, 42, 108);
         button.Click += async (_, _) => await action();
         return button;
     }
 
     private static Button MakePushButton(string text, Func<Task> action, int width)
     {
-        var button = new GuardianPushButton { Text = text, Width = width, Height = 30, Margin = new Padding(3) };
+        var button = new GuardianPushButton { Text = text, Width = width, Height = 34, Margin = new Padding(4) };
         button.Click += async (_, _) => await action();
         return button;
     }
@@ -177,7 +239,7 @@ public sealed class GuardianForm : Form
         _status = await statusTask;
         var commit = await commitTask;
         _summary.Text = _status.Healthy
-            ? $"Repository: healthy ✓    Branch: {_status.Branch}    Changed items: {_status.Files.Count}\r\nLast commit: {(commit.Success ? commit.Output : "unavailable")}" 
+            ? $"Repository healthy ✓     Branch: {_status.Branch}     Changed items: {_status.Files.Count}\r\nLatest commit: {FormatCommitPreview(commit)}"
             : "Repository problem: " + _status.Error;
         _files.Rows.Clear();
         foreach (var file in _status.Files)
