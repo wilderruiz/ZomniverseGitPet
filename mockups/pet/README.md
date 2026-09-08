@@ -1,14 +1,14 @@
 # ZomniverseGitPet pet mockups
 
-This design-review pack explores a more expressive desktop companion for ZomniverseGitPet. The six SVGs now share one coherent **purple fox guardian** language: deep violet fur, lavender highlights, luminous repository-state accents, compact silhouettes, and expressions designed to remain readable at small desktop sizes.
+This design-review pack defines one coherent **purple fox repository companion** for ZomniverseGitPet. The mascot is friendly, intelligent, trustworthy, and guardian-like, with rounded proportions, warm expressions, natural pale muzzle and chest markings, and a large readable tail. Its simple silhouette and consistent construction are suitable for future animation and remain readable at small scale.
 
 ## States
 
-- `pet_idle_01.svg` — calm seated everyday monitoring state.
-- `pet_idle_02.svg` — alternate curled pose with a subtle Git branch motif.
-- `pet_happy_01.svg` — cheerful healthy-repository state with a green check.
+- `pet_idle_01.svg` — calm, upright canonical fox and everyday monitoring state.
+- `pet_idle_02.svg` — the same fox in a cozy curled pose with a Git branch motif.
+- `pet_happy_01.svg` — warm healthy-repository state with a secondary green check.
 - `pet_review_ready_01.svg` — attentive state for changes ready to review.
-- `pet_warning_01.svg` — concerned, non-aggressive caution state.
+- `pet_warning_01.svg` — protective, softly concerned caution state.
 - `pet_sleep_01.svg` — compact resting state for inactivity or paused monitoring.
 
 ## Preview
@@ -19,7 +19,7 @@ Open `mockups/pet/index.html` directly in a browser. The gallery has no build st
 
 ## Visual direction
 
-The fox should feel clever, friendly, alert, and slightly magical rather than childish. Purple is the stable identity color; green, gold, and amber are reserved for Git state communication. The oversized tail and angular ears are intentional because they remain recognizable when the asset is reduced to launcher scale.
+The fox combines the reference's Elegant Guardian proportions with the Rounded Scout's friendliness and the Bright Helper's warmth. Purple remains the stable identity color; green, gold, and amber are secondary Git-state accents. Rounded cheeks, separate lower-face muzzle patches, soft inner ears, warm eyes, and a broad pale-tipped tail keep the character approachable and recognizable at launcher scale.
 
 ## Next step after approval
 

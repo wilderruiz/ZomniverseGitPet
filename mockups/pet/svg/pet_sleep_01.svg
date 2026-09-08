@@ -1,15 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
-  <title id="title">Sleeping purple fox guardian</title><desc id="desc">A curled sleeping purple fox guardian wrapped in its lavender-tipped tail.</desc>
-  <defs><linearGradient id="fur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8560c1"/><stop offset="1" stop-color="#3a275b"/></linearGradient></defs>
-  <ellipse cx="82" cy="136" rx="49" ry="8" fill="#2a183d" opacity=".12"/>
-  <path d="M40 102c4-27 27-46 56-42 29 4 43 31 31 53-11 20-41 27-67 17-16-7-23-15-20-28z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
-  <path d="M99 113c22 11 38-1 33-18-4-14-22-18-34-8-7 6-8 15-3 21" fill="none" stroke="#644195" stroke-width="15" stroke-linecap="round"/>
-  <path d="M130 95c5 7 5 14 1 20" fill="none" stroke="#d9baff" stroke-width="8" stroke-linecap="round"/>
-  <path d="M48 78 51 52l20 17M99 77l-4-25-18 18" fill="#734eaa" stroke="#2b1b46" stroke-width="5" stroke-linejoin="round"/>
-  <path d="m55 59 2 11 9-6m25-5-2 11-8-6" fill="#cea3fb"/>
-  <path d="M43 72c0-14 15-25 31-25 18 0 32 11 32 25v18c0 17-14 28-32 28-17 0-31-11-31-28z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
-  <path d="M56 93c5 9 12 13 18 13s13-4 18-13c-6 3-12 5-18 5s-12-2-18-5z" fill="#efe4ff"/>
-  <path d="M57 82c5 5 10 5 15 0M82 82c5 5 10 5 15 0" fill="none" stroke="#b99bdd" stroke-width="4" stroke-linecap="round"/>
-  <path d="M70 91h8l-4 5z" fill="#2d1d48"/>
-  <g fill="#8c66be" font-family="Segoe UI, sans-serif" font-weight="700"><text x="111" y="52" font-size="16">z</text><text x="125" y="39" font-size="13">z</text><text x="137" y="28" font-size="10">z</text></g>
+ <title id="title">Power nap</title><desc id="desc">The same friendly purple fox sleeping peacefully, curled into its soft tail.</desc>
+ <defs><linearGradient id="fur" x1=".2" y1="0" x2=".8" y2="1"><stop stop-color="#9775e8"/><stop offset="1" stop-color="#6341ac"/></linearGradient><linearGradient id="tail" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#805dcc"/><stop offset="1" stop-color="#543493"/></linearGradient></defs>
+ <ellipse cx="80" cy="140" rx="57" ry="7" fill="#3d286b" opacity=".12"/><ellipse cx="77" cy="112" rx="54" ry="28" fill="url(#fur)" stroke="#40246f" stroke-width="4"/>
+ <path d="M103 92c34-2 48 24 31 40-15 14-44 7-64-5 23 1 39-6 45-18-9 2-18 1-26-2z" fill="url(#tail)" stroke="#40246f" stroke-width="4" stroke-linejoin="round"/><path d="M129 101c14 7 14 21 4 29-7 5-17 5-27 1 11-4 18-12 18-21z" fill="#f7f3ff"/>
+ <path d="M42 80c-6-8-5-21-1-31 11 4 19 10 24 18m39 13c6-8 5-21 1-31-11 4-19 10-24 18" fill="url(#fur)" stroke="#40246f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 56c6 3 11 7 14 12l-14 7c-2-6-2-13 0-19zm58 0c-6 3-11 7-14 12l14 7c2-6 2-13 0-19z" fill="#d7c7fb"/>
+ <path d="M36 74c3-14 16-23 34-23s31 9 34 23l2 18c1 18-14 31-36 31S33 110 34 92z" fill="url(#fur)" stroke="#40246f" stroke-width="4"/><path d="M40 94c4-8 12-11 20-7 4 1 7 4 10 7 3-3 6-6 10-7 8-4 16-1 20 7-3 14-14 22-30 22s-27-8-30-22z" fill="#faf8ff"/>
+ <path d="M50 83c4 3 9 3 13 0m14 0c4 3 9 3 13 0" fill="none" stroke="#352057" stroke-width="3.5" stroke-linecap="round"/><path d="m64 97 6-3 6 3c-1 4-4 6-6 6s-5-2-6-6z" fill="#352057"/><path d="M70 103c-4 0-6 2-8 4m8-4c4 0 6 2 8 4" fill="none" stroke="#5e4284" stroke-width="2.3" stroke-linecap="round"/>
+ <g fill="#866cc5" font-family="Segoe UI, sans-serif" font-weight="700"><text x="112" y="69" font-size="16">z</text><text x="128" y="53" font-size="21">z</text><text x="144" y="32" font-size="26">z</text></g>
 </svg>
