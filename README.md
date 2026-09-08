@@ -33,6 +33,7 @@ GitPet tries to explain *what will happen before it happens*.
 - **Restore Point** creates an ordinary local Git commit after showing the files and asking for confirmation.
 - **Git Identity** appears automatically when Git does not yet know the commit author's name/email, with a safe project-only default and an optional PC-wide setting.
 - **Push ↑** is always manual and shows the destination branch and commit before sending committed history to `origin`.
+- **Help → About ZomniverseGitPet** shows the installed version, builder, build date, platform, MIT license, repository link, and copyright information.
 
 Background repository checks run quietly; they do not take over the mouse cursor or present themselves as foreground work.
 
@@ -132,6 +133,7 @@ GitPet does not invent a name/email and does not copy account credentials into G
 - Nested-repository protection
 - Reviewable `.gitignore` advisor with exact before/after preview
 - Friendly first-time Git identity setup
+- Built-in Help/About panel with version, build, license, repository, and builder information
 - Branch and changed-file overview
 - Diff review and small untracked-file previews
 - Configurable test hooks
