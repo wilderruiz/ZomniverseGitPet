@@ -8,7 +8,7 @@
 
 ZomniverseGitPet is a lightweight Windows desktop companion that keeps a small purple fox near your workspace and turns Git safety into a visible, low-friction habit. It is designed for experienced developers, people working with AI coding agents, and users who do not want to memorize Git commands just to keep their projects safe.
 
-Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files and diffs, configure and run project-specific tests, create local checkpoints, explicitly connect an existing remote repository, manually pull remote updates, manually push committed history, display recent commits, and run Git health checks.
+Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files side-by-side, configure and run project-specific tests, create local checkpoints, explicitly connect an existing remote repository, manually pull remote updates, manually push committed history, display recent commits, and run Git health checks.
 
 GitPet never pulls or pushes automatically, never invents or creates online repositories automatically, never replaces an existing remote automatically, and never uses destructive operations such as `reset --hard` or `clean`.
 
@@ -22,6 +22,7 @@ Version 0.3 introduces the visual system used by the real desktop application:
 - human-readable file states instead of exposing Git porcelain codes as the primary UI
 - compact repository status chips for health, branch, and changed-item state
 - a dedicated **Guardian Activity** console for command output
+- a resizable **File Review** workspace for side-by-side Before / Now code inspection
 - dark hover help that explains actions in plain language
 - a clean-project state instead of a large empty file table
 - operation-only **Cancel**, visible only when something can actually be cancelled
@@ -30,7 +31,7 @@ Version 0.3 introduces the visual system used by the real desktop application:
 
 The application also ships with a canonical purple fox-head Windows icon used by the executable, taskbar, Guardian window, and system tray.
 
-The pet itself follows the same visual language: its speech bubble is now a dark violet status surface, minimize is integrated into the bubble chrome, and Exit is a small hot-pink ribbon control on the fox rather than a detached Windows-style button.
+The pet itself follows the same visual language: its speech bubble is a dark violet status surface, minimize is integrated into the bubble chrome, and Exit is a small hot-pink ribbon control on the fox rather than a detached Windows-style button.
 
 ## Meet the guardian
 
@@ -41,6 +42,31 @@ The pet itself follows the same visual language: its speech bubble is now a dark
 
 Two additional approved mascot states, `pet_idle_02` and `pet_sleep_01`, remain reserved for later idle/sleep behavior.
 
+## Side-by-side File Review
+
+The changed-file list is not just a status display. Click a changed file and the lower Guardian area becomes a resizable review workspace:
+
+```text
+┌──────────────────────────────┬──────────────────────────────┐
+│ BEFORE                       │ NOW                          │
+│ latest local commit /        │ current working-tree file    │
+│ checkpoint                   │                              │
+│                              │                              │
+│ syntax-coloured source       │ syntax-coloured source       │
+│ changed lines highlighted    │ changed lines highlighted    │
+└──────────────────────────────┴──────────────────────────────┘
+```
+
+**BEFORE** is read from the current local `HEAD` commit. **NOW** is read from the current file on disk. The viewer does not rewrite or reformat either version: the source indentation and text remain the project's own. GitPet adds Zomniverse-style syntax colours and softly illuminates lines that differ from the baseline.
+
+The review understands common JavaScript/TypeScript, C#, PHP, Python, SQL, PowerShell, JSON, HTML/XML/SVG, and CSS-family source files. New files clearly show that no previous version exists; deleted files show that the working-tree version is gone.
+
+If a newly initialized repository has **no commit/checkpoint baseline yet**, File Review explains why the Before side cannot exist and presents **Create checkpoint**. That checkpoint stays local and establishes the baseline for future edits.
+
+Normal operations such as Tests, Checkpoint, Pull, Push, History, and Health switch the lower area back to **Guardian Activity**. File Review has an **Activity** button to return there manually.
+
+This workflow is particularly useful with AI coding agents: let the agent edit, let GitPet detect the files, then click each row to inspect exactly what changed since the latest local checkpoint.
+
 ## Designed for humans, not just Git experts
 
 GitPet tries to explain *what will happen before it happens*.
@@ -50,6 +76,7 @@ GitPet tries to explain *what will happen before it happens*.
 - **Prepare folder for Git** can safely turn an ordinary local folder into a Git repository with `git init -b main` after confirmation.
 - **What Git should ignore** explains `.gitignore` as Git's “do not track these files” list instead of assuming the user already knows the term.
 - **Before / After preview** shows the exact `.gitignore` content before anything is written.
+- **File Review** shows changed source side-by-side against the latest local commit/checkpoint.
 - **Tests** stores a separate test profile for each project; if none exists, GitPet suggests likely commands for review and lets the user Save or Save & run tests.
 - **Checkpoint** creates an ordinary local Git commit after showing the files and asking for confirmation.
 - **Git Identity** appears automatically when Git does not yet know the commit author's name/email, with a safe project-only default and an optional PC-wide setting.
@@ -74,9 +101,11 @@ GitPet inspects it
         ↓
 Review what Git should ignore
         ↓
-Configure project tests if useful
+Monitor changed files → click to review Before / Now
         ↓
-Monitor → Review → Test → Checkpoint
+Configure / run project tests if useful
+        ↓
+Checkpoint locally as often as you want
         ↓
 Pull remote updates ↓   /   Push local commits ↑
         ↓
@@ -198,6 +227,8 @@ GitPet explains that commit metadata can become public if a commit is later push
 - Friendly purple fox desktop pet with repository-state visuals
 - Canonical fox-head executable, taskbar, window, and tray icon
 - Dark Guardian Console visual system
+- Side-by-side File Review against the latest local commit/checkpoint
+- Syntax-aware source colouring with changed-line illumination
 - Single-instance behavior; a second launch activates the existing Guardian
 - Quiet background repository monitoring
 - Recent-project registry with up to 20 repositories
@@ -206,7 +237,7 @@ GitPet explains that commit metadata can become public if a commit is later push
 - Reviewable `.gitignore` advisor with exact before/after preview
 - Friendly first-time Git identity setup
 - Explicit, user-approved `origin` connection for an existing remote repository
-- Human-readable changed-file states and diff review
+- Human-readable changed-file states
 - Per-project test profiles with reviewable command discovery and sequential PASS/FAIL output
 - Recent commit history
 - `git fsck` repository health checks
@@ -220,6 +251,8 @@ GitPet explains that commit metadata can become public if a commit is later push
 ## Safety philosophy
 
 A checkpoint previews all current non-ignored changes, asks for confirmation, ensures Git has an author identity, stages with `git add -A`, and creates a normal **local** Git commit.
+
+File Review is read-only: GitPet reads the baseline from `HEAD` and reads the current file from disk. Reviewing a file never stages, commits, rewrites, restores, or pushes it.
 
 Remote connection is a separate explicit action. GitPet only adds `origin` after the user supplies the clone URL and approves it, and it refuses to overwrite an existing `origin` automatically.
 
@@ -241,7 +274,7 @@ Push sends committed history only. It does not stage or commit working-tree chan
 
 ## Project status
 
-ZomniverseGitPet **0.3.3** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
+ZomniverseGitPet **0.3.4** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
 
 Current platform support: Windows 10/11, x64, with Git for Windows available as `git.exe`.
 
