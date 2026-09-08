@@ -48,7 +48,9 @@ public sealed class AppConfig
 
     public void ForgetUnavailableRepositories()
     {
+        var activeWasUnavailable = !string.IsNullOrWhiteSpace(RepositoryPath) && !Directory.Exists(RepositoryPath);
         RecentRepositories.RemoveAll(item => string.IsNullOrWhiteSpace(item.Path) || !Directory.Exists(item.Path));
+        if (activeWasUnavailable) RepositoryPath = null;
     }
 
     internal void Normalize()
@@ -75,7 +77,7 @@ public sealed class AppConfig
         {
             var active = NormalizePath(RepositoryPath);
             RepositoryPath = active;
-            if (!RecentRepositories.Any(item => string.Equals(item.Path, active, StringComparison.OrdinalIgnoreCase)))
+            if (Directory.Exists(active) && !RecentRepositories.Any(item => string.Equals(item.Path, active, StringComparison.OrdinalIgnoreCase)))
             {
                 RecentRepositories.Insert(0, new RecentRepositoryEntry
                 {

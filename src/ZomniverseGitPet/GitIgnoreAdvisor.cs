@@ -129,8 +129,8 @@ internal static class GitIgnoreAdvisor
             AddIfMissing(found, existing, new("Thumbs.db", "Windows thumbnail cache", GitIgnoreConfidence.High, true));
         else if (fileName.Equals(".env", StringComparison.OrdinalIgnoreCase))
             AddIfMissing(found, existing, new(".env", "Environment configuration may contain secrets", GitIgnoreConfidence.Security, true));
-        else if (fileName.StartsWith(".env.", StringComparison.OrdinalIgnoreCase))
-            AddIfMissing(found, existing, new(".env.*", "Environment-specific configuration may contain secrets", GitIgnoreConfidence.Security, true));
+        else if (fileName.StartsWith(".env.", StringComparison.OrdinalIgnoreCase) && !IsEnvironmentTemplate(fileName) && !existing.Contains(".env.*"))
+            AddIfMissing(found, existing, new(fileName, "Environment-specific configuration may contain secrets", GitIgnoreConfidence.Security, true));
         else if (fileName.EndsWith(".pem", StringComparison.OrdinalIgnoreCase))
             AddIfMissing(found, existing, new("*.pem", "Private/certificate key material should be reviewed before tracking", GitIgnoreConfidence.Security, true));
         else if (fileName.EndsWith(".key", StringComparison.OrdinalIgnoreCase))
@@ -142,6 +142,12 @@ internal static class GitIgnoreAdvisor
         else if (fileName.EndsWith(".log", StringComparison.OrdinalIgnoreCase))
             AddIfMissing(found, existing, new("*.log", "Generated log files", GitIgnoreConfidence.High, true));
     }
+
+    private static bool IsEnvironmentTemplate(string fileName) =>
+        fileName.Equals(".env.example", StringComparison.OrdinalIgnoreCase) ||
+        fileName.Equals(".env.sample", StringComparison.OrdinalIgnoreCase) ||
+        fileName.Equals(".env.template", StringComparison.OrdinalIgnoreCase) ||
+        fileName.Equals(".env.dist", StringComparison.OrdinalIgnoreCase);
 
     private static void AddIfMissing(
         Dictionary<string, GitIgnoreSuggestion> found,

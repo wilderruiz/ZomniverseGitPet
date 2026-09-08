@@ -44,7 +44,7 @@ Check("recent repository registry keeps newest 20", () =>
            config.RepositoryPath!.EndsWith("zgitpet-registry-22", StringComparison.OrdinalIgnoreCase);
 });
 
-Check("gitignore advisor finds common and security candidates", () =>
+Check("gitignore advisor finds common and security candidates safely", () =>
 {
     var root = CreateTempDirectory();
     try
@@ -52,10 +52,14 @@ Check("gitignore advisor finds common and security candidates", () =>
         Directory.CreateDirectory(Path.Combine(root, "bin"));
         Directory.CreateDirectory(Path.Combine(root, "node_modules"));
         File.WriteAllText(Path.Combine(root, ".env"), "SECRET=test");
+        File.WriteAllText(Path.Combine(root, ".env.local"), "SECRET=local");
+        File.WriteAllText(Path.Combine(root, ".env.example"), "SECRET=example");
         var suggestions = GitIgnoreAdvisor.Suggest(root);
         return suggestions.Any(item => item.Rule == "bin/" && item.DefaultSelected) &&
                suggestions.Any(item => item.Rule == "node_modules/" && item.DefaultSelected) &&
-               suggestions.Any(item => item.Rule == ".env" && item.Confidence == GitIgnoreConfidence.Security);
+               suggestions.Any(item => item.Rule == ".env" && item.Confidence == GitIgnoreConfidence.Security) &&
+               suggestions.Any(item => item.Rule == ".env.local" && item.Confidence == GitIgnoreConfidence.Security) &&
+               suggestions.All(item => item.Rule != ".env.example" && item.Rule != ".env.*");
     }
     finally { TryDelete(root); }
 });
