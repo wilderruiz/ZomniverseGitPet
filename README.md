@@ -8,9 +8,9 @@
 
 ZomniverseGitPet is a lightweight Windows desktop companion that keeps a small purple fox near your workspace and turns Git safety into a visible, low-friction habit. It is designed for experienced developers, people working with AI coding agents, and users who do not want to memorize Git commands just to keep their projects safe.
 
-Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files and diffs, run project-specific test hooks, create local restore points, explicitly push committed history to an existing `origin` remote, display recent commits, and run Git health checks.
+Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files and diffs, run project-specific test hooks, create local restore points, explicitly connect an existing remote repository, manually push committed history, display recent commits, and run Git health checks.
 
-GitPet never pushes automatically, never creates remotes automatically, and never uses destructive operations such as `reset --hard` or `clean`.
+GitPet never pushes automatically, never invents or creates online repositories automatically, never replaces an existing remote automatically, and never uses destructive operations such as `reset --hard` or `clean`.
 
 ## Guardian Console — 0.3
 
@@ -52,6 +52,7 @@ GitPet tries to explain *what will happen before it happens*.
 - **Before / After preview** shows the exact `.gitignore` content before anything is written.
 - **Checkpoint** creates an ordinary local Git commit after showing the files and asking for confirmation.
 - **Git Identity** appears automatically when Git does not yet know the commit author's name/email, with a safe project-only default and an optional PC-wide setting.
+- **Connect Remote** appears when Push is requested but the project has no `origin`; the user pastes the clone URL of an existing online repository and explicitly approves the connection.
 - **Push ↑** is always manual and shows the destination branch and commit before sending committed history to `origin`.
 - **Help → About ZomniverseGitPet** shows the installed version, builder, build date, platform, MIT license, repository link, and copyright information.
 
@@ -71,9 +72,11 @@ GitPet inspects it
         ↓
 Review what Git should ignore
         ↓
-See .gitignore BEFORE and AFTER
+Monitor → Review → Checkpoint
         ↓
-Monitor → Review → Checkpoint → optional Push
+If Push has no origin: paste existing remote clone URL
+        ↓
+Confirm Push
 ```
 
 When a folder is selected, GitPet classifies it before doing anything:
@@ -94,6 +97,32 @@ git init -b main
 It then verifies the repository root and applies only the `.gitignore` rules you explicitly accepted.
 
 Project preparation does **not** create a hosting repository, configure `origin`, stage files, create the first commit, or push anything. Those remain separate, deliberate user actions.
+
+## Explicit remote connection
+
+A local Git repository and an online Git repository are separate things. Git identity (`user.name` / `user.email`) is enough to create local commits, but Push also needs a destination.
+
+If the user presses **Push ↑** and no readable `origin` exists, GitPet opens a **Connect Remote** window. The user pastes the clone URL of an already-existing repository, for example:
+
+```text
+https://github.com/user/project.git
+```
+
+or:
+
+```text
+git@github.com:user/project.git
+```
+
+The same flow works with GitLab, Bitbucket, private Git servers, HTTPS, SSH, and other Git-compatible remote addresses.
+
+After explicit approval GitPet performs the equivalent of:
+
+```text
+git remote add origin <user-provided-url>
+```
+
+GitPet then continues to the normal Push confirmation. It does **not** create the online repository, does not replace an existing `origin`, does not stage or commit anything, and does not push merely because the remote was connected. The remote URL itself is not copied into GitPet's audit log.
 
 ## Friendly `.gitignore` hygiene
 
@@ -145,12 +174,13 @@ GitPet explains that commit metadata can become public if a commit is later push
 - Nested-repository protection
 - Reviewable `.gitignore` advisor with exact before/after preview
 - Friendly first-time Git identity setup
+- Explicit, user-approved `origin` connection for an existing remote repository
 - Human-readable changed-file states and diff review
 - Configurable test hooks
 - Recent commit history
 - `git fsck` repository health checks
 - Confirmed full-working-tree checkpoints using ordinary local Git commits
-- Explicit, confirmed manual push to an existing `origin` remote on the current branch
+- Explicit, confirmed manual push to `origin` on the current branch
 - Suspicious-file safeguards and append-only local audit logging
 - Built-in Help/About panel
 - Typed per-user configuration under `%LOCALAPPDATA%\ZomniverseGitPet`
@@ -159,17 +189,19 @@ GitPet explains that commit metadata can become public if a commit is later push
 
 A checkpoint previews all current non-ignored changes, asks for confirmation, ensures Git has an author identity, stages with `git add -A`, and creates a normal **local** Git commit.
 
-The separate **Push ↑** action verifies that an existing `origin` remote and named current branch are available, shows the destination and latest commit, and asks for explicit confirmation before running the equivalent of:
+Remote connection is a separate explicit action. GitPet only adds `origin` after the user supplies the clone URL and approves it, and it refuses to overwrite an existing `origin` automatically.
+
+The separate **Push ↑** action shows the destination and latest commit and asks for explicit confirmation before running the equivalent of:
 
 ```text
 git push origin <current-branch>
 ```
 
-Push sends committed history only. It does not stage or commit working-tree changes, create/configure remotes, force-push, reset, or clean. Automatic checkpoints are off by default and never trigger a push.
+Push sends committed history only. It does not stage or commit working-tree changes, create an online repository, force-push, reset, or clean. Automatic checkpoints are off by default and never trigger a push.
 
 ## Project status
 
-ZomniverseGitPet 0.3 is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
+ZomniverseGitPet **0.3.1** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
 
 Current platform support: Windows 10/11, x64, with Git for Windows available as `git.exe`.
 
