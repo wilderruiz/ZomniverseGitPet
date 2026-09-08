@@ -108,8 +108,8 @@ public sealed class GuardianForm : Form
             "Diff\n\nSelect a changed file first, then inspect exactly what changed.\n" +
             "Tracked files show their Git diff; small untracked text files can be previewed directly.");
         _toolTips.SetToolTip(tests,
-            "Tests\n\nRun the test commands configured for this repository in config.json.\n" +
-            "If none are configured, Guardian tells you instead of running anything.");
+            "Tests\n\nRun the test commands saved for THIS project. If none are configured, GitPet opens a friendly setup window\n" +
+            "and suggests likely commands for review. Hold Shift while clicking Tests to edit the saved commands later.");
         _toolTips.SetToolTip(checkpoint,
             "Checkpoint\n\nSave the current working state as an ordinary LOCAL Git commit.\n" +
             "GitPet previews the files, asks for confirmation, and never pushes this commit automatically.");
@@ -700,25 +700,86 @@ public sealed class GuardianForm : Form
         }
     });
 
-    private async Task RunTestsAsync() => await RunOperationAsync("Running configured tests...", async token =>
+    private async Task RunTestsAsync() => await RunOperationAsync("Preparing project tests...", async token =>
     {
         if (!HasRepository()) return;
 
-        if (_config.TestCommands.Count == 0)
+        var repositoryPath = _config.RepositoryPath!;
+        var commands = _config.GetTestCommandsForRepository(repositoryPath).ToList();
+        var editRequested = (ModifierKeys & Keys.Shift) == Keys.Shift;
+
+        if (commands.Count == 0 || editRequested)
         {
-            _output.Text = "No test commands are configured in config.json.";
-            return;
+            var normalized = Path.TrimEndingDirectorySeparator(repositoryPath);
+            var projectName = Path.GetFileName(normalized);
+            if (string.IsNullOrWhiteSpace(projectName)) projectName = normalized;
+
+            using var setup = new ProjectTestsForm(projectName, repositoryPath, commands);
+            if (setup.ShowDialog(this) != DialogResult.OK)
+            {
+                _output.Text = commands.Count == 0
+                    ? "Tests cancelled. No test commands were saved for this project."
+                    : "Test configuration cancelled. Existing project test commands were kept.";
+                return;
+            }
+
+            _config.SetTestCommandsForRepository(repositoryPath, setup.Commands);
+            _configStore.Save(_config);
+            commands = setup.Commands.ToList();
+            await _audit.WriteAsync("project_tests_configured", new
+            {
+                repository = repositoryPath,
+                count = commands.Count
+            });
+
+            if (commands.Count == 0)
+            {
+                _output.Text = "No test commands are saved for this project.";
+                return;
+            }
+
+            if (!setup.RunAfterSave)
+            {
+                _output.Text =
+                    $"Saved {commands.Count} test command{(commands.Count == 1 ? "" : "s")} for this project.\n\n" +
+                    "Press Tests to run them. Hold Shift while clicking Tests whenever you want to edit this list.";
+                return;
+            }
         }
 
         var text = new System.Text.StringBuilder();
-        foreach (var command in _config.TestCommands)
+        var completed = 0;
+        var allPassed = true;
+        foreach (var command in commands)
         {
+            completed++;
+            text.AppendLine($"TEST {completed}/{commands.Count}");
             text.AppendLine("> " + command);
-            var result = await _git.RunTestCommandAsync(_config.RepositoryPath!, command, token);
-            text.AppendLine(result.Output).AppendLine($"exit: {result.ExitCode}").AppendLine();
             _output.Text = text.ToString();
-            if (!result.Success) break;
+
+            var result = await _git.RunTestCommandAsync(repositoryPath, command, token);
+            if (!string.IsNullOrWhiteSpace(result.Output)) text.AppendLine(result.Output);
+            text.AppendLine(result.Success ? "✓ PASS" : $"✕ FAIL  (exit {result.ExitCode})").AppendLine();
+            _output.Text = text.ToString();
+
+            if (!result.Success)
+            {
+                allPassed = false;
+                break;
+            }
         }
+
+        text.Insert(0, allPassed
+            ? $"TESTS PASSED ✓  ({completed}/{commands.Count})\n\n"
+            : $"TESTS STOPPED ✕  ({completed}/{commands.Count})\n\n");
+        _output.Text = text.ToString();
+        await _audit.WriteAsync("manual_project_tests", new
+        {
+            repository = repositoryPath,
+            configured = commands.Count,
+            completed,
+            success = allPassed
+        });
     });
 
     private async Task CreateCheckpointAsync() => await RunOperationAsync("Preparing restore point...", async token =>
