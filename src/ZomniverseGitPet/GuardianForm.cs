@@ -28,6 +28,7 @@ public sealed class GuardianForm : Form
     private readonly Button[] _operationButtons;
     private CancellationTokenSource? _operation;
     private RepositoryStatus? _status;
+    private bool _refreshInProgress;
     private bool _exitRequested;
 
     public GuardianForm(AppConfig config, ConfigStore configStore, GitService git, AuditLog audit, Func<Task> chooseRepository)
@@ -70,7 +71,7 @@ public sealed class GuardianForm : Form
             Dock = DockStyle.Top, Height = 82, Padding = new Padding(12, 10, 8, 8),
             WrapContents = true, AutoScroll = true, BackColor = Color.FromArgb(234, 226, 246)
         };
-        var choose = MakeButton("Choose Repo", async () => await _chooseRepository(), 112);
+        var choose = MakeButton("Projects ▾", async () => await _chooseRepository(), 112);
         var refresh = MakeButton("Refresh", RefreshAsync, 96);
         var diff = MakeButton("View Diff", ShowDiffAsync, 100);
         var tests = MakeButton("Run Tests", RunTestsAsync, 104);
@@ -83,12 +84,11 @@ public sealed class GuardianForm : Form
         _operationButtons = [choose, refresh, diff, tests, checkpoint, push, recent, health];
 
         _toolTips.SetToolTip(choose,
-            "Choose Repo\r\n\r\nSelect the local Git repository ZomniverseGitPet should watch.\r\n" +
-            "The selected folder is verified as a readable Git repository.\r\n" +
-            "This does not create or configure any Git remote.");
+            "Projects\r\n\r\nSwitch between recent projects, open another folder, prepare a normal folder for Git,\r\n" +
+            "or review what Git should ignore. GitPet remembers up to 20 recent projects.");
         _toolTips.SetToolTip(refresh,
             "Refresh\r\n\r\nRe-read the repository's current branch and working-tree status.\r\n" +
-            "This updates the changed-file list without modifying repository files.");
+            "Background monitoring also refreshes quietly without taking over your mouse cursor.");
         _toolTips.SetToolTip(diff,
             "View Diff\r\n\r\nSelect a changed file first, then use this to inspect what changed.\r\n" +
             "Tracked files show their Git diff. Small untracked text files can be previewed directly.\r\n" +
@@ -231,9 +231,34 @@ public sealed class GuardianForm : Form
         return button;
     }
 
-    public async Task RefreshAsync() => await RunOperationAsync("Refreshing repository status...", async token =>
+    public async Task RefreshAsync()
     {
-        if (!HasRepository()) return;
+        if (_refreshInProgress || IsDisposed || _operation is not null) return;
+        if (string.IsNullOrWhiteSpace(_config.RepositoryPath))
+        {
+            _summary.Text = "No project selected — open Projects to choose or prepare a folder.";
+            return;
+        }
+
+        _refreshInProgress = true;
+        try
+        {
+            await RefreshRepositoryViewAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _summary.Text = "Repository refresh problem: " + ex.Message;
+            await _audit.WriteAsync("guardian_refresh_error", new { error = ex.Message });
+        }
+        finally
+        {
+            _refreshInProgress = false;
+        }
+    }
+
+    private async Task RefreshRepositoryViewAsync(CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(_config.RepositoryPath)) return;
         var statusTask = _git.GetStatusAsync(_config.RepositoryPath!, token);
         var commitTask = _git.GetLastCommitAsync(_config.RepositoryPath!, token);
         _status = await statusTask;
@@ -251,7 +276,7 @@ public sealed class GuardianForm : Form
                 $"{file.Path}\r\n\r\nSelect this row and choose View Diff, or double-click the row, to inspect the change.";
         }
         if (!_status.Healthy) _output.Text = _status.Error;
-    });
+    }
 
     private static string DescribeGitStatus(string status) => status switch
     {
@@ -333,7 +358,7 @@ public sealed class GuardianForm : Form
         _output.Text = result.Message;
         MessageBox.Show(this, result.Message, "Restore point", MessageBoxButtons.OK,
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        await RefreshAsync();
+        await RefreshRepositoryViewAsync(token);
     });
 
     private async Task PushToOriginAsync() => await RunOperationAsync("Checking push destination...", async token =>
@@ -425,7 +450,7 @@ public sealed class GuardianForm : Form
     private bool HasRepository()
     {
         if (!string.IsNullOrWhiteSpace(_config.RepositoryPath)) return true;
-        _output.Text = "Choose a Git repository first.";
+        _output.Text = "Open Projects and choose a Git project first.";
         return false;
     }
 
@@ -434,7 +459,6 @@ public sealed class GuardianForm : Form
         if (_operation is not null) return;
         _operation = new CancellationTokenSource();
         foreach (var button in _operationButtons) button.Enabled = false;
-        UseWaitCursor = true;
         _output.Text = message;
         try { await action(_operation.Token); }
         catch (OperationCanceledException) { _output.Text = "Operation cancelled."; }
@@ -445,7 +469,6 @@ public sealed class GuardianForm : Form
         }
         finally
         {
-            UseWaitCursor = false;
             foreach (var button in _operationButtons) button.Enabled = true;
             _operation.Dispose();
             _operation = null;

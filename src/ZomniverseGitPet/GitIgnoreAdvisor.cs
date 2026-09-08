@@ -15,6 +15,8 @@ internal sealed record GitIgnoreSuggestion(
 
 internal static class GitIgnoreAdvisor
 {
+    private const string SuggestedHeader = "# Suggested by ZomniverseGitPet";
+
     private static readonly Dictionary<string, GitIgnoreSuggestion> DirectorySuggestions =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -81,34 +83,62 @@ internal static class GitIgnoreAdvisor
             .ToArray();
     }
 
+    public static string ReadCurrentContent(string root)
+    {
+        var ignorePath = Path.Combine(root, ".gitignore");
+        return File.Exists(ignorePath) ? File.ReadAllText(ignorePath) : "";
+    }
+
+    public static string BuildPreviewContent(string root, IEnumerable<string> rules)
+    {
+        var existingText = ReadCurrentContent(root);
+        return BuildUpdatedContent(existingText, rules, out _);
+    }
+
     public static int AppendAcceptedRules(string root, IEnumerable<string> rules)
+    {
+        var ignorePath = Path.Combine(root, ".gitignore");
+        var existingText = ReadCurrentContent(root);
+        var updatedText = BuildUpdatedContent(existingText, rules, out var addedCount);
+        if (addedCount == 0) return 0;
+
+        File.WriteAllText(ignorePath, updatedText);
+        return addedCount;
+    }
+
+    private static string BuildUpdatedContent(string existingText, IEnumerable<string> rules, out int addedCount)
     {
         var accepted = rules
             .Where(rule => !string.IsNullOrWhiteSpace(rule))
             .Select(rule => rule.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (accepted.Length == 0) return 0;
 
-        var ignorePath = Path.Combine(root, ".gitignore");
-        var existingText = File.Exists(ignorePath) ? File.ReadAllText(ignorePath) : "";
         var existing = ParseRules(existingText);
         var missing = accepted.Where(rule => !existing.Contains(rule)).ToArray();
-        if (missing.Length == 0) return 0;
+        addedCount = missing.Length;
+        if (missing.Length == 0) return existingText;
 
         var builder = new System.Text.StringBuilder(existingText);
         if (builder.Length > 0 && !EndsWithNewLine(builder)) builder.AppendLine();
-        if (builder.Length > 0) builder.AppendLine();
-        builder.AppendLine("# Suggested by ZomniverseGitPet");
+
+        var alreadyHasSuggestedSection = existingText
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Any(line => line.Trim().Equals(SuggestedHeader, StringComparison.OrdinalIgnoreCase));
+
+        if (!alreadyHasSuggestedSection)
+        {
+            if (builder.Length > 0) builder.AppendLine();
+            builder.AppendLine(SuggestedHeader);
+        }
+
         foreach (var rule in missing) builder.AppendLine(rule);
-        File.WriteAllText(ignorePath, builder.ToString());
-        return missing.Length;
+        return builder.ToString();
     }
 
     private static HashSet<string> ReadExistingRules(string root)
     {
-        var path = Path.Combine(root, ".gitignore");
-        try { return File.Exists(path) ? ParseRules(File.ReadAllText(path)) : new HashSet<string>(StringComparer.OrdinalIgnoreCase); }
+        try { return ParseRules(ReadCurrentContent(root)); }
         catch { return new HashSet<string>(StringComparer.OrdinalIgnoreCase); }
     }
 

@@ -79,12 +79,30 @@ Check("gitignore append preserves existing content and avoids duplicates", () =>
     finally { TryDelete(root); }
 });
 
+Check("gitignore preview is exact and does not modify the file", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        var path = Path.Combine(root, ".gitignore");
+        File.WriteAllText(path, "existing/\r\n");
+        var before = File.ReadAllText(path);
+        var preview = GitIgnoreAdvisor.BuildPreviewContent(root, ["bin/", ".env"]);
+        var stillBefore = File.ReadAllText(path);
+        var added = GitIgnoreAdvisor.AppendAcceptedRules(root, ["bin/", ".env"]);
+        var after = File.ReadAllText(path);
+        return before == stillBefore && added == 2 && preview == after &&
+               preview.Contains("# Suggested by ZomniverseGitPet") && preview.Contains("bin/") && preview.Contains(".env");
+    }
+    finally { TryDelete(root); }
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 7 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 8 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)

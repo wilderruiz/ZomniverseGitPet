@@ -14,7 +14,12 @@
 - `.gitignore` recommendations require explicit selection and acceptance; existing file content is preserved and only missing accepted rules are appended.
 - Added a repository-hygiene command for reviewing `.gitignore` suggestions on existing projects.
 - Improved visible Guardian/pet refresh coordination while the Guardian is open.
-- Expanded the lightweight regression suite for recent-project registration and `.gitignore` recommendation behavior.
+- Reworked `.gitignore` review for non-programmers with plain-language labels and an exact read-only **CURRENT / AFTER** file preview before changes are applied.
+- Added preview-generation regression coverage to prove that viewing proposed `.gitignore` content does not modify the file.
+- Changed the Guardian project action to **Projects ▾** and clarified its recent-project/onboarding purpose.
+- Made Guardian background polling silent so routine repository monitoring no longer repeatedly displays the Windows wait cursor or overwrites the operation panel with refresh messages.
+- Expanded the public README into a human-first product page with mascot states, project workflow, safety model, onboarding, and Git-hygiene explanations.
+- Expanded the lightweight regression suite for recent-project registration and `.gitignore` recommendation/preview behavior.
 
 ## 0.2.0 - 2026-09-08
 
