@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Happy guardian</title><desc id="desc">A cheerful robot-cat with a green status core and raised tail.</desc>
+  <defs><linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3c486b"/><stop offset="1" stop-color="#20263b"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <path d="M118 108c25-8 25-31 11-37" fill="none" stroke="#6d80b1" stroke-width="8" stroke-linecap="round"/>
+  <ellipse cx="80" cy="137" rx="47" ry="8" fill="#121728" opacity=".18"/>
+  <path d="M49 92c-10 12-13 27-11 41h84c2-14-1-29-11-41z" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="m45 49 4-30 25 21m42 9-5-30-25 21" fill="#354061" stroke="#171c2d" stroke-width="5" stroke-linejoin="round"/>
+  <rect x="38" y="34" width="84" height="70" rx="32" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="M56 66c5-7 12-7 17 0M87 66c5-7 12-7 17 0" fill="none" stroke="#86f3b0" stroke-width="5" stroke-linecap="round"/>
+  <path d="M76 77h8l-4 5z" fill="#c5d0ee"/><path d="M64 84c8 12 24 12 32 0" fill="none" stroke="#a8b5dd" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="80" cy="114" r="12" fill="#1a2d2b" stroke="#65e59a" stroke-width="3" filter="url(#glow)"/><path d="m74 114 4 4 8-10" fill="none" stroke="#86f3b0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m37 63-9-5m96 5 9-5" stroke="#65e59a" stroke-width="3" stroke-linecap="round"/>
+</svg>

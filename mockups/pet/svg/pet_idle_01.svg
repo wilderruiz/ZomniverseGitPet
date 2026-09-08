@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Idle guardian, seated</title><desc id="desc">A calm indigo robot-cat Git guardian sitting upright.</desc>
+  <defs><linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#37405f"/><stop offset="1" stop-color="#20263b"/></linearGradient></defs>
+  <path d="M121 111c20-3 24-20 14-28" fill="none" stroke="#6675a5" stroke-width="8" stroke-linecap="round"/>
+  <ellipse cx="80" cy="137" rx="47" ry="8" fill="#121728" opacity=".18"/>
+  <path d="M50 93c-10 10-15 26-13 40h86c2-14-3-30-13-40z" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="M46 49 50 20l23 20M114 49l-4-29-23 20" fill="#303958" stroke="#171c2d" stroke-width="5" stroke-linejoin="round"/>
+  <rect x="39" y="35" width="82" height="68" rx="31" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="M54 30 52 43 66 38M106 30l2 13-14-5" fill="#8998c9"/>
+  <path d="M59 65h12M89 65h12" stroke="#9ee7df" stroke-width="5" stroke-linecap="round"/>
+  <path d="M76 77h8l-4 5z" fill="#b7c3ed"/><path d="M68 86c7 5 17 5 24 0" fill="none" stroke="#8998c9" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="80" cy="113" r="11" fill="#172031" stroke="#7de1d3" stroke-width="3"/><path d="m75 113 4 4 7-9" fill="none" stroke="#7de1d3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M54 131v-13M106 131v-13" stroke="#6675a5" stroke-width="7" stroke-linecap="round"/>
+</svg>

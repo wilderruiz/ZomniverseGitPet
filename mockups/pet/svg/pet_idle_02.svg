@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Idle guardian, curled</title><desc id="desc">An alternate calm robot-cat curled around a small Git branch symbol.</desc>
+  <defs><linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3e496e"/><stop offset="1" stop-color="#22283d"/></linearGradient></defs>
+  <ellipse cx="81" cy="137" rx="57" ry="8" fill="#121728" opacity=".18"/>
+  <path d="M118 83c28 10 20 48-5 50-13 1-20-6-22-14" fill="none" stroke="#6675a5" stroke-width="10" stroke-linecap="round"/>
+  <ellipse cx="75" cy="105" rx="52" ry="34" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="m31 71 5-25 19 17m45 1 18-18 5 28" fill="#303958" stroke="#171c2d" stroke-width="5" stroke-linejoin="round"/>
+  <rect x="28" y="57" width="82" height="58" rx="27" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="M45 78c4 4 9 4 13 0M78 78c4 4 9 4 13 0" fill="none" stroke="#9ee7df" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="68" cy="91" r="3" fill="#b7c3ed"/><path d="M60 98c5 3 11 3 16 0" fill="none" stroke="#8998c9" stroke-width="3" stroke-linecap="round"/>
+  <g stroke="#7de1d3" stroke-width="3" fill="#20263b"><path d="M48 119v13h18v-8h12" fill="none" stroke-linecap="round"/><circle cx="48" cy="116" r="4"/><circle cx="78" cy="124" r="4"/><circle cx="66" cy="135" r="4"/></g>
+</svg>

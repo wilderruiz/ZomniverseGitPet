@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Sleeping guardian</title><desc id="desc">A softly sleeping robot-cat curled into a compact shape.</desc>
+  <defs><linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#414b6c"/><stop offset="1" stop-color="#22283b"/></linearGradient></defs>
+  <ellipse cx="80" cy="136" rx="56" ry="8" fill="#121728" opacity=".18"/>
+  <path d="M117 91c29 3 30 39 4 43-12 2-21-4-25-12" fill="none" stroke="#66749e" stroke-width="10" stroke-linecap="round"/>
+  <ellipse cx="76" cy="108" rx="53" ry="30" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="m32 80 3-24 21 16m42 1 20-17 4 25" fill="#343c58" stroke="#171c2d" stroke-width="5" stroke-linejoin="round"/>
+  <rect x="29" y="67" width="82" height="55" rx="26" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
+  <path d="M45 89c5 4 11 4 16 0m22 0c5 4 11 4 16 0" fill="none" stroke="#9eadd5" stroke-width="4" stroke-linecap="round"/>
+  <path d="M68 101h8l-4 5z" fill="#bbc4df"/><path d="M64 111c5 3 11 3 16 0" fill="none" stroke="#8996bd" stroke-width="3" stroke-linecap="round"/>
+  <g fill="#8495c8" font-family="Segoe UI, sans-serif" font-weight="700"><text x="112" y="65" font-size="17">z</text><text x="128" y="49" font-size="22">z</text><text x="145" y="29" font-size="27">z</text></g>
+  <circle cx="94" cy="116" r="6" fill="#1e293b" stroke="#65779f" stroke-width="2"/>
+</svg>
