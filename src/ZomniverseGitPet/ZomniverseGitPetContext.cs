@@ -354,8 +354,9 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
         if (_config.RequireTestsForAutomaticCheckpoint)
         {
-            if (_config.TestCommands.Count == 0) return;
-            foreach (var command in _config.TestCommands)
+            var commands = _config.GetTestCommandsForRepository(_config.RepositoryPath!);
+            if (commands.Count == 0) return;
+            foreach (var command in commands)
             {
                 var test = await _git.RunTestCommandAsync(_config.RepositoryPath!, command, _lifetime.Token);
                 if (!test.Success) return;
