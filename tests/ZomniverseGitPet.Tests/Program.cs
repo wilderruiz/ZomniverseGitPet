@@ -80,6 +80,20 @@ Check("project test advisor suggests without changing project files", () =>
     finally { TryDelete(root); }
 });
 
+Check("zero-context diff maps before and now lines", () =>
+{
+    var diff = "@@ -10,2 +10,3 @@\n-old a\n-old b\n+new a\n+new b\n+new c\n";
+    var map = DiffLineMap.ParseUnifiedZeroContext(diff);
+    return map.BeforeLines.SetEquals([10, 11]) && map.AfterLines.SetEquals([10, 11, 12]);
+});
+
+Check("new-file diff maps only now lines", () =>
+{
+    var diff = "@@ -0,0 +1,4 @@\n+one\n+two\n+three\n+four\n";
+    var map = DiffLineMap.ParseUnifiedZeroContext(diff);
+    return map.BeforeLines.Count == 0 && map.AfterLines.SetEquals([1, 2, 3, 4]);
+});
+
 Check("gitignore advisor finds common and security candidates safely", () =>
 {
     var root = CreateTempDirectory();
@@ -138,7 +152,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 10 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 12 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
