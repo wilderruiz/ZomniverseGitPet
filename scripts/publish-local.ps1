@@ -31,7 +31,12 @@ if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
 }
 
 New-Item -ItemType Directory -Force -Path $releaseDirectory | Out-Null
-Copy-Item -LiteralPath $publishedExecutable -Destination $releaseExecutable -Force
+try {
+    Copy-Item -LiteralPath $publishedExecutable -Destination $releaseExecutable -Force
+}
+catch [System.IO.IOException] {
+    throw "The current ZomniverseGitPet.exe is still running or locked. Exit it from the app, or end ZomniverseGitPet.exe in Task Manager, then run this script again. Target: $releaseExecutable"
+}
 
 if (-not (Test-Path -LiteralPath $releaseExecutable -PathType Leaf)) {
     throw "The published executable could not be placed at: $releaseExecutable"

@@ -2,17 +2,19 @@ namespace ZomniverseGitPet;
 
 public sealed class PetForm : Form
 {
-    private static readonly Color NeutralBackground = Color.FromArgb(247, 243, 252);
-    private static readonly Color HealthyBackground = Color.FromArgb(239, 249, 243);
-    private static readonly Color ReviewBackground = Color.FromArgb(255, 248, 233);
-    private static readonly Color WarningBackground = Color.FromArgb(255, 244, 235);
+    private static readonly Color TransparencyColor = Color.Magenta;
 
-    private readonly Label _status;
+    private readonly PetMessageBubble _bubble;
     private readonly PictureBox _fox;
     private readonly NotifyIcon _tray;
     private readonly PetAssets _assets;
+    private readonly ToolTip _toolTip;
+    private readonly Label _minimize;
+    private readonly Label _close;
+    private Rectangle _normalFoxBounds = new(40, 0, 160, 160);
     private Point _dragOffset;
     private bool _dragging;
+    private Image _stateImage;
 
     public bool AllowClose { get; set; }
     public bool RefreshInProgress { get; set; }
@@ -21,40 +23,53 @@ public sealed class PetForm : Form
     {
         Text = "ZomniverseGitPet";
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(230, 224);
+        ClientSize = new Size(240, 238);
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         var area = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1200, 800);
         Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
         TopMost = true;
         ShowInTaskbar = true;
-        BackColor = NeutralBackground;
+        BackColor = TransparencyColor;
+        TransparencyKey = TransparencyColor;
 
         _assets = new PetAssets();
+        _stateImage = _assets.Idle;
         _fox = new PictureBox
         {
-            Image = _assets.Idle,
+            Image = _stateImage,
             SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.Transparent,
-            Bounds = new Rectangle(35, 8, 160, 160),
+            Bounds = _normalFoxBounds,
             TabStop = false
         };
-        _status = new Label
+        _bubble = new PetMessageBubble
         {
-            Text = "Checking repository...", Font = new Font("Segoe UI", 9, FontStyle.Bold), TextAlign = ContentAlignment.TopCenter,
-            ForeColor = Color.FromArgb(55, 35, 86), Bounds = new Rectangle(8, 172, 214, 44)
+            Location = new Point(10, 0)
         };
-        Controls.AddRange([_fox, _status]);
+        _bubble.SetMessage("Checking repository...");
+
+        _minimize = CreatePetButton("—", Point.Empty, (_, _) => WindowState = FormWindowState.Minimized);
+        _close = CreatePetButton("×", Point.Empty, (_, _) => exit());
+        Controls.AddRange([_bubble, _fox, _minimize, _close]);
+        LayoutPet();
+
+        _toolTip = new ToolTip { AutomaticDelay = 350, AutoPopDelay = 7000, ReshowDelay = 100 };
+        _toolTip.SetToolTip(_fox, "Double-click to open Guardian • Drag to move • Right-click for options");
+        _toolTip.SetToolTip(_bubble, "Repository status • Scroll for longer messages • Double-click to open Guardian");
+        _toolTip.SetToolTip(_minimize, "Minimize pet to the Windows taskbar");
+        _toolTip.SetToolTip(_close, "Close ZomniverseGitPet");
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add("Show pet", null, (_, _) => ShowPet());
         menu.Items.Add("Open Guardian", null, (_, _) => showGuardian());
         menu.Items.Add("Choose repository", null, async (_, _) => await chooseRepository());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit ZomniverseGitPet", null, (_, _) => exit());
         ContextMenuStrip = menu;
-        foreach (Control control in new Control[] { _fox, _status }) control.ContextMenuStrip = menu;
+        foreach (Control control in new Control[] { _fox, _bubble }) control.ContextMenuStrip = menu;
 
-        foreach (Control control in new Control[] { this, _fox, _status })
+        foreach (Control control in new Control[] { this, _fox, _bubble })
         {
             control.DoubleClick += (_, _) => showGuardian();
             control.MouseDown += (_, e) =>
@@ -69,6 +84,18 @@ public sealed class PetForm : Form
             control.MouseUp += (_, _) => _dragging = false;
         }
 
+        _bubble.BubbleDoubleClick += (_, _) => showGuardian();
+        _fox.MouseEnter += (_, _) =>
+        {
+            _fox.Image = _assets.Happy;
+            _fox.Bounds = new Rectangle(_normalFoxBounds.X - 2, _normalFoxBounds.Y - 2, 164, 164);
+        };
+        _fox.MouseLeave += (_, _) =>
+        {
+            _fox.Image = _stateImage;
+            _fox.Bounds = _normalFoxBounds;
+        };
+
         _tray = new NotifyIcon
         {
             Icon = SystemIcons.Application, Text = "ZomniverseGitPet", Visible = true, ContextMenuStrip = menu
@@ -79,9 +106,7 @@ public sealed class PetForm : Form
 
     public void SetNeedsRepository()
     {
-        _fox.Image = _assets.Idle;
-        BackColor = NeutralBackground;
-        _status.Text = "Choose a repository";
+        SetPetState(_assets.Idle, "Choose a repository");
     }
 
     public void SetStatus(RepositoryStatus status)
@@ -89,30 +114,69 @@ public sealed class PetForm : Form
         if (!status.Healthy) { SetError(status.Error); return; }
         if (status.Files.Count == 0)
         {
-            _fox.Image = _assets.Happy;
-            BackColor = HealthyBackground;
-            _status.Text = $"Clean ✓\r\n{status.Branch}";
+            SetPetState(_assets.Happy, $"Clean ✓\r\n{status.Branch}");
         }
         else
         {
-            _fox.Image = _assets.ReviewReady;
-            BackColor = ReviewBackground;
-            _status.Text = $"{status.Files.Count} changed item(s)\r\nReady to review";
+            SetPetState(_assets.ReviewReady, $"{status.Files.Count} changed item(s)\r\nReady to review");
         }
     }
 
     public void SetError(string error)
     {
-        _fox.Image = _assets.Warning;
-        BackColor = WarningBackground;
-        _status.Text = "Git problem\r\nOpen Guardian";
+        SetPetState(_assets.Warning, "Git problem\r\nOpen Guardian");
         _tray.Text = error.Length > 60 ? error[..60] : error;
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _tray.Visible = false; _tray.Dispose(); _assets.Dispose(); }
+        if (disposing) { _tray.Visible = false; _tray.Dispose(); _toolTip.Dispose(); _assets.Dispose(); }
         base.Dispose(disposing);
+    }
+
+    private Label CreatePetButton(string text, Point location, EventHandler onClick)
+    {
+        var button = new Label
+        {
+            Text = text,
+            Location = location,
+            Size = new Size(24, 24),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 11, FontStyle.Bold),
+            ForeColor = Color.FromArgb(66, 39, 108),
+            BackColor = Color.FromArgb(238, 229, 251),
+            Cursor = Cursors.Hand
+        };
+        button.Click += onClick;
+        return button;
+    }
+
+    private void SetPetState(Image image, string message)
+    {
+        _stateImage = image;
+        _fox.Image = image;
+        _bubble.SetMessage(message);
+        LayoutPet();
+    }
+
+    private void LayoutPet()
+    {
+        var bottom = Bottom;
+        _normalFoxBounds = new Rectangle(40, _bubble.Bottom - 2, 160, 160);
+        _fox.Bounds = _normalFoxBounds;
+        _minimize.Location = new Point(178, _normalFoxBounds.Top + 5);
+        _close.Location = new Point(204, _normalFoxBounds.Top + 5);
+        _minimize.BringToFront();
+        _close.BringToFront();
+        ClientSize = new Size(240, _fox.Bottom + 4);
+        if (Visible) Top = bottom - Height;
+    }
+
+    private void ShowPet()
+    {
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
     }
 }
 
