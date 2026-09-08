@@ -80,7 +80,7 @@ internal sealed class RemoteSetupForm : Form
         var subtitle = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "Tell GitPet where this project should be pushed.",
+            Text = "Tell GitPet where this project lives online.",
             Font = new Font("Segoe UI", 10.5f),
             ForeColor = Color.FromArgb(199, 186, 220),
             TextAlign = ContentAlignment.MiddleLeft,
@@ -116,8 +116,8 @@ internal sealed class RemoteSetupForm : Form
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(0, 12, 0, 0),
-            Text = "Your checkpoint is already saved safely on this PC. To push it online, Git needs the address of an existing remote repository. " +
-                   "Create that repository on your Git hosting service first, copy its clone URL, then paste it below.",
+            Text = "Your local Git history is already safe on this PC. To sync with an online repository, Git needs that repository's address. " +
+                   "Create the repository on your Git hosting service first, copy its clone URL, then paste it below.",
             ForeColor = Color.FromArgb(224, 216, 237),
             Font = new Font("Segoe UI", 10.5f),
             TextAlign = ContentAlignment.TopLeft
@@ -234,8 +234,8 @@ internal sealed class RemoteSetupForm : Form
             TabStop = false,
             Cursor = Cursors.Arrow,
             Text = "GitPet will add exactly one local Git remote named 'origin' using the address you provide.\n\n" +
-                   "It will NOT create an online repository, replace an existing remote, stage files, create another checkpoint, or push automatically.\n\n" +
-                   "After the connection succeeds, GitPet will return you to the normal Push confirmation. Nothing is sent online until you explicitly approve that Push."
+                   "It will NOT create an online repository, replace an existing remote, stage files, create another checkpoint, pull, or push automatically.\n\n" +
+                   "After the connection succeeds, GitPet returns to the Pull or Push action you started. Nothing is downloaded or sent online until you explicitly approve that next confirmation."
         };
 
         card.Controls.Add(text);
