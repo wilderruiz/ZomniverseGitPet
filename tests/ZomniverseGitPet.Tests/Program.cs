@@ -44,6 +44,42 @@ Check("recent repository registry keeps newest 20", () =>
            config.RepositoryPath!.EndsWith("zgitpet-registry-22", StringComparison.OrdinalIgnoreCase);
 });
 
+Check("test commands stay isolated per project", () =>
+{
+    var rootA = Path.Combine(Path.GetTempPath(), "zgitpet-tests-a");
+    var rootB = Path.Combine(Path.GetTempPath(), "zgitpet-tests-b");
+    var config = new AppConfig();
+    config.RememberRepository(rootA);
+    config.SetTestCommandsForRepository(rootA, ["npm test", "npm run test:unit", "npm test"]);
+    config.RememberRepository(rootB);
+    config.SetTestCommandsForRepository(rootB, ["python -m pytest"]);
+    config.RememberRepository(rootA);
+
+    var a = config.GetTestCommandsForRepository(rootA);
+    var b = config.GetTestCommandsForRepository(rootB);
+    return a.SequenceEqual(["npm test", "npm run test:unit"]) &&
+           b.SequenceEqual(["python -m pytest"]) &&
+           config.RepositoryPath!.EndsWith("zgitpet-tests-a", StringComparison.OrdinalIgnoreCase);
+});
+
+Check("project test advisor suggests without changing project files", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        var package = Path.Combine(root, "package.json");
+        var original = "{\"scripts\":{\"test\":\"node --test\",\"test:unit\":\"node --test tests/unit\",\"build\":\"vite build\"}}";
+        File.WriteAllText(package, original);
+        var suggestions = ProjectTestAdvisor.Suggest(root);
+        var after = File.ReadAllText(package);
+        return original == after &&
+               suggestions.Contains("npm test") &&
+               suggestions.Contains("npm run test:unit") &&
+               suggestions.All(command => !command.Contains("build", StringComparison.OrdinalIgnoreCase));
+    }
+    finally { TryDelete(root); }
+});
+
 Check("gitignore advisor finds common and security candidates safely", () =>
 {
     var root = CreateTempDirectory();
@@ -102,7 +138,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 8 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 10 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
