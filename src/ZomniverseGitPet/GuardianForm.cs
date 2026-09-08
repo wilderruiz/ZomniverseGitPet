@@ -84,6 +84,7 @@ public sealed class GuardianForm : Form
         var diff = MakeActionButton("Diff", GuardianActionKind.Standard, 82, ShowDiffAsync);
         var tests = MakeActionButton("Tests", GuardianActionKind.Standard, 82, RunTestsAsync);
         var checkpoint = MakeActionButton("Checkpoint", GuardianActionKind.Primary, 118, CreateCheckpointAsync);
+        var pull = MakeActionButton("Pull ↓", GuardianActionKind.Pull, 92, PullFromOriginAsync);
         var push = MakeActionButton("Push ↑", GuardianActionKind.Push, 92, PushToOriginAsync);
         var recent = MakeActionButton("History", GuardianActionKind.Standard, 92, RecentCommitsAsync);
         var health = MakeActionButton("Health", GuardianActionKind.Standard, 92, HealthCheckAsync);
@@ -94,8 +95,8 @@ public sealed class GuardianForm : Form
         });
         _cancelButton.Visible = false;
 
-        toolbar.Controls.AddRange([projects, refresh, diff, tests, checkpoint, push, recent, health, _cancelButton]);
-        _operationButtons = [projects, refresh, diff, tests, checkpoint, push, recent, health];
+        toolbar.Controls.AddRange([projects, refresh, diff, tests, checkpoint, pull, push, recent, health, _cancelButton]);
+        _operationButtons = [projects, refresh, diff, tests, checkpoint, pull, push, recent, health];
 
         _toolTips.SetToolTip(projects,
             "Projects\n\nSwitch between recent projects, open another folder, prepare a normal folder for Git,\n" +
@@ -112,6 +113,9 @@ public sealed class GuardianForm : Form
         _toolTips.SetToolTip(checkpoint,
             "Checkpoint\n\nSave the current working state as an ordinary LOCAL Git commit.\n" +
             "GitPet previews the files, asks for confirmation, and never pushes this commit automatically.");
+        _toolTips.SetToolTip(pull,
+            "Pull ↓ — MANUAL ONLY\n\nBring committed changes from origin into the CURRENT branch.\n" +
+            "GitPet requires a clean working tree and uses fast-forward only, so it will never create an automatic merge commit.");
         _toolTips.SetToolTip(push,
             "Push ↑ — MANUAL ONLY\n\nPush committed history to the existing origin remote on the CURRENT branch.\n" +
             "GitPet shows the destination and commit first. Uncommitted changes are never included.");
@@ -120,7 +124,7 @@ public sealed class GuardianForm : Form
         _toolTips.SetToolTip(health,
             "Health\n\nRun git fsck --no-progress to check the internal integrity of the local repository.");
         _toolTips.SetToolTip(_cancelButton,
-            "Cancel\n\nRequest cancellation of the Git, test, push, or health operation currently running.");
+            "Cancel\n\nRequest cancellation of the Git, test, pull, push, or health operation currently running.");
 
         ConfigureFilesGrid();
         var filesPanel = BuildFilesPanel();
@@ -346,7 +350,7 @@ public sealed class GuardianForm : Form
         _output.Text = "Guardian ready.";
 
         _toolTips.SetToolTip(_output,
-            "Operation output\n\nResults from Diff, Tests, Checkpoint, Push, History, and Health appear here.\n" +
+            "Operation output\n\nResults from Diff, Tests, Checkpoint, Pull, Push, History, and Health appear here.\n" +
             "This console is read-only.");
 
         panel.Controls.Add(_output);
@@ -809,6 +813,89 @@ public sealed class GuardianForm : Form
             : "Git identity saved for this project. Creating restore point...";
         return true;
     }
+
+    private async Task PullFromOriginAsync() => await RunOperationAsync("Checking pull safety...", async token =>
+    {
+        if (!HasRepository()) return;
+
+        var repositoryPath = _config.RepositoryPath!;
+        var status = await _git.GetStatusAsync(repositoryPath, token);
+        if (!status.Healthy)
+        {
+            _output.Text = "Pull unavailable because Git could not read the working tree.\n\n" + status.Error;
+            return;
+        }
+
+        if (status.Files.Count > 0)
+        {
+            _output.Text =
+                $"Pull blocked safely: {status.Files.Count} uncommitted change{(status.Files.Count == 1 ? "" : "s")} detected.\n\n" +
+                "Create a Checkpoint (or otherwise commit your work) before pulling. GitPet will not risk mixing incoming changes with an uncommitted working tree.";
+            MessageBox.Show(
+                this,
+                "Pull was not started because this project has uncommitted changes.\n\n" +
+                "Create a Checkpoint first, then try Pull ↓ again.",
+                "Pull blocked safely",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        var branchResult = await _git.GetCurrentBranchAsync(repositoryPath, token);
+        var branch = branchResult.Success ? branchResult.Output.Trim() : "";
+        if (string.IsNullOrWhiteSpace(branch))
+        {
+            _output.Text = "Pull unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            return;
+        }
+
+        var originResult = await _git.GetOriginUrlAsync(repositoryPath, token);
+        if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
+        {
+            _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
+                ? "Pull unavailable: no readable origin remote is configured."
+                : originResult.Output;
+            return;
+        }
+
+        var commit = await _git.GetLastCommitAsync(repositoryPath, token);
+        var commitPreview = FormatCommitPreview(commit);
+        var answer = MessageBox.Show(
+            this,
+            $"Pull the latest committed changes from origin into this local branch?\n\n" +
+            $"Remote: origin\nBranch: {branch}\nCurrent local commit: {commitPreview}\n\n" +
+            $"Command:\ngit pull --ff-only origin {branch}\n\n" +
+            "FAST-FORWARD ONLY means GitPet will update the branch only when Git can do so without creating a merge commit. " +
+            "If local and remote histories have diverged, Pull stops safely and leaves the history unchanged.",
+            "Confirm manual pull",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (answer != DialogResult.Yes)
+        {
+            _output.Text = "Pull cancelled. Nothing was changed.";
+            return;
+        }
+
+        _output.Text = $"Pulling origin/{branch} with fast-forward-only safety...";
+        var result = await _git.PullFromOriginAsync(repositoryPath, branch, token);
+        var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
+
+        _output.Text = result.Success
+            ? $"Pull completed ✓\norigin/{branch} → local {branch}\n\n{details}"
+            : $"Pull stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.";
+
+        MessageBox.Show(
+            this,
+            result.Success
+                ? $"Pull completed successfully.\n\norigin/{branch} → {branch}"
+                : "Pull could not fast-forward safely. No merge commit was created. See Guardian Activity for details.",
+            "Pull from origin",
+            MessageBoxButtons.OK,
+            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+
+        await RefreshRepositoryViewAsync(token);
+    });
 
     private async Task PushToOriginAsync() => await RunOperationAsync("Checking push destination...", async token =>
     {
