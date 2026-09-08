@@ -1,13 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
-  <title id="title">Happy guardian</title><desc id="desc">A cheerful robot-cat with a green status core and raised tail.</desc>
-  <defs><linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3c486b"/><stop offset="1" stop-color="#20263b"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-  <path d="M118 108c25-8 25-31 11-37" fill="none" stroke="#6d80b1" stroke-width="8" stroke-linecap="round"/>
-  <ellipse cx="80" cy="137" rx="47" ry="8" fill="#121728" opacity=".18"/>
-  <path d="M49 92c-10 12-13 27-11 41h84c2-14-1-29-11-41z" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
-  <path d="m45 49 4-30 25 21m42 9-5-30-25 21" fill="#354061" stroke="#171c2d" stroke-width="5" stroke-linejoin="round"/>
-  <rect x="38" y="34" width="84" height="70" rx="32" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
-  <path d="M56 66c5-7 12-7 17 0M87 66c5-7 12-7 17 0" fill="none" stroke="#86f3b0" stroke-width="5" stroke-linecap="round"/>
-  <path d="M76 77h8l-4 5z" fill="#c5d0ee"/><path d="M64 84c8 12 24 12 32 0" fill="none" stroke="#a8b5dd" stroke-width="3" stroke-linecap="round"/>
-  <circle cx="80" cy="114" r="12" fill="#1a2d2b" stroke="#65e59a" stroke-width="3" filter="url(#glow)"/><path d="m74 114 4 4 8-10" fill="none" stroke="#86f3b0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m37 63-9-5m96 5 9-5" stroke="#65e59a" stroke-width="3" stroke-linecap="round"/>
+  <title id="title">Happy purple fox guardian</title><desc id="desc">A cheerful purple fox with a raised tail and glowing green repository check.</desc>
+  <defs><linearGradient id="fur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8a62ca"/><stop offset="1" stop-color="#402a67"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <ellipse cx="80" cy="139" rx="45" ry="7" fill="#2a183d" opacity=".13"/>
+  <path d="M112 116c30-5 38-31 23-43-8-6-17-3-17 6" fill="none" stroke="#67449b" stroke-width="13" stroke-linecap="round"/>
+  <path d="M134 73c6 5 8 12 6 18" fill="none" stroke="#d9baff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M50 92c-10 12-14 27-12 42h84c2-15-2-30-12-42z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
+  <path d="M46 50 48 18l25 23M114 50l-2-32-25 23" fill="#744fad" stroke="#2b1b46" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m52 27 3 16 12-8m41-8-3 16-12-8" fill="#d2aaff"/>
+  <path d="M39 43c0-17 18-29 41-29s41 12 41 29v29c0 22-18 36-41 36S39 94 39 72z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
+  <path d="M58 77c6 14 16 20 22 20s16-6 22-20c-7 5-15 7-22 7s-15-2-22-7z" fill="#f0e5ff"/>
+  <path d="M58 65c5-7 12-7 17 0M85 65c5-7 12-7 17 0" fill="none" stroke="#84f2b0" stroke-width="5" stroke-linecap="round"/>
+  <path d="M76 77h8l-4 6z" fill="#2d1d48"/><path d="M66 84c7 10 21 10 28 0" fill="none" stroke="#a886cd" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="80" cy="116" r="12" fill="#20352c" stroke="#62e496" stroke-width="3" filter="url(#glow)"/><path d="m74 116 4 4 8-10" fill="none" stroke="#8af4b4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m36 64-8-5m104 5 8-5" stroke="#62e496" stroke-width="3" stroke-linecap="round"/>
 </svg>

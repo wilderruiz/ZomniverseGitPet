@@ -1,12 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
-  <title id="title">Warning guardian</title><desc id="desc">A watchful robot-cat with lowered ears and an amber warning core.</desc>
-  <defs><linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#414661"/><stop offset="1" stop-color="#242536"/></linearGradient></defs>
-  <path d="M119 111c18 0 23-13 17-23" fill="none" stroke="#6f7188" stroke-width="8" stroke-linecap="round"/>
-  <ellipse cx="80" cy="138" rx="47" ry="8" fill="#121728" opacity=".18"/>
-  <path d="M50 94c-9 11-13 26-11 40h82c2-14-2-29-11-40z" fill="url(#shell)" stroke="#191a28" stroke-width="4"/>
-  <path d="m45 48 4-25 24 17m42 8-4-25-24 17" fill="#37394e" stroke="#191a28" stroke-width="5" stroke-linejoin="round"/>
-  <rect x="38" y="36" width="84" height="69" rx="31" fill="url(#shell)" stroke="#191a28" stroke-width="4"/>
-  <path d="m54 63 17 4m35-4-17 4" stroke="#ffb96b" stroke-width="5" stroke-linecap="round"/><circle cx="63" cy="69" r="3" fill="#ffd0a0"/><circle cx="97" cy="69" r="3" fill="#ffd0a0"/>
-  <path d="M76 80h8l-4 5z" fill="#c0c3d2"/><path d="M69 94c6-5 16-5 22 0" fill="none" stroke="#9295a9" stroke-width="3" stroke-linecap="round"/>
-  <path d="m80 105 15 26H65z" fill="#342a22" stroke="#ffad5c" stroke-width="3" stroke-linejoin="round"/><path d="M80 113v9" stroke="#ffd0a0" stroke-width="3" stroke-linecap="round"/><circle cx="80" cy="127" r="2" fill="#ffd0a0"/>
+  <title id="title">Warning purple fox guardian</title><desc id="desc">A concerned purple fox guardian with lowered ears and a glowing amber warning core.</desc>
+  <defs><linearGradient id="fur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8058bc"/><stop offset="1" stop-color="#392457"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <ellipse cx="80" cy="139" rx="45" ry="7" fill="#2a183d" opacity=".13"/>
+  <path d="M113 118c25 5 32-17 19-27-8-6-18-4-20 5" fill="none" stroke="#60408d" stroke-width="12" stroke-linecap="round"/>
+  <path d="M131 91c6 5 7 11 4 16" fill="none" stroke="#d4b1fb" stroke-width="7" stroke-linecap="round"/>
+  <path d="M50 94c-10 11-14 26-12 40h84c2-14-2-29-12-40z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
+  <path d="M45 48 51 24l22 18M115 48l-6-24-22 18" fill="#6f4aa4" stroke="#2b1b46" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m52 31 4 12 10-6m42-6-4 12-10-6" fill="#c89cf4"/>
+  <path d="M40 44c0-17 18-29 40-29s40 12 40 29v29c0 22-18 35-40 35S40 95 40 73z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
+  <path d="M58 79c6 13 16 18 22 18s16-5 22-18c-7 4-15 6-22 6s-15-2-22-6z" fill="#eee2fb"/>
+  <path d="M58 65l13 3M102 65l-13 3" stroke="#f3b15f" stroke-width="5" stroke-linecap="round"/>
+  <path d="M76 78h8l-4 6z" fill="#2d1d48"/><path d="M70 90c5-4 15-4 20 0" fill="none" stroke="#9e78bd" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="80" cy="116" r="12" fill="#3b2a20" stroke="#f0aa47" stroke-width="3" filter="url(#glow)"/><path d="M80 109v8M80 121h.1" stroke="#ffd17f" stroke-width="3.5" stroke-linecap="round"/>
 </svg>

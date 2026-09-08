@@ -1,14 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
-  <title id="title">Idle guardian, seated</title><desc id="desc">A calm indigo robot-cat Git guardian sitting upright.</desc>
-  <defs><linearGradient id="shell" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#37405f"/><stop offset="1" stop-color="#20263b"/></linearGradient></defs>
-  <path d="M121 111c20-3 24-20 14-28" fill="none" stroke="#6675a5" stroke-width="8" stroke-linecap="round"/>
-  <ellipse cx="80" cy="137" rx="47" ry="8" fill="#121728" opacity=".18"/>
-  <path d="M50 93c-10 10-15 26-13 40h86c2-14-3-30-13-40z" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
-  <path d="M46 49 50 20l23 20M114 49l-4-29-23 20" fill="#303958" stroke="#171c2d" stroke-width="5" stroke-linejoin="round"/>
-  <rect x="39" y="35" width="82" height="68" rx="31" fill="url(#shell)" stroke="#171c2d" stroke-width="4"/>
-  <path d="M54 30 52 43 66 38M106 30l2 13-14-5" fill="#8998c9"/>
-  <path d="M59 65h12M89 65h12" stroke="#9ee7df" stroke-width="5" stroke-linecap="round"/>
-  <path d="M76 77h8l-4 5z" fill="#b7c3ed"/><path d="M68 86c7 5 17 5 24 0" fill="none" stroke="#8998c9" stroke-width="3" stroke-linecap="round"/>
-  <circle cx="80" cy="113" r="11" fill="#172031" stroke="#7de1d3" stroke-width="3"/><path d="m75 113 4 4 7-9" fill="none" stroke="#7de1d3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M54 131v-13M106 131v-13" stroke="#6675a5" stroke-width="7" stroke-linecap="round"/>
+  <title id="title">Idle purple fox guardian</title><desc id="desc">A calm seated purple fox Git guardian with bright eyes and a curled tail.</desc>
+  <defs><linearGradient id="fur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7d58bd"/><stop offset="1" stop-color="#3b285f"/></linearGradient></defs>
+  <ellipse cx="80" cy="140" rx="45" ry="7" fill="#2a183d" opacity=".14"/>
+  <path d="M112 116c29 5 35-22 17-31-12-6-20 3-13 13 6 8 17 2 16-6" fill="none" stroke="#5d3c8e" stroke-width="13" stroke-linecap="round"/>
+  <path d="M129 86c8 5 9 12 4 18" fill="none" stroke="#d7b7ff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M51 92c-11 12-16 27-14 42h86c2-15-3-30-14-42z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
+  <path d="M47 50 48 18l25 23M113 50l-1-32-25 23" fill="#6e4aa9" stroke="#2b1b46" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m51 27 3 16 12-8m43-8-3 16-12-8" fill="#d0a7ff"/>
+  <path d="M40 43c0-17 18-29 40-29s40 12 40 29v29c0 22-18 36-40 36S40 94 40 72z" fill="url(#fur)" stroke="#2b1b46" stroke-width="4"/>
+  <path d="M58 77c6 14 16 20 22 20s16-6 22-20c-7 5-15 7-22 7s-15-2-22-7z" fill="#efe4ff" opacity=".95"/>
+  <path d="M59 63h13M88 63h13" stroke="#79e7df" stroke-width="5" stroke-linecap="round"/>
+  <path d="M76 76h8l-4 6z" fill="#2d1d48"/><path d="M69 87c6 4 16 4 22 0" fill="none" stroke="#7c5a9f" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="80" cy="116" r="10" fill="#2b1c43" stroke="#b99aff" stroke-width="3"/><path d="M75 116h10M80 111v10" stroke="#b99aff" stroke-width="2" stroke-linecap="round" opacity=".9"/>
+  <path d="M54 132v-13M106 132v-13" stroke="#7551aa" stroke-width="7" stroke-linecap="round"/>
 </svg>
