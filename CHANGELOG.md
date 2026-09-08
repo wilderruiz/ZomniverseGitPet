@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.3.2 - 2026-09-09
+
+- Added a manual **Pull ↓** action beside **Push ↑** in the Guardian Console.
+- Pull always targets the current named branch and existing `origin`; it is never automatic.
+- Pull refuses to run while the working tree has uncommitted changes and asks the user to create a Checkpoint first.
+- Pull uses `git pull --ff-only origin <current-branch>`, so GitPet never creates an automatic merge commit. Diverged histories stop safely for manual review.
+- Added a cool blue/violet Pull button treatment to visually contrast with the hot-pink Push action.
+- Generalized **Connect Remote** wording so the same explicit `origin` setup can be used safely from either Pull or Push.
+- Bumped the application version to **0.3.2**.
+
 ## 0.3.1 - 2026-09-09
 
 - Added a friendly **Connect Remote** step when the user presses **Push ↑** and the current project has no `origin` remote.
