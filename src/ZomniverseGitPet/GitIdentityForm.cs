@@ -4,12 +4,15 @@ namespace ZomniverseGitPet;
 
 internal sealed class GitIdentityForm : Form
 {
-    private static readonly Color Surface = Color.FromArgb(30, 23, 45);
+    private static readonly Color Surface = Color.FromArgb(27, 20, 40);
     private static readonly Color PanelSurface = Color.FromArgb(45, 31, 66);
-    private static readonly Color Ink = Color.FromArgb(236, 231, 246);
-    private static readonly Color MutedInk = Color.FromArgb(190, 179, 208);
+    private static readonly Color CardSurface = Color.FromArgb(35, 27, 51);
+    private static readonly Color InputSurface = Color.FromArgb(22, 17, 33);
+    private static readonly Color Ink = Color.FromArgb(242, 237, 249);
+    private static readonly Color MutedInk = Color.FromArgb(187, 176, 205);
     private static readonly Color Purple = Color.FromArgb(112, 70, 180);
     private static readonly Color HotPink = Color.FromArgb(236, 70, 170);
+    private static readonly Color SoftPink = Color.FromArgb(246, 159, 195);
 
     private readonly TextBox _name = new();
     private readonly TextBox _email = new();
@@ -25,103 +28,221 @@ internal sealed class GitIdentityForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(620, 500);
+        ClientSize = new Size(720, 570);
         BackColor = Surface;
         ForeColor = Ink;
         Font = new Font("Segoe UI", 9);
 
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = Surface
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 208));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+
+        root.Controls.Add(BuildHeader(), 0, 0);
+        root.Controls.Add(BuildIntro(projectName), 0, 1);
+        root.Controls.Add(BuildIdentityFields(currentName, currentEmail), 0, 2);
+        root.Controls.Add(BuildPrivacyCard(), 0, 3);
+        root.Controls.Add(BuildButtons(), 0, 4);
+
+        Controls.Add(root);
+    }
+
+    public string IdentityName => _name.Text.Trim();
+    public string IdentityEmail => _email.Text.Trim();
+    public bool UseGlobal => _global.Checked;
+
+    private Control BuildHeader()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = PanelSurface,
+            Padding = new Padding(22, 12, 22, 10)
+        };
+
         var title = new Label
         {
             Dock = DockStyle.Top,
-            Height = 64,
-            Padding = new Padding(20, 14, 20, 6),
-            Text = "◇ TELL GIT WHO IS MAKING THIS COMMIT",
-            Font = new Font("Segoe UI", 13, FontStyle.Bold),
+            Height = 34,
+            Text = "◇  GIT IDENTITY",
+            Font = new Font("Segoe UI", 14, FontStyle.Bold),
             ForeColor = Color.White,
-            BackColor = PanelSurface
+            TextAlign = ContentAlignment.MiddleLeft
         };
 
-        var intro = new Label
+        var subtitle = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "Who should sign this restore point?",
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+            ForeColor = Color.FromArgb(199, 186, 220),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        panel.Controls.Add(subtitle);
+        panel.Controls.Add(title);
+        return panel;
+    }
+
+    private Control BuildIntro(string projectName)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Surface,
+            Padding = new Padding(24, 15, 24, 8)
+        };
+
+        var project = new Label
         {
             Dock = DockStyle.Top,
-            Height = 110,
-            Padding = new Padding(20, 12, 20, 8),
-            ForeColor = Color.FromArgb(220, 212, 235),
-            Text = $"Git needs an author name and email before it can create a restore-point commit for {projectName}.\r\n\r\n" +
-                   "This information becomes part of the commit history. If you later push the commit online, other people may be able to see it. " +
-                   "You can use a Git hosting noreply email if you prefer not to publish your personal address."
+            Height = 26,
+            Text = $"RESTORE POINT  ·  {projectName}",
+            ForeColor = Color.FromArgb(212, 188, 245),
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
         };
 
-        var form = new TableLayoutPanel
+        var explanation = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "Git adds an author name and email to every commit. Enter the identity you want attached to this restore point. " +
+                   "Nothing is sent anywhere by this screen.",
+            ForeColor = Color.FromArgb(224, 216, 237),
+            Font = new Font("Segoe UI", 10),
+            TextAlign = ContentAlignment.TopLeft,
+            Padding = new Padding(0, 8, 0, 0)
+        };
+
+        panel.Controls.Add(explanation);
+        panel.Controls.Add(project);
+        return panel;
+    }
+
+    private Control BuildIdentityFields(string currentName, string currentEmail)
+    {
+        var outer = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Surface,
+            Padding = new Padding(24, 0, 24, 10)
+        };
+
+        var card = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 6,
-            Padding = new Padding(22, 12, 22, 8),
-            BackColor = Surface
+            RowCount = 5,
+            Padding = new Padding(18, 12, 18, 10),
+            BackColor = CardSurface
         };
-        form.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
-        form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        form.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        form.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        form.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        form.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        form.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        form.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 142));
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         _name.Text = currentName;
         _email.Text = currentEmail;
         ConfigureTextBox(_name);
         ConfigureTextBox(_email);
 
-        form.Controls.Add(MakeLabel("Name"), 0, 0);
-        form.Controls.Add(_name, 1, 0);
-        form.Controls.Add(MakeLabel("Email"), 0, 1);
-        form.Controls.Add(_email, 1, 1);
+        card.Controls.Add(MakeFieldLabel("DISPLAY NAME"), 0, 0);
+        card.Controls.Add(_name, 1, 0);
+        card.Controls.Add(MakeFieldLabel("EMAIL ADDRESS"), 0, 1);
+        card.Controls.Add(_email, 1, 1);
 
-        _projectOnly.Text = "Use for this project only  — safest default";
+        _projectOnly.Text = "This project only   ·   recommended";
         _projectOnly.Checked = true;
-        _projectOnly.AutoSize = true;
-        _projectOnly.ForeColor = Ink;
-        _projectOnly.Dock = DockStyle.Fill;
-        _projectOnly.Padding = new Padding(0, 6, 0, 0);
+        ConfigureScopeChoice(_projectOnly, true);
 
-        _global.Text = "Use for all Git projects on this PC";
-        _global.AutoSize = true;
-        _global.ForeColor = Ink;
-        _global.Dock = DockStyle.Fill;
-        _global.Padding = new Padding(0, 6, 0, 0);
+        _global.Text = "All Git projects on this PC";
+        ConfigureScopeChoice(_global, false);
 
-        form.Controls.Add(MakeLabel("Save identity"), 0, 2);
-        form.Controls.Add(_projectOnly, 1, 2);
-        form.Controls.Add(new Label(), 0, 3);
-        form.Controls.Add(_global, 1, 3);
+        card.Controls.Add(MakeFieldLabel("SAVE FOR"), 0, 2);
+        card.Controls.Add(_projectOnly, 1, 2);
+        card.Controls.Add(new Label(), 0, 3);
+        card.Controls.Add(_global, 1, 3);
 
         _validation.Dock = DockStyle.Fill;
-        _validation.ForeColor = Color.FromArgb(246, 159, 195);
+        _validation.ForeColor = SoftPink;
+        _validation.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
         _validation.TextAlign = ContentAlignment.MiddleLeft;
-        form.SetColumnSpan(_validation, 2);
-        form.Controls.Add(_validation, 0, 4);
+        _validation.Padding = new Padding(0, 2, 0, 0);
+        card.SetColumnSpan(_validation, 2);
+        card.Controls.Add(_validation, 0, 4);
+
+        outer.Controls.Add(card);
+        return outer;
+    }
+
+    private Control BuildPrivacyCard()
+    {
+        var outer = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Surface,
+            Padding = new Padding(24, 4, 24, 12)
+        };
+
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(39, 29, 57),
+            Padding = new Padding(16, 11, 16, 9)
+        };
+
+        var heading = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 24,
+            Text = "◉  PRIVACY NOTE",
+            ForeColor = Color.FromArgb(213, 188, 245),
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
 
         var privacy = new Label
         {
             Dock = DockStyle.Fill,
             ForeColor = MutedInk,
-            Padding = new Padding(0, 6, 0, 0),
-            Text = "GitPet stores this identity using Git's own configuration. It is not sent anywhere by this dialog. " +
-                   "A future manual push may publish it as commit metadata because that is how Git works."
+            Font = new Font("Segoe UI", 9),
+            TextAlign = ContentAlignment.TopLeft,
+            Text = "Git stores this identity in its own configuration. If you later push the commit online, the name and email may become visible as commit metadata. " +
+                   "You can use a Git hosting noreply email if you prefer not to publish your personal address."
         };
-        form.SetColumnSpan(privacy, 2);
-        form.Controls.Add(privacy, 0, 5);
 
+        card.Controls.Add(privacy);
+        card.Controls.Add(heading);
+        outer.Controls.Add(card);
+        return outer;
+    }
+
+    private Control BuildButtons()
+    {
         var buttons = new FlowLayoutPanel
         {
-            Dock = DockStyle.Bottom,
-            Height = 62,
+            Dock = DockStyle.Fill,
+            Height = 66,
             FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(12),
+            WrapContents = false,
+            Padding = new Padding(14, 14, 18, 12),
             BackColor = PanelSurface
         };
+
         var save = MakeButton("Save & retry restore point", true);
         var cancel = MakeButton("Cancel", false);
         save.Click += (_, _) => TryAccept();
@@ -130,16 +251,8 @@ internal sealed class GitIdentityForm : Form
         buttons.Controls.Add(cancel);
         AcceptButton = save;
         CancelButton = cancel;
-
-        Controls.Add(form);
-        Controls.Add(buttons);
-        Controls.Add(intro);
-        Controls.Add(title);
+        return buttons;
     }
-
-    public string IdentityName => _name.Text.Trim();
-    public string IdentityEmail => _email.Text.Trim();
-    public bool UseGlobal => _global.Checked;
 
     private void TryAccept()
     {
@@ -147,13 +260,13 @@ internal sealed class GitIdentityForm : Form
         var email = IdentityEmail;
         if (name.Length == 0)
         {
-            _validation.Text = "Please enter the name you want stored in Git commit history.";
+            _validation.Text = "Enter the name you want shown in Git commit history.";
             _name.Focus();
             return;
         }
         if (!LooksLikeEmail(email))
         {
-            _validation.Text = "Please enter a valid email address, or a Git hosting noreply email.";
+            _validation.Text = "Enter a valid email address or a Git hosting noreply email.";
             _email.Focus();
             return;
         }
@@ -176,20 +289,30 @@ internal sealed class GitIdentityForm : Form
     private static void ConfigureTextBox(TextBox box)
     {
         box.Dock = DockStyle.Fill;
-        box.Margin = new Padding(0, 7, 0, 7);
-        box.BackColor = Color.FromArgb(24, 18, 36);
+        box.Margin = new Padding(0, 6, 0, 6);
+        box.BackColor = InputSurface;
         box.ForeColor = Color.White;
         box.BorderStyle = BorderStyle.FixedSingle;
-        box.Font = new Font("Segoe UI", 10);
+        box.Font = new Font("Segoe UI", 10.5f);
     }
 
-    private static Label MakeLabel(string text) => new()
+    private static void ConfigureScopeChoice(RadioButton button, bool primary)
+    {
+        button.AutoSize = true;
+        button.Dock = DockStyle.Fill;
+        button.Padding = new Padding(0, 4, 0, 0);
+        button.ForeColor = primary ? Ink : Color.FromArgb(207, 197, 223);
+        button.Font = new Font("Segoe UI", 9.5f, primary ? FontStyle.Bold : FontStyle.Regular);
+        button.Cursor = Cursors.Hand;
+    }
+
+    private static Label MakeFieldLabel(string text) => new()
     {
         Text = text,
         Dock = DockStyle.Fill,
-        ForeColor = Color.FromArgb(215, 204, 232),
+        ForeColor = Color.FromArgb(180, 164, 204),
         TextAlign = ContentAlignment.MiddleLeft,
-        Font = new Font("Segoe UI", 9, FontStyle.Bold)
+        Font = new Font("Segoe UI", 8, FontStyle.Bold)
     };
 
     private static Button MakeButton(string text, bool primary)
@@ -198,17 +321,20 @@ internal sealed class GitIdentityForm : Form
         {
             Text = text,
             AutoSize = true,
-            MinimumSize = new Size(primary ? 190 : 90, 36),
-            Height = 36,
-            Margin = new Padding(6, 2, 0, 2),
+            MinimumSize = new Size(primary ? 208 : 92, 38),
+            Height = 38,
+            Margin = new Padding(7, 0, 0, 0),
             FlatStyle = FlatStyle.Flat,
             BackColor = primary ? Purple : Color.FromArgb(65, 53, 83),
             ForeColor = Color.White,
             Cursor = Cursors.Hand,
-            Font = new Font("Segoe UI", 9, FontStyle.Bold)
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            UseVisualStyleBackColor = false
         };
         button.FlatAppearance.BorderSize = primary ? 2 : 1;
         button.FlatAppearance.BorderColor = primary ? HotPink : Color.FromArgb(110, 94, 132);
+        button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(132, 79, 198) : Color.FromArgb(78, 64, 98);
+        button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(91, 54, 146) : Color.FromArgb(54, 43, 70);
         return button;
     }
 }
