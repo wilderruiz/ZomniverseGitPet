@@ -67,6 +67,29 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> GetDiffAsync(string path, string file, CancellationToken token = default) =>
         RunGitAsync(path, ["diff", "--no-ext-diff", "--", file], cancellationToken: token);
 
+    public Task<CommandResult> HasHeadCommitAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["rev-parse", "--verify", "HEAD"], cancellationToken: token);
+
+    public Task<CommandResult> GetFileAtHeadAsync(string path, string file, CancellationToken token = default)
+    {
+        var normalized = NormalizeGitRelativePath(file);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return Task.FromResult(new CommandResult(-1, "The selected file path is empty."));
+
+        return RunGitAsync(path, ["show", $"HEAD:{normalized}"], TimeSpan.FromSeconds(30), token);
+    }
+
+    public Task<CommandResult> GetDiffAgainstHeadAsync(string path, string file, CancellationToken token = default)
+    {
+        var normalized = NormalizeGitRelativePath(file);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return Task.FromResult(new CommandResult(-1, "The selected file path is empty."));
+
+        return RunGitAsync(path,
+            ["diff", "--no-ext-diff", "--unified=0", "HEAD", "--", normalized],
+            TimeSpan.FromSeconds(30), token);
+    }
+
     public Task<CommandResult> HealthCheckAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["fsck", "--no-progress"], TimeSpan.FromMinutes(3), token);
 
@@ -199,7 +222,7 @@ public sealed class GitService(AuditLog audit)
         var hash = await RunGitAsync(path, ["rev-parse", "HEAD"], cancellationToken: token);
         var value = hash.Success ? hash.Output.Trim() : null;
         await audit.WriteAsync("checkpoint_created", new { commitHash = value, message });
-        return new(true, $"Restore point created.\r\n\r\n{value}", value);
+        return new(true, $"Checkpoint created.\r\n\r\n{value}", value);
     }
 
     public async Task<CommandResult> RunTestCommandAsync(string path, string command, CancellationToken token = default)
@@ -239,6 +262,9 @@ public sealed class GitService(AuditLog audit)
         files.Select(file => file.Path.Replace('\\', '/'))
             .Where(path => patterns.Any(pattern => Regex.IsMatch(path, pattern, RegexOptions.IgnoreCase)))
             .Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
+
+    private static string NormalizeGitRelativePath(string file) =>
+        (file ?? "").Replace('\\', '/').TrimStart('/');
 
     private static async Task<CommandResult> RunProcessAsync(
         string fileName, IEnumerable<string> arguments, string workingDirectory,
