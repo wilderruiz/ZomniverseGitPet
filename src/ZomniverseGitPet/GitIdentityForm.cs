@@ -202,7 +202,7 @@ internal sealed class GitIdentityForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(39, 29, 57),
-            Padding = new Padding(16, 11, 16, 9)
+            Padding = new Padding(16, 11, 12, 9)
         };
 
         var heading = new Label
@@ -215,12 +215,19 @@ internal sealed class GitIdentityForm : Form
             TextAlign = ContentAlignment.MiddleLeft
         };
 
-        var privacy = new Label
+        var privacy = new RichTextBox
         {
             Dock = DockStyle.Fill,
+            ReadOnly = true,
+            BorderStyle = BorderStyle.None,
+            BackColor = Color.FromArgb(39, 29, 57),
             ForeColor = MutedInk,
             Font = new Font("Segoe UI", 9),
-            TextAlign = ContentAlignment.TopLeft,
+            WordWrap = true,
+            DetectUrls = false,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            TabStop = false,
+            Cursor = Cursors.Arrow,
             Text = "Git stores this identity in its own configuration. If you later push the commit online, the name and email may become visible as commit metadata. " +
                    "You can use a Git hosting noreply email if you prefer not to publish your personal address."
         };
