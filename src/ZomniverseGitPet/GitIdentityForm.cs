@@ -28,7 +28,7 @@ internal sealed class GitIdentityForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(720, 570);
+        ClientSize = new Size(820, 660);
         BackColor = Surface;
         ForeColor = Ink;
         Font = new Font("Segoe UI", 9);
@@ -42,11 +42,11 @@ internal sealed class GitIdentityForm : Form
             Padding = Padding.Empty,
             BackColor = Surface
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 208));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 120));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 214));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 156));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
 
         root.Controls.Add(BuildHeader(), 0, 0);
         root.Controls.Add(BuildIntro(projectName), 0, 1);
@@ -67,15 +67,15 @@ internal sealed class GitIdentityForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = PanelSurface,
-            Padding = new Padding(22, 12, 22, 10)
+            Padding = new Padding(28, 16, 28, 14)
         };
 
         var title = new Label
         {
             Dock = DockStyle.Top,
-            Height = 34,
+            Height = 40,
             Text = "◇  GIT IDENTITY",
-            Font = new Font("Segoe UI", 14, FontStyle.Bold),
+            Font = new Font("Segoe UI", 15, FontStyle.Bold),
             ForeColor = Color.White,
             TextAlign = ContentAlignment.MiddleLeft
         };
@@ -84,7 +84,7 @@ internal sealed class GitIdentityForm : Form
         {
             Dock = DockStyle.Fill,
             Text = "Who should sign this restore point?",
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+            Font = new Font("Segoe UI", 10, FontStyle.Regular),
             ForeColor = Color.FromArgb(199, 186, 220),
             TextAlign = ContentAlignment.MiddleLeft
         };
@@ -100,16 +100,16 @@ internal sealed class GitIdentityForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Surface,
-            Padding = new Padding(24, 15, 24, 8)
+            Padding = new Padding(30, 18, 30, 10)
         };
 
         var project = new Label
         {
             Dock = DockStyle.Top,
-            Height = 26,
+            Height = 28,
             Text = $"RESTORE POINT  ·  {projectName}",
             ForeColor = Color.FromArgb(212, 188, 245),
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft,
             AutoEllipsis = true
         };
@@ -120,9 +120,9 @@ internal sealed class GitIdentityForm : Form
             Text = "Git adds an author name and email to every commit. Enter the identity you want attached to this restore point. " +
                    "Nothing is sent anywhere by this screen.",
             ForeColor = Color.FromArgb(224, 216, 237),
-            Font = new Font("Segoe UI", 10),
+            Font = new Font("Segoe UI", 10.5f),
             TextAlign = ContentAlignment.TopLeft,
-            Padding = new Padding(0, 8, 0, 0)
+            Padding = new Padding(0, 10, 0, 0)
         };
 
         panel.Controls.Add(explanation);
@@ -136,7 +136,7 @@ internal sealed class GitIdentityForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Surface,
-            Padding = new Padding(24, 0, 24, 10)
+            Padding = new Padding(30, 0, 30, 12)
         };
 
         var card = new TableLayoutPanel
@@ -144,15 +144,15 @@ internal sealed class GitIdentityForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 5,
-            Padding = new Padding(18, 12, 18, 10),
+            Padding = new Padding(20, 13, 20, 11),
             BackColor = CardSurface
         };
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 142));
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         _name.Text = currentName;
@@ -195,23 +195,23 @@ internal sealed class GitIdentityForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Surface,
-            Padding = new Padding(24, 4, 24, 12)
+            Padding = new Padding(30, 6, 30, 14)
         };
 
         var card = new Panel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.FromArgb(39, 29, 57),
-            Padding = new Padding(16, 11, 12, 9)
+            Padding = new Padding(18, 13, 14, 11)
         };
 
         var heading = new Label
         {
             Dock = DockStyle.Top,
-            Height = 24,
+            Height = 28,
             Text = "◉  PRIVACY NOTE",
             ForeColor = Color.FromArgb(213, 188, 245),
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
         };
 
@@ -222,7 +222,7 @@ internal sealed class GitIdentityForm : Form
             BorderStyle = BorderStyle.None,
             BackColor = Color.FromArgb(39, 29, 57),
             ForeColor = MutedInk,
-            Font = new Font("Segoe UI", 9),
+            Font = new Font("Segoe UI", 9.5f),
             WordWrap = true,
             DetectUrls = false,
             ScrollBars = RichTextBoxScrollBars.Vertical,
@@ -243,10 +243,10 @@ internal sealed class GitIdentityForm : Form
         var buttons = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Height = 66,
+            Height = 74,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
-            Padding = new Padding(14, 14, 18, 12),
+            Padding = new Padding(16, 17, 22, 14),
             BackColor = PanelSurface
         };
 
@@ -328,9 +328,9 @@ internal sealed class GitIdentityForm : Form
         {
             Text = text,
             AutoSize = true,
-            MinimumSize = new Size(primary ? 208 : 92, 38),
-            Height = 38,
-            Margin = new Padding(7, 0, 0, 0),
+            MinimumSize = new Size(primary ? 218 : 96, 40),
+            Height = 40,
+            Margin = new Padding(8, 0, 0, 0),
             FlatStyle = FlatStyle.Flat,
             BackColor = primary ? Purple : Color.FromArgb(65, 53, 83),
             ForeColor = Color.White,
