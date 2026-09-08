@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.3.4 - 2026-09-09
+
+- Reworked the lower Guardian area into a dual-mode **File Review / Guardian Activity** workspace.
+- Clicking a changed file now opens a resizable side-by-side **BEFORE / NOW** comparison automatically; the **Diff** button opens the same review for the selected file.
+- **BEFORE** reads the file from the latest local commit/checkpoint (`HEAD`) and **NOW** reads the current working-tree file without modifying either version.
+- Added Zomniverse-style syntax highlighting for common JavaScript/TypeScript, C#, PHP, Python, SQL, PowerShell, JSON, HTML/XML/SVG, and CSS-family source files while preserving the exact source indentation and text.
+- Zero-context Git diff ranges softly illuminate changed lines on both sides of the comparison.
+- New files show that no baseline version exists; deleted files show that the working-tree version is gone.
+- Repositories with no local commit/checkpoint yet show a clear **Create checkpoint** action so the user can establish a baseline for future Before / Now reviews.
+- Guardian operations such as Tests, Checkpoint, Pull, Push, History, and Health switch back to **Guardian Activity**, while File Review includes an **Activity** button for manual return.
+- Added read-only Git helpers for `HEAD` existence, `HEAD:<path>` file retrieval, and zero-context diff-against-HEAD review.
+- Expanded the lightweight regression suite from 10 to 12 checks with diff-line mapping coverage, including new-file `0,0` ranges.
+- Bumped the application version to **0.3.4**.
+
 ## 0.3.3 - 2026-09-09
 
 - Added **per-project test profiles** so each remembered repository can keep its own test commands instead of sharing one global list.
