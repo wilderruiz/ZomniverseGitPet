@@ -31,6 +31,7 @@ GitPet tries to explain *what will happen before it happens*.
 - **What Git should ignore** explains `.gitignore` as Git's “do not track these files” list instead of assuming the user already knows the term.
 - **Before / After preview** shows the exact `.gitignore` content before anything is written.
 - **Restore Point** creates an ordinary local Git commit after showing the files and asking for confirmation.
+- **Git Identity** appears automatically when Git does not yet know the commit author's name/email, with a safe project-only default and an optional PC-wide setting.
 - **Push ↑** is always manual and shows the destination branch and commit before sending committed history to `origin`.
 
 Background repository checks run quietly; they do not take over the mouse cursor or present themselves as foreground work.
@@ -106,6 +107,21 @@ Nothing is written until the user approves the action. Existing `.gitignore` con
 
 Environment templates such as `.env.example`, `.env.sample`, `.env.template`, and `.env.dist` are deliberately protected from broad ignore suggestions because projects often need to commit those examples.
 
+## Friendly Git identity setup
+
+Git requires an author identity before it can create a commit. If a user tries to create a Restore Point and Git does not yet know `user.name` and `user.email`, GitPet shows a normal form instead of exposing Git's raw terminal instructions.
+
+The user enters:
+
+- **Name** — the author name stored in commit history
+- **Email** — the address stored in commit history; Git hosting noreply addresses are supported
+- **This project only** — the default and safest option
+- **All Git projects on this PC** — optional, explicit global configuration
+
+GitPet explains that commit metadata can become public if a commit is later pushed. After the user saves a valid identity, the interrupted Restore Point continues without asking them to open a terminal.
+
+GitPet does not invent a name/email and does not copy account credentials into Git configuration.
+
 ## Core features
 
 - Friendly purple fox desktop pet with repository-state visuals and system tray integration
@@ -115,6 +131,7 @@ Environment templates such as `.env.example`, `.env.sample`, `.env.template`, an
 - Folder suitability inspection and safe local Git initialization
 - Nested-repository protection
 - Reviewable `.gitignore` advisor with exact before/after preview
+- Friendly first-time Git identity setup
 - Branch and changed-file overview
 - Diff review and small untracked-file previews
 - Configurable test hooks
@@ -127,7 +144,7 @@ Environment templates such as `.env.example`, `.env.sample`, `.env.template`, an
 
 ## Safety philosophy
 
-A restore point previews all current non-ignored changes, asks for confirmation, stages with `git add -A`, and creates a normal **local** Git commit.
+A restore point previews all current non-ignored changes, asks for confirmation, ensures Git has an author identity, stages with `git add -A`, and creates a normal **local** Git commit.
 
 The separate **Push ↑** action verifies that an existing `origin` remote and named current branch are available, shows the destination and latest commit, and asks for explicit confirmation before running the equivalent of:
 
@@ -181,7 +198,6 @@ Test hooks are ordinary command strings run from the selected repository. Edit `
 - Futuristic Guardian visual-system pass and custom application chrome
 - Canonical fox application/taskbar/tray icon
 - Micro-animation and repository-state transitions
-- Friendly Git identity setup for first-time commit authors
 - Richer shared repository snapshot/state model across pet and Guardian
 - Curated public screenshot/feature gallery without private machine paths
 - In-app settings editor for tests and checkpoint policy

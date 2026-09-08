@@ -76,6 +76,39 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> GetOriginUrlAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["remote", "get-url", "origin"], cancellationToken: token);
 
+    public Task<CommandResult> GetUserNameAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["config", "--get", "user.name"], cancellationToken: token);
+
+    public Task<CommandResult> GetUserEmailAsync(string path, CancellationToken token = default) =>
+        RunGitAsync(path, ["config", "--get", "user.email"], cancellationToken: token);
+
+    public async Task<CommandResult> SetUserIdentityAsync(
+        string path,
+        string name,
+        string email,
+        bool global,
+        CancellationToken token = default)
+    {
+        var scope = global ? "--global" : "--local";
+        var setName = await RunGitAsync(path, ["config", scope, "user.name", name], cancellationToken: token);
+        if (!setName.Success)
+        {
+            await audit.WriteAsync("git_identity_configured", new { scope = global ? "global" : "repository", success = false });
+            return new(setName.ExitCode, "Git could not save the author name.\r\n\r\n" + setName.Output, setName.TimedOut);
+        }
+
+        var setEmail = await RunGitAsync(path, ["config", scope, "user.email", email], cancellationToken: token);
+        await audit.WriteAsync("git_identity_configured", new
+        {
+            scope = global ? "global" : "repository",
+            success = setEmail.Success
+        });
+        if (!setEmail.Success)
+            return new(setEmail.ExitCode, "Git saved the author name but could not save the email.\r\n\r\n" + setEmail.Output, setEmail.TimedOut);
+
+        return new(0, "Git identity saved.");
+    }
+
     public async Task<CommandResult> PushToOriginAsync(string path, string branch, CancellationToken token = default)
     {
         if (string.IsNullOrWhiteSpace(branch))

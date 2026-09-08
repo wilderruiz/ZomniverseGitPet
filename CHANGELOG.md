@@ -18,7 +18,9 @@
 - Added preview-generation regression coverage to prove that viewing proposed `.gitignore` content does not modify the file.
 - Changed the Guardian project action to **Projects ▾** and clarified its recent-project/onboarding purpose.
 - Made Guardian background polling silent so routine repository monitoring no longer repeatedly displays the Windows wait cursor or overwrites the operation panel with refresh messages.
-- Expanded the public README into a human-first product page with mascot states, project workflow, safety model, onboarding, and Git-hygiene explanations.
+- Added friendly Git identity setup when a Restore Point needs `user.name`/`user.email`, with project-only scope as the default and an explicit optional global scope.
+- Git identity setup explains commit-metadata privacy, supports hosting-provider noreply emails, validates input, and resumes the Restore Point after configuration.
+- Expanded the public README into a human-first product page with mascot states, project workflow, safety model, onboarding, Git-hygiene explanations, and first-time Git identity guidance.
 - Expanded the lightweight regression suite for recent-project registration and `.gitignore` recommendation/preview behavior.
 
 ## 0.2.0 - 2026-09-08

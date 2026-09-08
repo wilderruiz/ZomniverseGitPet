@@ -100,7 +100,7 @@ public sealed class GuardianForm : Form
             "Restore Point — SAVE the current state; this is not a rollback command.\r\n\r\n" +
             "After showing the files and asking for confirmation, ZomniverseGitPet stages all current\r\n" +
             "non-ignored changes and creates an ordinary LOCAL Git commit.\r\n\r\n" +
-            "Think: 'Everything works right now — save this state before the next big change.'\r\n" +
+            "If Git does not yet know your author name/email, GitPet will ask for them first.\r\n" +
             "ZomniverseGitPet never pushes this commit automatically.");
         _toolTips.SetToolTip(push,
             "Push ↑ — MANUAL ONLY\r\n\r\nPush committed history to the existing 'origin' remote on the CURRENT branch.\r\n" +
@@ -353,6 +353,8 @@ public sealed class GuardianForm : Form
             "Create restore point", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (answer != DialogResult.Yes) return;
 
+        if (!await EnsureGitIdentityAsync(token)) return;
+
         var message = $"checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}";
         var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, token);
         _output.Text = result.Message;
@@ -360,6 +362,47 @@ public sealed class GuardianForm : Form
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         await RefreshRepositoryViewAsync(token);
     });
+
+    private async Task<bool> EnsureGitIdentityAsync(CancellationToken token)
+    {
+        var repositoryPath = _config.RepositoryPath!;
+        var nameResult = await _git.GetUserNameAsync(repositoryPath, token);
+        var emailResult = await _git.GetUserEmailAsync(repositoryPath, token);
+        var currentName = nameResult.Success ? nameResult.Output.Trim() : "";
+        var currentEmail = emailResult.Success ? emailResult.Output.Trim() : "";
+        if (!string.IsNullOrWhiteSpace(currentName) && !string.IsNullOrWhiteSpace(currentEmail)) return true;
+
+        var normalized = Path.TrimEndingDirectorySeparator(repositoryPath);
+        var projectName = Path.GetFileName(normalized);
+        if (string.IsNullOrWhiteSpace(projectName)) projectName = normalized;
+
+        using var identity = new GitIdentityForm(projectName, currentName, currentEmail);
+        if (identity.ShowDialog(this) != DialogResult.OK)
+        {
+            _output.Text = "Restore point cancelled. Git still needs an author name and email before it can create a commit.";
+            return false;
+        }
+
+        var save = await _git.SetUserIdentityAsync(
+            repositoryPath,
+            identity.IdentityName,
+            identity.IdentityEmail,
+            identity.UseGlobal,
+            token);
+        if (!save.Success)
+        {
+            _output.Text = save.Output;
+            MessageBox.Show(this,
+                "GitPet could not save the Git identity. No restore-point commit was created.\r\n\r\n" + save.Output,
+                "Git identity", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        _output.Text = identity.UseGlobal
+            ? "Git identity saved for Git projects on this PC. Creating restore point..."
+            : "Git identity saved for this project. Creating restore point...";
+        return true;
+    }
 
     private async Task PushToOriginAsync() => await RunOperationAsync("Checking push destination...", async token =>
     {
