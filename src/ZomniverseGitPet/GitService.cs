@@ -165,6 +165,24 @@ public sealed class GitService(AuditLog audit)
         return result;
     }
 
+    public async Task<CommandResult> PullFromOriginAsync(string path, string branch, CancellationToken token = default)
+    {
+        if (string.IsNullOrWhiteSpace(branch))
+            return new(-1, "Cannot pull because the current branch could not be determined.");
+
+        var result = await RunGitAsync(path, ["pull", "--ff-only", "origin", branch], TimeSpan.FromMinutes(5), token);
+        await audit.WriteAsync("manual_pull", new
+        {
+            remote = "origin",
+            branch,
+            fastForwardOnly = true,
+            success = result.Success,
+            result.ExitCode,
+            result.TimedOut
+        });
+        return result;
+    }
+
     public async Task<CheckpointResult> CreateCheckpointAsync(string path, string message, CancellationToken token = default)
     {
         var stage = await RunGitAsync(path, ["add", "-A"], TimeSpan.FromMinutes(1), token);
