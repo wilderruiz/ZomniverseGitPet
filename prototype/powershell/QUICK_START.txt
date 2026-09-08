@@ -1,0 +1,11 @@
+ZOMNIVERSEGITPET POWERSHELL PROTOTYPE
+
+1. Edit config.default.json and choose a local Git repository path.
+2. Double-click ZomniverseGitPetPrototype.vbs.
+3. Double-click the pet to open the Guardian dashboard.
+4. Right-click the pet and choose Exit when finished.
+
+Use RUN_ZOMNIVERSEGITPET_PROTOTYPE.cmd when troubleshooting startup.
+
+This reference implementation is superseded by the C# application in src/ZomniverseGitPet.
+

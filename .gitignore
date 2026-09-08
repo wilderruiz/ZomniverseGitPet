@@ -1,0 +1,33 @@
+# .NET build output
+bin/
+obj/
+artifacts/
+publish/
+
+# Visual Studio and IDE state
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test and coverage output
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Packaging and logs
+*.nupkg
+*.snupkg
+*.log
+
+# OS metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local configuration must never be committed
+config.json
+audit.jsonl

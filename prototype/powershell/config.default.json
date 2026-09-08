@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "repoPath": "C:\\Path\\To\\Your\\Repository",
+  "baselineCommit": "",
+  "readGitBackend": "auto",
+  "writeGitBackend": "wsl",
+  "pollSeconds": 20,
+  "autoCheckpointEnabled": false,
+  "quietMinutes": 10,
+  "requireTestsForAutoCheckpoint": true,
+  "testCommands": [],
+  "suspiciousPathPatterns": [
+    "(^|/)\\.env($|\\.)",
+    "\\.pem$",
+    "\\.key$",
+    "id_rsa",
+    "credentials",
+    "secrets?\\.",
+    "password"
+  ]
+}
+
