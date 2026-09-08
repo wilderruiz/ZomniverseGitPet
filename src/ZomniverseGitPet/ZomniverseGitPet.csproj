@@ -15,5 +15,8 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Pet\*.png" />
+  </ItemGroup>
 </Project>
 

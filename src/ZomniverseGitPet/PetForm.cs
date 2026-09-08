@@ -2,8 +2,15 @@ namespace ZomniverseGitPet;
 
 public sealed class PetForm : Form
 {
+    private static readonly Color NeutralBackground = Color.FromArgb(247, 243, 252);
+    private static readonly Color HealthyBackground = Color.FromArgb(239, 249, 243);
+    private static readonly Color ReviewBackground = Color.FromArgb(255, 248, 233);
+    private static readonly Color WarningBackground = Color.FromArgb(255, 244, 235);
+
     private readonly Label _status;
+    private readonly PictureBox _fox;
     private readonly NotifyIcon _tray;
+    private readonly PetAssets _assets;
     private Point _dragOffset;
     private bool _dragging;
 
@@ -13,31 +20,31 @@ public sealed class PetForm : Form
     public PetForm(Action showGuardian, Func<Task> chooseRepository, Action exit)
     {
         Text = "ZomniverseGitPet";
-        Size = new Size(230, 170);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        ClientSize = new Size(230, 224);
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
         var area = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1200, 800);
         Location = new Point(area.Right - Width - 20, area.Bottom - Height - 20);
         TopMost = true;
         ShowInTaskbar = true;
-        BackColor = Color.FromArgb(35, 35, 40);
+        BackColor = NeutralBackground;
 
-        var face = new Label
+        _assets = new PetAssets();
+        _fox = new PictureBox
         {
-            Text = "🐾", Font = new Font("Segoe UI Emoji", 38), TextAlign = ContentAlignment.MiddleCenter,
-            ForeColor = Color.White, Bounds = new Rectangle(75, 8, 80, 80)
-        };
-        var title = new Label
-        {
-            Text = "ZomniverseGitPet", Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter,
-            ForeColor = Color.White, Bounds = new Rectangle(5, 88, 220, 22)
+            Image = _assets.Idle,
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent,
+            Bounds = new Rectangle(35, 8, 160, 160),
+            TabStop = false
         };
         _status = new Label
         {
-            Text = "Checking repository...", Font = new Font("Segoe UI", 9), TextAlign = ContentAlignment.MiddleCenter,
-            ForeColor = Color.Gainsboro, Bounds = new Rectangle(5, 112, 220, 45)
+            Text = "Checking repository...", Font = new Font("Segoe UI", 9, FontStyle.Bold), TextAlign = ContentAlignment.TopCenter,
+            ForeColor = Color.FromArgb(55, 35, 86), Bounds = new Rectangle(8, 172, 214, 44)
         };
-        Controls.AddRange([face, title, _status]);
+        Controls.AddRange([_fox, _status]);
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open Guardian", null, (_, _) => showGuardian());
@@ -45,12 +52,19 @@ public sealed class PetForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit ZomniverseGitPet", null, (_, _) => exit());
         ContextMenuStrip = menu;
-        foreach (Control control in new Control[] { face, title, _status }) control.ContextMenuStrip = menu;
+        foreach (Control control in new Control[] { _fox, _status }) control.ContextMenuStrip = menu;
 
-        foreach (Control control in new Control[] { this, face, title, _status })
+        foreach (Control control in new Control[] { this, _fox, _status })
         {
             control.DoubleClick += (_, _) => showGuardian();
-            control.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) { _dragging = true; _dragOffset = e.Location; } };
+            control.MouseDown += (_, e) =>
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    _dragging = true;
+                    _dragOffset = PointToClient(control.PointToScreen(e.Location));
+                }
+            };
             control.MouseMove += (_, _) => { if (_dragging) Location = new Point(Cursor.Position.X - _dragOffset.X, Cursor.Position.Y - _dragOffset.Y); };
             control.MouseUp += (_, _) => _dragging = false;
         }
@@ -65,8 +79,9 @@ public sealed class PetForm : Form
 
     public void SetNeedsRepository()
     {
-        BackColor = Color.FromArgb(45, 60, 90);
-        _status.Text = "Choose a repository\r\nto begin";
+        _fox.Image = _assets.Idle;
+        BackColor = NeutralBackground;
+        _status.Text = "Choose a repository";
     }
 
     public void SetStatus(RepositoryStatus status)
@@ -74,26 +89,29 @@ public sealed class PetForm : Form
         if (!status.Healthy) { SetError(status.Error); return; }
         if (status.Files.Count == 0)
         {
-            BackColor = Color.FromArgb(30, 80, 55);
+            _fox.Image = _assets.Happy;
+            BackColor = HealthyBackground;
             _status.Text = $"Clean ✓\r\n{status.Branch}";
         }
         else
         {
-            BackColor = Color.FromArgb(105, 80, 25);
+            _fox.Image = _assets.ReviewReady;
+            BackColor = ReviewBackground;
             _status.Text = $"{status.Files.Count} changed item(s)\r\nReady to review";
         }
     }
 
     public void SetError(string error)
     {
-        BackColor = Color.FromArgb(90, 35, 35);
+        _fox.Image = _assets.Warning;
+        BackColor = WarningBackground;
         _status.Text = "Git problem\r\nOpen Guardian";
         _tray.Text = error.Length > 60 ? error[..60] : error;
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _tray.Visible = false; _tray.Dispose(); }
+        if (disposing) { _tray.Visible = false; _tray.Dispose(); _assets.Dispose(); }
         base.Dispose(disposing);
     }
 }

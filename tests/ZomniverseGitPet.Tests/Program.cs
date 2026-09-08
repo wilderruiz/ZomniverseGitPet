@@ -20,12 +20,23 @@ Check("suspicious path detection", () =>
     return hits.Count == 1 && hits[0] == ".env";
 });
 
+Check("embedded pet asset pack", () =>
+{
+    var resources = typeof(GitService).Assembly.GetManifestResourceNames();
+    var expected = new[]
+    {
+        "pet_idle_01.png", "pet_idle_02.png", "pet_happy_01.png",
+        "pet_review_ready_01.png", "pet_warning_01.png", "pet_sleep_01.png"
+    };
+    return expected.All(file => resources.Any(resource => resource.EndsWith(file, StringComparison.Ordinal)));
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 3 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 4 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
