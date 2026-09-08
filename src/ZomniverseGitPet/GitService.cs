@@ -73,8 +73,47 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> GetCurrentBranchAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["branch", "--show-current"], cancellationToken: token);
 
-    public Task<CommandResult> GetOriginUrlAsync(string path, CancellationToken token = default) =>
-        RunGitAsync(path, ["remote", "get-url", "origin"], cancellationToken: token);
+    public async Task<CommandResult> GetOriginUrlAsync(string path, CancellationToken token = default)
+    {
+        var existing = await RunGitAsync(path, ["remote", "get-url", "origin"], cancellationToken: token);
+        if (existing.Success && !string.IsNullOrWhiteSpace(existing.Output)) return existing;
+
+        var normalized = Path.TrimEndingDirectorySeparator(path);
+        var projectName = Path.GetFileName(normalized);
+        if (string.IsNullOrWhiteSpace(projectName)) projectName = normalized;
+
+        using var setup = new RemoteSetupForm(projectName);
+        if (setup.ShowDialog() != DialogResult.OK)
+            return new(-1, "Remote setup cancelled. No remote was created or changed.");
+
+        var added = await AddOriginRemoteAsync(path, setup.RemoteUrl, token);
+        if (!added.Success) return added;
+
+        return await RunGitAsync(path, ["remote", "get-url", "origin"], cancellationToken: token);
+    }
+
+    public async Task<CommandResult> AddOriginRemoteAsync(string path, string remoteUrl, CancellationToken token = default)
+    {
+        if (string.IsNullOrWhiteSpace(remoteUrl) || remoteUrl.Contains('\r') || remoteUrl.Contains('\n'))
+            return new(-1, "A valid remote URL is required.");
+
+        var existing = await RunGitAsync(path, ["remote", "get-url", "origin"], cancellationToken: token);
+        if (existing.Success && !string.IsNullOrWhiteSpace(existing.Output))
+            return new(-1, "An 'origin' remote already exists. GitPet will not replace or change it automatically.");
+
+        var result = await RunGitAsync(path, ["remote", "add", "origin", remoteUrl], cancellationToken: token);
+        await audit.WriteAsync("remote_configured", new
+        {
+            remote = "origin",
+            success = result.Success,
+            result.ExitCode,
+            result.TimedOut
+        });
+
+        return result.Success
+            ? new(0, "Remote 'origin' connected.")
+            : new(result.ExitCode, "GitPet could not connect the 'origin' remote.\r\n\r\n" + result.Output, result.TimedOut);
+    }
 
     public Task<CommandResult> GetUserNameAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["config", "--get", "user.name"], cancellationToken: token);
