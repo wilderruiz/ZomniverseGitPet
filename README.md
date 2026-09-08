@@ -8,7 +8,7 @@
 
 ZomniverseGitPet is a lightweight Windows desktop companion that keeps a small purple fox near your workspace and turns Git safety into a visible, low-friction habit. It is designed for experienced developers, people working with AI coding agents, and users who do not want to memorize Git commands just to keep their projects safe.
 
-Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files and diffs, run project-specific test hooks, create local checkpoints, explicitly connect an existing remote repository, manually pull remote updates, manually push committed history, display recent commits, and run Git health checks.
+Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files and diffs, configure and run project-specific tests, create local checkpoints, explicitly connect an existing remote repository, manually pull remote updates, manually push committed history, display recent commits, and run Git health checks.
 
 GitPet never pulls or pushes automatically, never invents or creates online repositories automatically, never replaces an existing remote automatically, and never uses destructive operations such as `reset --hard` or `clean`.
 
@@ -50,6 +50,7 @@ GitPet tries to explain *what will happen before it happens*.
 - **Prepare folder for Git** can safely turn an ordinary local folder into a Git repository with `git init -b main` after confirmation.
 - **What Git should ignore** explains `.gitignore` as Git's “do not track these files” list instead of assuming the user already knows the term.
 - **Before / After preview** shows the exact `.gitignore` content before anything is written.
+- **Tests** stores a separate test profile for each project; if none exists, GitPet suggests likely commands for review and lets the user Save or Save & run tests.
 - **Checkpoint** creates an ordinary local Git commit after showing the files and asking for confirmation.
 - **Git Identity** appears automatically when Git does not yet know the commit author's name/email, with a safe project-only default and an optional PC-wide setting.
 - **Connect Remote** appears when a remote action needs `origin`; the user pastes the clone URL of an existing online repository and explicitly approves the connection.
@@ -73,7 +74,9 @@ GitPet inspects it
         ↓
 Review what Git should ignore
         ↓
-Monitor → Review → Checkpoint
+Configure project tests if useful
+        ↓
+Monitor → Review → Test → Checkpoint
         ↓
 Pull remote updates ↓   /   Push local commits ↑
         ↓
@@ -100,6 +103,31 @@ git init -b main
 It then verifies the repository root and applies only the `.gitignore` rules you explicitly accepted.
 
 Project preparation does **not** create a hosting repository, configure `origin`, stage files, create the first commit, pull, or push anything. Those remain separate, deliberate user actions.
+
+## Per-project tests
+
+Each remembered repository can keep its own local test profile. Test commands are stored in GitPet's per-user configuration, not written into the repository itself.
+
+When **Tests** is pressed on a project that has no saved test commands, GitPet opens a **Project Tests** window. It can suggest likely commands from common project metadata such as:
+
+- `package.json` test scripts → `npm test` / `npm run test:*`
+- `.sln` / `.csproj` → `dotnet test`
+- `pyproject.toml` / `pytest.ini` / `tox.ini` → `python -m pytest`
+- `composer.json` test script → `composer test`
+- `Cargo.toml` → `cargo test`
+
+Suggestions are advisory only. Discovery does not edit files and does not execute anything. The user reviews the commands, one per line, and chooses **Save** or **Save & run tests**.
+
+Manual test runs:
+
+1. run from the active repository root
+2. execute commands in the saved order
+3. stop on the first failure
+4. show each command plus PASS/FAIL in **Guardian Activity**
+
+Hold **Shift** while clicking **Tests** to reopen the editor for an already-configured project.
+
+If automatic verified checkpoints are explicitly enabled and configured to require tests, GitPet uses the active project's own saved test profile before creating an automatic checkpoint. Test commands are treated as trusted local commands.
 
 ## Explicit remote connection
 
@@ -179,7 +207,7 @@ GitPet explains that commit metadata can become public if a commit is later push
 - Friendly first-time Git identity setup
 - Explicit, user-approved `origin` connection for an existing remote repository
 - Human-readable changed-file states and diff review
-- Configurable test hooks
+- Per-project test profiles with reviewable command discovery and sequential PASS/FAIL output
 - Recent commit history
 - `git fsck` repository health checks
 - Confirmed full-working-tree checkpoints using ordinary local Git commits
@@ -213,7 +241,7 @@ Push sends committed history only. It does not stage or commit working-tree chan
 
 ## Project status
 
-ZomniverseGitPet **0.3.2** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
+ZomniverseGitPet **0.3.3** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
 
 Current platform support: Windows 10/11, x64, with Git for Windows available as `git.exe`.
 
@@ -244,16 +272,16 @@ Normal compiler output remains under the ignored `bin/` and `obj/` directories; 
 
 ## Configuration
 
-ZomniverseGitPet writes its typed JSON configuration and append-only audit trail beneath `%LOCALAPPDATA%\ZomniverseGitPet`. The configuration stores the active repository and an MRU registry of up to 20 recent repositories; no machine path is built into the application or public source tree.
+ZomniverseGitPet writes its typed JSON configuration and append-only audit trail beneath `%LOCALAPPDATA%\ZomniverseGitPet`. The configuration stores the active repository, an MRU registry of up to 20 recent repositories, and each project's local test profile; no machine path is built into the application or public source tree.
 
-Test hooks are ordinary command strings run from the selected repository. Edit `config.json` while ZomniverseGitPet is closed, then restart it. Treat test commands as trusted local configuration.
+Test profiles can be configured directly from **Tests** in Guardian. Treat saved test commands as trusted local configuration.
 
 ## Roadmap
 
 - Micro-animation and richer repository-state transitions
 - Richer shared repository snapshot/state model across pet and Guardian
 - Curated public screenshot/feature gallery using a safe demo repository
-- In-app settings editor for tests and checkpoint policy
+- In-app settings editor for checkpoint policy
 - File-system-assisted refresh with polling fallback
 - Signed release artifacts and installer packaging
 - Broader accessibility and multi-monitor refinements
