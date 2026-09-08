@@ -6,6 +6,7 @@ internal enum GuardianActionKind
 {
     Standard,
     Primary,
+    Pull,
     Push,
     Danger
 }
@@ -98,7 +99,8 @@ internal sealed class GuardianActionButton : Button
 
         var (fill, border, text) = Palette();
         using var fillBrush = new SolidBrush(fill);
-        using var borderPen = new Pen(border, Kind is GuardianActionKind.Push or GuardianActionKind.Primary ? 1.8f : 1.2f);
+        using var borderPen = new Pen(border,
+            Kind is GuardianActionKind.Pull or GuardianActionKind.Push or GuardianActionKind.Primary ? 1.8f : 1.2f);
 
         e.Graphics.FillPath(fillBrush, path);
         e.Graphics.DrawPath(borderPen, path);
@@ -128,6 +130,11 @@ internal sealed class GuardianActionButton : Button
             GuardianActionKind.Primary => (
                 _pressed ? GuardianTheme.VioletPressed : _hovered ? GuardianTheme.VioletHover : GuardianTheme.Violet,
                 GuardianTheme.HotPinkSoft,
+                Color.White),
+
+            GuardianActionKind.Pull => (
+                _pressed ? Color.FromArgb(32, 54, 91) : _hovered ? Color.FromArgb(40, 68, 111) : Color.FromArgb(28, 48, 80),
+                GuardianTheme.Info,
                 Color.White),
 
             GuardianActionKind.Push => (
