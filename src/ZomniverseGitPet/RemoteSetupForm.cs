@@ -23,9 +23,9 @@ internal sealed class RemoteSetupForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        Size = new Size(820, 610);
-        MinimumSize = new Size(700, 540);
-        MaximumSize = new Size(1100, 820);
+        Size = new Size(980, 780);
+        MinimumSize = new Size(760, 620);
+        MaximumSize = new Size(1300, 1000);
         BackColor = Surface;
         ForeColor = Ink;
         Font = new Font("Segoe UI", 9);
@@ -40,11 +40,12 @@ internal sealed class RemoteSetupForm : Form
             Padding = Padding.Empty,
             BackColor = Surface
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 106));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 128));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
+
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 116));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
 
         root.Controls.Add(BuildHeader(), 0, 0);
         root.Controls.Add(BuildIntro(projectName), 0, 1);
@@ -62,15 +63,15 @@ internal sealed class RemoteSetupForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = PanelSurface,
-            Padding = new Padding(30, 17, 30, 14)
+            Padding = new Padding(34, 20, 34, 16)
         };
 
         var title = new Label
         {
             Dock = DockStyle.Top,
-            Height = 44,
+            Height = 46,
             Text = "◇  CONNECT REMOTE",
-            Font = new Font("Segoe UI", 15.5f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 16, FontStyle.Bold),
             ForeColor = Color.White,
             TextAlign = ContentAlignment.MiddleLeft
         };
@@ -81,7 +82,8 @@ internal sealed class RemoteSetupForm : Form
             Text = "Tell GitPet where this project should be pushed.",
             Font = new Font("Segoe UI", 10.5f),
             ForeColor = Color.FromArgb(199, 186, 220),
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
         };
 
         panel.Controls.Add(subtitle);
@@ -91,18 +93,38 @@ internal sealed class RemoteSetupForm : Form
 
     private Control BuildIntro(string projectName)
     {
-        return new Label
+        var panel = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(32, 20, 32, 10),
-            Text = $"PROJECT  ·  {projectName}\n\n" +
-                   "Your restore point is already saved locally. To push it online, Git needs the address of an existing remote repository. " +
-                   "Create the repository on your Git hosting service first, then paste its clone URL below.",
-            ForeColor = Color.FromArgb(224, 216, 237),
-            Font = new Font("Segoe UI", 10.5f),
-            TextAlign = ContentAlignment.TopLeft,
+            BackColor = Surface,
+            Padding = new Padding(38, 22, 38, 12)
+        };
+
+        var project = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 34,
+            Text = $"PROJECT  ·  {projectName}",
+            ForeColor = Color.FromArgb(212, 188, 245),
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
             AutoEllipsis = true
         };
+
+        var explanation = new Label
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0, 12, 0, 0),
+            Text = "Your checkpoint is already saved safely on this PC. To push it online, Git needs the address of an existing remote repository. " +
+                   "Create that repository on your Git hosting service first, copy its clone URL, then paste it below.",
+            ForeColor = Color.FromArgb(224, 216, 237),
+            Font = new Font("Segoe UI", 10.5f),
+            TextAlign = ContentAlignment.TopLeft
+        };
+
+        panel.Controls.Add(explanation);
+        panel.Controls.Add(project);
+        return panel;
     }
 
     private Control BuildUrlCard()
@@ -111,7 +133,7 @@ internal sealed class RemoteSetupForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Surface,
-            Padding = new Padding(32, 0, 32, 12)
+            Padding = new Padding(38, 0, 38, 18)
         };
 
         var card = new TableLayoutPanel
@@ -119,35 +141,39 @@ internal sealed class RemoteSetupForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
-            Padding = new Padding(18, 12, 18, 10),
+            Padding = new Padding(22, 16, 22, 14),
             BackColor = CardSurface
         };
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        card.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         card.Controls.Add(new Label
         {
-            Text = "REMOTE URL  ·  saved as origin",
+            Text = "REMOTE URL  ·  SAVED LOCALLY AS  origin",
             Dock = DockStyle.Fill,
             ForeColor = Color.FromArgb(194, 171, 229),
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
 
         _remoteUrl.Dock = DockStyle.Fill;
-        _remoteUrl.Margin = new Padding(0, 3, 0, 3);
+        _remoteUrl.Margin = new Padding(0, 7, 0, 7);
         _remoteUrl.BackColor = InputSurface;
         _remoteUrl.ForeColor = Color.White;
         _remoteUrl.BorderStyle = BorderStyle.FixedSingle;
-        _remoteUrl.Font = new Font("Cascadia Mono", 9.5f);
+        _remoteUrl.Font = new Font("Cascadia Mono", 10.5f);
         card.Controls.Add(_remoteUrl, 0, 1);
 
         _validation.Dock = DockStyle.Fill;
+        _validation.Padding = new Padding(0, 8, 0, 0);
         _validation.ForeColor = SoftPink;
-        _validation.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-        _validation.TextAlign = ContentAlignment.MiddleLeft;
-        _validation.Text = "Examples: https://github.com/user/project.git   or   git@github.com:user/project.git";
+        _validation.Font = new Font("Segoe UI", 9);
+        _validation.TextAlign = ContentAlignment.TopLeft;
+        _validation.Text =
+            "Paste the clone URL shown by your Git hosting service.\n" +
+            "Examples:  https://github.com/user/project.git    or    git@github.com:user/project.git";
         card.Controls.Add(_validation, 0, 2);
 
         outer.Controls.Add(card);
@@ -160,7 +186,24 @@ internal sealed class RemoteSetupForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Surface,
-            Padding = new Padding(32, 6, 32, 16)
+            Padding = new Padding(38, 4, 38, 18)
+        };
+
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(38, 29, 54),
+            Padding = new Padding(22, 16, 18, 14)
+        };
+
+        var heading = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 34,
+            Text = "WHAT WILL HAPPEN",
+            ForeColor = Color.FromArgb(213, 188, 245),
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
         };
 
         var text = new RichTextBox
@@ -170,18 +213,20 @@ internal sealed class RemoteSetupForm : Form
             BorderStyle = BorderStyle.None,
             BackColor = Color.FromArgb(38, 29, 54),
             ForeColor = MutedInk,
-            Font = new Font("Segoe UI", 9.5f),
+            Font = new Font("Segoe UI", 10),
             WordWrap = true,
             DetectUrls = false,
             ScrollBars = RichTextBoxScrollBars.Vertical,
             TabStop = false,
             Cursor = Cursors.Arrow,
-            Text = "WHAT WILL HAPPEN\n\n" +
-                   "GitPet will add exactly one local Git remote named 'origin' using the address you provide. It will not create an online repository, change an existing remote, stage files, make another commit, or push automatically. " +
-                   "After the connection succeeds, GitPet will show the normal Push confirmation before anything is sent."
+            Text = "GitPet will add exactly one local Git remote named 'origin' using the address you provide.\n\n" +
+                   "It will NOT create an online repository, replace an existing remote, stage files, create another checkpoint, or push automatically.\n\n" +
+                   "After the connection succeeds, GitPet will return you to the normal Push confirmation. Nothing is sent online until you explicitly approve that Push."
         };
 
-        outer.Controls.Add(text);
+        card.Controls.Add(text);
+        card.Controls.Add(heading);
+        outer.Controls.Add(card);
         return outer;
     }
 
@@ -192,7 +237,7 @@ internal sealed class RemoteSetupForm : Form
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
-            Padding = new Padding(18, 18, 24, 14),
+            Padding = new Padding(18, 20, 28, 16),
             BackColor = PanelSurface
         };
 
