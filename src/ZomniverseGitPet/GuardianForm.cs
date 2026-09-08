@@ -20,6 +20,8 @@ public sealed class GuardianForm : Form
     private readonly RichTextBox _output = new();
     private readonly Label _activityState = new();
     private readonly CheckBox _automatic = new();
+    private readonly FileComparisonPanel _comparisonPanel = new();
+    private Panel? _activityPanel;
 
     private readonly ToolTip _toolTips = new()
     {
@@ -37,9 +39,11 @@ public sealed class GuardianForm : Form
     private readonly GuardianActionButton _cancelButton;
 
     private CancellationTokenSource? _operation;
+    private CancellationTokenSource? _comparisonLoad;
     private RepositoryStatus? _status;
     private bool _refreshInProgress;
     private bool _exitRequested;
+    private string? _reviewedPath;
 
     public GuardianForm(
         AppConfig config,
@@ -105,8 +109,8 @@ public sealed class GuardianForm : Form
             "Refresh\n\nRe-read the current branch and working-tree status.\n" +
             "Background monitoring also refreshes quietly without taking over the mouse cursor.");
         _toolTips.SetToolTip(diff,
-            "Diff\n\nSelect a changed file first, then inspect exactly what changed.\n" +
-            "Tracked files show their Git diff; small untracked text files can be previewed directly.");
+            "Diff / File Review\n\nSelect a changed file and open a side-by-side BEFORE / NOW review.\n" +
+            "The left side comes from the latest local commit/checkpoint; the right side is the current working file.");
         _toolTips.SetToolTip(tests,
             "Tests\n\nRun the test commands saved for THIS project. If none are configured, GitPet opens a friendly setup window\n" +
             "and suggests likely commands for review. Hold Shift while clicking Tests to edit the saved commands later.");
@@ -120,7 +124,7 @@ public sealed class GuardianForm : Form
             "Push ↑ — MANUAL ONLY\n\nPush committed history to the existing origin remote on the CURRENT branch.\n" +
             "GitPet shows the destination and commit first. Uncommitted changes are never included.");
         _toolTips.SetToolTip(recent,
-            "History\n\nShow the latest 12 local Git commits, including normal commits and restore-point checkpoints.");
+            "History\n\nShow the latest 12 local Git commits, including normal commits and checkpoints.");
         _toolTips.SetToolTip(health,
             "Health\n\nRun git fsck --no-progress to check the internal integrity of the local repository.");
         _toolTips.SetToolTip(_cancelButton,
@@ -128,7 +132,7 @@ public sealed class GuardianForm : Form
 
         ConfigureFilesGrid();
         var filesPanel = BuildFilesPanel();
-        var activityPanel = BuildActivityPanel();
+        var lowerPanel = BuildLowerPanel();
 
         var content = new SplitContainer
         {
@@ -146,7 +150,7 @@ public sealed class GuardianForm : Form
         content.Panel1.BackColor = GuardianTheme.Window;
         content.Panel2.BackColor = GuardianTheme.Window;
         content.Panel1.Controls.Add(filesPanel);
-        content.Panel2.Controls.Add(activityPanel);
+        content.Panel2.Controls.Add(lowerPanel);
 
         var options = BuildOptionsPanel();
 
@@ -275,10 +279,18 @@ public sealed class GuardianForm : Form
         _files.Columns[0].HeaderCell.ToolTipText =
             "Human-readable Git state. Hover a row for the underlying Git status code.";
         _files.Columns[1].HeaderCell.ToolTipText =
-            "Changed item path. Select a row and choose Diff, or double-click the row.";
+            "Changed item path. Click a row to open its Before / Now review.";
+
+        _files.CellClick += async (_, e) =>
+        {
+            if (e.RowIndex < 0 || _operation is not null) return;
+            _files.ClearSelection();
+            _files.Rows[e.RowIndex].Selected = true;
+            await ShowSelectedFileComparisonAsync();
+        };
         _files.CellDoubleClick += async (_, e) =>
         {
-            if (e.RowIndex >= 0) await ShowDiffAsync();
+            if (e.RowIndex >= 0 && _operation is null) await ShowSelectedFileComparisonAsync();
         };
     }
 
@@ -304,7 +316,27 @@ public sealed class GuardianForm : Form
         return panel;
     }
 
-    private Control BuildActivityPanel()
+    private Control BuildLowerPanel()
+    {
+        var host = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = GuardianTheme.Console
+        };
+
+        _activityPanel = BuildActivityPanel();
+        _activityPanel.Dock = DockStyle.Fill;
+        _comparisonPanel.Dock = DockStyle.Fill;
+        _comparisonPanel.Visible = false;
+        _comparisonPanel.ActivityRequested += (_, _) => ShowActivityPanel();
+        _comparisonPanel.CreateCheckpointRequested += async (_, _) => await CreateCheckpointAsync();
+
+        host.Controls.Add(_activityPanel);
+        host.Controls.Add(_comparisonPanel);
+        return host;
+    }
+
+    private Panel BuildActivityPanel()
     {
         var panel = new Panel
         {
@@ -347,11 +379,11 @@ public sealed class GuardianForm : Form
         _output.ForeColor = Color.FromArgb(225, 218, 237);
         _output.BorderStyle = BorderStyle.None;
         _output.Padding = new Padding(12);
-        _output.Text = "Guardian ready.";
+        _output.Text = "Guardian ready. Click a changed file to open the side-by-side File Review.";
 
         _toolTips.SetToolTip(_output,
-            "Operation output\n\nResults from Diff, Tests, Checkpoint, Pull, Push, History, and Health appear here.\n" +
-            "This console is read-only.");
+            "Guardian Activity\n\nResults from Tests, Checkpoint, Pull, Push, History, and Health appear here.\n" +
+            "Click a changed file to switch this area to the Before / Now review workspace.");
 
         panel.Controls.Add(_output);
         panel.Controls.Add(header);
@@ -547,7 +579,7 @@ public sealed class GuardianForm : Form
             row.Cells[0].Style.ForeColor = StatusColor(file.Status);
             row.Cells[0].ToolTipText = DescribeGitStatus(file.Status);
             row.Cells[1].ToolTipText =
-                $"{file.Path}\n\nSelect this row and choose Diff, or double-click it, to inspect the change.";
+                $"{file.Path}\n\nClick this row to compare the latest local commit/checkpoint with the current working file.";
         }
 
         var isClean = _status.Healthy && _status.Files.Count == 0;
@@ -559,8 +591,16 @@ public sealed class GuardianForm : Form
             _emptyState.BringToFront();
         }
 
+        if (!string.IsNullOrWhiteSpace(_reviewedPath) &&
+            !_status.Files.Any(file => string.Equals(file.Path, _reviewedPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            _reviewedPath = null;
+            ShowActivityPanel();
+        }
+
         if (!_status.Healthy)
         {
+            ShowActivityPanel();
             _output.Text = _status.Error;
             SetActivityState("● ATTENTION", GuardianTheme.Warning);
         }
@@ -592,17 +632,14 @@ public sealed class GuardianForm : Form
 
         _healthChip.Text = "● HEALTHY";
         _healthChip.Tone = GuardianChipTone.Healthy;
-
         _branchChip.Text = $"BRANCH  {status.Branch}";
         _branchChip.Tone = GuardianChipTone.Neutral;
-
         _changesChip.Text = status.Files.Count == 0
             ? "CLEAN  ✓"
             : $"{status.Files.Count} CHANGE{(status.Files.Count == 1 ? "" : "S")}";
         _changesChip.Tone = status.Files.Count == 0
             ? GuardianChipTone.Healthy
             : GuardianChipTone.Changes;
-
         _commitLabel.Text = $"LATEST  {FormatCommitPreview(commit)}";
     }
 
@@ -620,6 +657,8 @@ public sealed class GuardianForm : Form
         _emptyState.Text =
             "READY WHEN YOU ARE\n\nOpen Projects to choose an existing repository\nor safely prepare a normal folder for Git.";
         _files.Visible = false;
+        _reviewedPath = null;
+        ShowActivityPanel();
     }
 
     private void SetHeaderProblem(string message)
@@ -629,6 +668,7 @@ public sealed class GuardianForm : Form
         _changesChip.Text = "CHECK GUARDIAN";
         _changesChip.Tone = GuardianChipTone.Warning;
         _commitLabel.Text = "LATEST  Repository refresh problem";
+        ShowActivityPanel();
         _output.Text = message;
         SetActivityState("● ATTENTION", GuardianTheme.Warning);
     }
@@ -666,39 +706,150 @@ public sealed class GuardianForm : Form
         _ => $"{status} — Git porcelain status code.\n\nThe first character describes the index/staged state and the second describes the working tree."
     };
 
-    private async Task ShowDiffAsync() => await RunOperationAsync("Loading diff...", async token =>
+    private Task ShowDiffAsync() => ShowSelectedFileComparisonAsync();
+
+    private async Task ShowSelectedFileComparisonAsync()
     {
-        if (!HasRepository() || _files.SelectedRows.Count == 0)
+        if (_operation is not null) return;
+        if (!HasRepository()) return;
+
+        if (_files.SelectedRows.Count == 0)
         {
-            _output.Text = "Select a changed file first.";
+            ShowActivityPanel();
+            _output.Text = "Select a changed file first. Clicking a row opens its Before / Now review automatically.";
             return;
         }
 
-        var path = Convert.ToString(_files.SelectedRows[0].Cells[1].Value) ?? "";
-        var result = await _git.GetDiffAsync(_config.RepositoryPath!, path, token);
+        var relativePath = Convert.ToString(_files.SelectedRows[0].Cells[1].Value) ?? "";
+        if (string.IsNullOrWhiteSpace(relativePath)) return;
 
-        if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
-        {
-            _output.Text = result.Output;
-        }
-        else
-        {
-            var fullPath = Path.GetFullPath(Path.Combine(_config.RepositoryPath!, path));
-            var root = Path.GetFullPath(_config.RepositoryPath!) + Path.DirectorySeparatorChar;
+        _comparisonLoad?.Cancel();
+        _comparisonLoad?.Dispose();
+        _comparisonLoad = new CancellationTokenSource();
+        var token = _comparisonLoad.Token;
+        _reviewedPath = relativePath;
 
-            if (fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
+        _comparisonPanel.Visible = true;
+        _comparisonPanel.BringToFront();
+        _comparisonPanel.ShowLoading(relativePath);
+
+        try
+        {
+            var repositoryPath = _config.RepositoryPath!;
+            var headTask = _git.HasHeadCommitAsync(repositoryPath, token);
+            var commitTask = _git.GetLastCommitAsync(repositoryPath, token);
+            var workingTask = ReadWorkingPreviewAsync(repositoryPath, relativePath, token);
+
+            var head = await headTask;
+            var hasBaseline = head.Success && !string.IsNullOrWhiteSpace(head.Output);
+            var commit = await commitTask;
+            var working = await workingTask;
+
+            CommandResult? beforeResult = null;
+            CommandResult? diffResult = null;
+            if (hasBaseline)
             {
-                var info = new FileInfo(fullPath);
-                _output.Text = info.Length <= 150_000
-                    ? "UNTRACKED / NO DIFF AVAILABLE\n\n" + await File.ReadAllTextAsync(fullPath, token)
-                    : "Preview skipped because the file is larger than 150 KB.";
+                beforeResult = await _git.GetFileAtHeadAsync(repositoryPath, relativePath, token);
+                diffResult = await _git.GetDiffAgainstHeadAsync(repositoryPath, relativePath, token);
             }
-            else
+
+            var beforeExists = hasBaseline && beforeResult is { Success: true };
+            var beforeText = beforeExists ? beforeResult!.Output : "";
+            var marks = hasBaseline && diffResult is { Success: true }
+                ? DiffLineMap.ParseUnifiedZeroContext(diffResult.Output)
+                : DiffLineMap.Empty;
+
+            if (hasBaseline && !beforeExists && working.Exists)
             {
-                _output.Text = result.Output.Length == 0 ? "No diff is available." : result.Output;
+                marks = new DiffLineMap(new HashSet<int>(), AllLineNumbers(working.Text));
             }
+            else if (hasBaseline && beforeExists && !working.Exists)
+            {
+                marks = new DiffLineMap(AllLineNumbers(beforeText), new HashSet<int>());
+            }
+
+            var model = new FileComparisonModel(
+                relativePath,
+                hasBaseline ? FormatCommitPreview(commit) : "no baseline",
+                hasBaseline,
+                beforeExists,
+                beforeText,
+                working.Exists,
+                working.Text,
+                marks,
+                hasBaseline && !beforeExists
+                    ? "NEW FILE\n\nThis item did not exist in the latest local commit/checkpoint."
+                    : null,
+                !working.Exists
+                    ? "DELETED FROM WORKING TREE\n\nThis item existed in the baseline but is no longer present on disk."
+                    : null);
+
+            if (!token.IsCancellationRequested) _comparisonPanel.ShowComparison(model);
         }
-    });
+        catch (OperationCanceledException)
+        {
+            // A newer file click replaced this review request.
+        }
+        catch (Exception ex)
+        {
+            if (!token.IsCancellationRequested) _comparisonPanel.ShowProblem(relativePath, ex.Message);
+            await _audit.WriteAsync("file_review_error", new { file = relativePath, error = ex.Message });
+        }
+    }
+
+    private static async Task<WorkingPreview> ReadWorkingPreviewAsync(
+        string repositoryPath,
+        string relativePath,
+        CancellationToken token)
+    {
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath));
+        var fullPath = Path.GetFullPath(Path.Combine(root, relativePath));
+        var prefix = root + Path.DirectorySeparatorChar;
+        if (!string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The selected path resolves outside the active repository.");
+
+        if (Directory.Exists(fullPath))
+            return new(true,
+                "FOLDER CHANGE\r\n\r\nGit currently reports this folder as one changed item. " +
+                "Once individual files are listed, click a file to review its exact Before / Now content.");
+
+        if (!File.Exists(fullPath)) return new(false, "");
+
+        var info = new FileInfo(fullPath);
+        if (info.Length > 1_000_000)
+            return new(true,
+                $"LARGE FILE PREVIEW\r\n\r\n{info.Name} is {info.Length:N0} bytes. " +
+                "GitPet keeps File Review responsive by not rendering files larger than 1 MB here. The file itself is unchanged.");
+
+        var binaryExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".pdf",
+            ".zip", ".7z", ".rar", ".exe", ".dll", ".pdb", ".doc", ".docx",
+            ".xls", ".xlsx", ".ppt", ".pptx", ".mp3", ".wav", ".mp4", ".mov"
+        };
+        if (binaryExtensions.Contains(info.Extension))
+            return new(true,
+                $"BINARY FILE\r\n\r\n{info.Name} is tracked by Git, but GitPet does not render binary content as source code.");
+
+        var text = await File.ReadAllTextAsync(fullPath, token);
+        if (text.IndexOf('\0') >= 0)
+            return new(true,
+                $"BINARY-LIKE FILE\r\n\r\n{info.Name} contains binary data, so GitPet is not rendering it as source code.");
+
+        return new(true, text);
+    }
+
+    private static HashSet<int> AllLineNumbers(string text)
+    {
+        var lines = new HashSet<int>();
+        if (text.Length == 0) return lines;
+        var count = 1;
+        foreach (var character in text)
+            if (character == '\n') count++;
+        for (var line = 1; line <= count; line++) lines.Add(line);
+        return lines;
+    }
 
     private async Task RunTestsAsync() => await RunOperationAsync("Preparing project tests...", async token =>
     {
@@ -782,7 +933,7 @@ public sealed class GuardianForm : Form
         });
     });
 
-    private async Task CreateCheckpointAsync() => await RunOperationAsync("Preparing restore point...", async token =>
+    private async Task CreateCheckpointAsync() => await RunOperationAsync("Preparing checkpoint...", async token =>
     {
         if (!HasRepository()) return;
 
@@ -796,7 +947,7 @@ public sealed class GuardianForm : Form
         var suspicious = GitService.FindSuspiciousPaths(_status.Files, _config.SuspiciousPathPatterns);
         if (suspicious.Count > 0)
         {
-            _output.Text = "Restore point blocked because suspicious paths are present:\n\n" + string.Join("\n", suspicious);
+            _output.Text = "Checkpoint blocked because suspicious paths are present:\n\n" + string.Join("\n", suspicious);
             await _audit.WriteAsync("checkpoint_blocked_suspicious_paths", new { files = suspicious });
             return;
         }
@@ -806,8 +957,9 @@ public sealed class GuardianForm : Form
 
         var answer = MessageBox.Show(
             this,
-            "Create a restore point containing every current non-ignored change?\n\n" + preview,
-            "Create restore point",
+            "Create a LOCAL checkpoint containing every current non-ignored change?\n\n" + preview +
+            "\n\nThis creates an ordinary local Git commit. It does not push anything.",
+            "Create checkpoint",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
 
@@ -821,7 +973,7 @@ public sealed class GuardianForm : Form
         MessageBox.Show(
             this,
             result.Message,
-            "Restore point",
+            "Checkpoint",
             MessageBoxButtons.OK,
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
@@ -846,7 +998,7 @@ public sealed class GuardianForm : Form
         using var identity = new GitIdentityForm(projectName, currentName, currentEmail);
         if (identity.ShowDialog(this) != DialogResult.OK)
         {
-            _output.Text = "Restore point cancelled. Git still needs an author name and email before it can create a commit.";
+            _output.Text = "Checkpoint cancelled. Git still needs an author name and email before it can create a commit.";
             return false;
         }
 
@@ -862,7 +1014,7 @@ public sealed class GuardianForm : Form
             _output.Text = save.Output;
             MessageBox.Show(
                 this,
-                "GitPet could not save the Git identity. No restore-point commit was created.\n\n" + save.Output,
+                "GitPet could not save the Git identity. No checkpoint was created.\n\n" + save.Output,
                 "Git identity",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
@@ -870,8 +1022,8 @@ public sealed class GuardianForm : Form
         }
 
         _output.Text = identity.UseGlobal
-            ? "Git identity saved for Git projects on this PC. Creating restore point..."
-            : "Git identity saved for this project. Creating restore point...";
+            ? "Git identity saved for Git projects on this PC. Creating checkpoint..."
+            : "Git identity saved for this project. Creating checkpoint...";
         return true;
     }
 
@@ -975,9 +1127,9 @@ public sealed class GuardianForm : Form
         var originResult = await _git.GetOriginUrlAsync(repositoryPath, token);
         if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
         {
-            _output.Text =
-                "Push unavailable: this repository does not have a readable 'origin' remote.\n\n" +
-                "ZomniverseGitPet will not create or configure remotes automatically.";
+            _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
+                ? "Push unavailable: no readable origin remote is configured."
+                : originResult.Output;
             return;
         }
 
@@ -1018,7 +1170,7 @@ public sealed class GuardianForm : Form
             this,
             result.Success
                 ? $"Push completed successfully.\n\norigin/{branch}"
-                : "Push failed. See the Guardian output panel for details.",
+                : "Push failed. See the Guardian Activity panel for details.",
             "Push to origin",
             MessageBoxButtons.OK,
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
@@ -1063,6 +1215,7 @@ public sealed class GuardianForm : Form
     {
         if (!string.IsNullOrWhiteSpace(_config.RepositoryPath)) return true;
 
+        ShowActivityPanel();
         _output.Text = "Open Projects and choose a Git project first.";
         return false;
     }
@@ -1071,6 +1224,8 @@ public sealed class GuardianForm : Form
     {
         if (_operation is not null) return;
 
+        _comparisonLoad?.Cancel();
+        ShowActivityPanel();
         _operation = new CancellationTokenSource();
         foreach (var button in _operationButtons) button.Enabled = false;
 
@@ -1102,6 +1257,14 @@ public sealed class GuardianForm : Form
         }
     }
 
+    private void ShowActivityPanel()
+    {
+        if (_activityPanel is null) return;
+        _comparisonPanel.Visible = false;
+        _activityPanel.Visible = true;
+        _activityPanel.BringToFront();
+    }
+
     private void SetActivityState(string text, Color color)
     {
         _activityState.Text = text;
@@ -1114,6 +1277,7 @@ public sealed class GuardianForm : Form
 
         e.Cancel = true;
         _operation?.Cancel();
+        _comparisonLoad?.Cancel();
         Hide();
     }
 
@@ -1121,6 +1285,7 @@ public sealed class GuardianForm : Form
     {
         _exitRequested = true;
         _operation?.Cancel();
+        _comparisonLoad?.Cancel();
         Close();
     }
 
@@ -1130,10 +1295,14 @@ public sealed class GuardianForm : Form
         {
             _pulseTimer.Stop();
             _pulseTimer.Dispose();
+            _comparisonLoad?.Cancel();
+            _comparisonLoad?.Dispose();
             _toolTips.Dispose();
             _toolTipFont.Dispose();
         }
 
         base.Dispose(disposing);
     }
+
+    private sealed record WorkingPreview(bool Exists, string Text);
 }
