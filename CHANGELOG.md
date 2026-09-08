@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.3 - 2026-09-09
+
+- Added **per-project test profiles** so each remembered repository can keep its own test commands instead of sharing one global list.
+- Pressing **Tests** on an unconfigured project now opens a branded **Project Tests** setup window instead of ending with a raw “no test commands configured” message.
+- GitPet can suggest likely test commands from common project metadata such as `package.json`, `.sln`/`.csproj`, `pyproject.toml`, `composer.json`, and `Cargo.toml`; suggestions are review-only and are never executed merely because they were detected.
+- Added **Save** and **Save & run tests** actions, plus **Shift + Tests** to reopen the editor for an already-configured project.
+- Manual test runs execute commands from the active repository root in order, stop on the first failure, and show a PASS/FAIL summary in Guardian Activity.
+- Automatic verified checkpoints now use the active repository's own test profile when tests are required.
+- Existing legacy global test commands migrate once into the active project when upgrading older configuration.
+- Added regression coverage for per-project test isolation and non-mutating test-command discovery.
+- Bumped the application version to **0.3.3**.
+
 ## 0.3.2 - 2026-09-09
 
 - Added a manual **Pull ↓** action beside **Push ↑** in the Guardian Console.
