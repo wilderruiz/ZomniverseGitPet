@@ -40,7 +40,7 @@ public sealed class AppConfig
 
         var previous = RecentRepositories.FirstOrDefault(item =>
             string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
-        var testCommands = previous is null ? [] : NormalizeCommands(previous.TestCommands);
+        var testCommands = NormalizeCommands(previous?.TestCommands);
 
         RecentRepositories.RemoveAll(item =>
             string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
@@ -59,11 +59,11 @@ public sealed class AppConfig
     public IReadOnlyList<string> GetTestCommandsForRepository(string? path = null)
     {
         var value = string.IsNullOrWhiteSpace(path) ? RepositoryPath : path;
-        if (string.IsNullOrWhiteSpace(value)) return [];
+        if (string.IsNullOrWhiteSpace(value)) return Array.Empty<string>();
         var normalized = NormalizePath(value);
         var entry = RecentRepositories.FirstOrDefault(item =>
             string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
-        return entry is null ? [] : NormalizeCommands(entry.TestCommands);
+        return entry is null ? Array.Empty<string>() : NormalizeCommands(entry.TestCommands);
     }
 
     public void SetTestCommandsForRepository(string path, IEnumerable<string> commands)
@@ -96,9 +96,13 @@ public sealed class AppConfig
     internal void Normalize()
     {
         SchemaVersion = 3;
+        RecentRepositories ??= [];
+        TestCommands ??= [];
+        SuspiciousPathPatterns ??= [];
+
         var normalized = new List<RecentRepositoryEntry>();
         foreach (var item in RecentRepositories
-                     .Where(item => !string.IsNullOrWhiteSpace(item.Path))
+                     .Where(item => item is not null && !string.IsNullOrWhiteSpace(item.Path))
                      .OrderByDescending(item => item.LastOpenedUtc))
         {
             var path = NormalizePath(item.Path);
@@ -134,7 +138,7 @@ public sealed class AppConfig
             }
 
             // Migrate the old global test list into the active project once.
-            if (existing is not null && existing.TestCommands.Count == 0 && TestCommands.Count > 0)
+            if (existing is not null && (existing.TestCommands?.Count ?? 0) == 0 && TestCommands.Count > 0)
             {
                 existing.TestCommands = NormalizeCommands(TestCommands);
                 TestCommands.Clear();
@@ -143,7 +147,8 @@ public sealed class AppConfig
     }
 
     private static List<string> NormalizeCommands(IEnumerable<string>? commands) =>
-        (commands ?? [])
+        (commands ?? Array.Empty<string>())
+            .Where(command => command is not null)
             .Select(command => command.Trim())
             .Where(command => command.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
