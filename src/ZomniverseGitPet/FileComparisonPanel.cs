@@ -55,6 +55,7 @@ internal sealed class FileComparisonPanel : Panel
     private readonly Button _activityButton;
     private readonly Button _checkpointButton;
     private readonly SplitContainer _split = new();
+    private bool _splitLayoutInitialized;
 
     public FileComparisonPanel()
     {
@@ -129,17 +130,19 @@ internal sealed class FileComparisonPanel : Panel
         _split.Dock = DockStyle.Fill;
         _split.Orientation = Orientation.Vertical;
         _split.SplitterWidth = 6;
-        _split.SplitterDistance = 470;
-        _split.Panel1MinSize = 180;
-        _split.Panel2MinSize = 180;
         _split.BackColor = GuardianTheme.BorderSoft;
         _split.BorderStyle = BorderStyle.None;
+        _split.SizeChanged += (_, _) => ApplySafeSplitLayout();
 
         _split.Panel1.Controls.Add(BuildPane(_beforeTitle, _before, isBefore: true));
         _split.Panel2.Controls.Add(BuildPane(_afterTitle, _after, isBefore: false));
 
         Controls.Add(_split);
         Controls.Add(header);
+
+        // SplitContainer starts life at a tiny default size before docking/layout runs.
+        // Defer its 50/50 divider and minimum pane sizes until it has real dimensions.
+        HandleCreated += (_, _) => BeginInvoke(new Action(ApplySafeSplitLayout));
     }
 
     public event EventHandler? ActivityRequested;
@@ -238,6 +241,27 @@ internal sealed class FileComparisonPanel : Panel
         panel.Controls.Add(box);
         panel.Controls.Add(header);
         return panel;
+    }
+
+    private void ApplySafeSplitLayout()
+    {
+        var width = _split.ClientSize.Width;
+        var available = width - _split.SplitterWidth;
+        if (available < 2) return;
+
+        // Reset minimums first so a resize can never temporarily violate an old constraint.
+        _split.Panel1MinSize = 0;
+        _split.Panel2MinSize = 0;
+
+        var paneMinimum = Math.Min(180, Math.Max(0, (available - 1) / 2));
+        var desired = _splitLayoutInitialized ? _split.SplitterDistance : available / 2;
+        var maximumDistance = Math.Max(paneMinimum, available - paneMinimum);
+        var safeDistance = Math.Clamp(desired, paneMinimum, maximumDistance);
+
+        _split.SplitterDistance = safeDistance;
+        _split.Panel1MinSize = paneMinimum;
+        _split.Panel2MinSize = paneMinimum;
+        _splitLayoutInitialized = true;
     }
 
     private void UpdateHeaderLayout()
