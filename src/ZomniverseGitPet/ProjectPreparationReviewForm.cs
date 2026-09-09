@@ -355,8 +355,9 @@ internal sealed class ProjectPreparationReviewForm : Form
 
     private void RemoveSelectedCustomRule()
     {
-        if (_ruleLibrary.CurrentRow?.Tag is not GitIgnoreRuleOption { Custom: true }) return;
-        _ruleLibrary.Rows.Remove(_ruleLibrary.CurrentRow);
+        var row = _ruleLibrary.CurrentRow;
+        if (row?.Tag is not GitIgnoreRuleOption { Custom: true }) return;
+        _ruleLibrary.Rows.Remove(row);
         _removeCustomButton.Enabled = false;
         UpdatePreview();
     }
