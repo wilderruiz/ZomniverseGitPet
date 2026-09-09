@@ -16,6 +16,7 @@ internal sealed class ProjectPreparationReviewForm : Form
     private readonly string _folderPath;
     private readonly IReadOnlyList<string> _scopeRules;
     private readonly IReadOnlyList<GitIgnoreDocument> _ignoreDocuments;
+    private readonly bool _replaceScope;
     private readonly RichTextBox _beforePreview = new();
     private readonly RichTextBox _afterPreview = new();
     private readonly Label _beforeHeader = new();
@@ -31,14 +32,16 @@ internal sealed class ProjectPreparationReviewForm : Form
         bool initializeGit,
         IReadOnlyList<string>? scopeRules = null,
         IReadOnlyList<GitIgnoreDocument>? ignoreDocuments = null,
-        string? scopeSummary = null)
+        string? scopeSummary = null,
+        bool replaceScope = false)
     {
         _items = suggestions;
         _folderPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folderPath));
         _scopeRules = scopeRules ?? [];
         _ignoreDocuments = ignoreDocuments ?? [];
+        _replaceScope = replaceScope;
 
-        Text = initializeGit ? "Prepare project for Git" : "Repository hygiene";
+        Text = initializeGit ? "Prepare project for Git" : replaceScope ? "Reconfigure project" : "Repository hygiene";
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
@@ -74,8 +77,11 @@ internal sealed class ProjectPreparationReviewForm : Form
                 ? "GitPet has your tracking scope. Now choose anything else Git should leave out before this repository is created.\r\n\r\n" +
                   (scopeSummary ?? "The selected project scope will be written safely into the root .gitignore when needed.") + " " +
                   "Nested .gitignore files remain in their own folders and are shown read-only on the right."
-                : "Review detected hygiene suggestions, reusable ignore presets, and your own custom ignore rules.\r\n\r\n" +
-                  "Nested .gitignore files are shown too. Only the project-root .gitignore is changed by this screen, and only after you approve it."
+                : replaceScope
+                    ? "GitPet has your updated tracking scope. Now review privacy, generated files, reusable presets, and any custom ignore rules.\r\n\r\n" +
+                      "The AFTER pane shows the exact result, including replacement of GitPet's previous managed scope. Nested .gitignore files remain untouched."
+                    : "Review detected hygiene suggestions, reusable ignore presets, and your own custom ignore rules.\r\n\r\n" +
+                      "Nested .gitignore files are shown too. Only the project-root .gitignore is changed by this screen, and only after you approve it."
         };
 
         ConfigureSuggestionsGrid();
@@ -246,7 +252,9 @@ internal sealed class ProjectPreparationReviewForm : Form
             Padding = new Padding(12, 10, 12, 7),
             BackColor = PanelSurface
         };
-        var accept = MakeActionButton(initializeGit ? "Prepare project" : "Apply selected changes", true);
+        var accept = MakeActionButton(
+            initializeGit ? "Prepare project" : replaceScope ? "Apply project setup" : "Apply selected changes",
+            true);
         var cancel = MakeActionButton("Cancel", false);
         accept.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
         cancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
@@ -385,14 +393,19 @@ internal sealed class ProjectPreparationReviewForm : Form
         _selectionSummary.Text = selected.Count == 0
             ? _scopeRules.Count == 0
                 ? "No extra ignore rules selected. The root .gitignore will remain unchanged."
-                : $"Tracking scope ready ({_scopeRules.Count} scope rule(s)); no extra ignore rules selected."
+                : _replaceScope
+                    ? $"Updated tracking scope ready ({_scopeRules.Count} scope rule(s)); GitPet's previous managed scope will be replaced."
+                    : $"Tracking scope ready ({_scopeRules.Count} scope rule(s)); no extra ignore rules selected."
             : $"{selected.Count} exact ignore pattern{(selected.Count == 1 ? "" : "s")} selected" +
               (_scopeRules.Count > 0 ? $" + {_scopeRules.Count} tracking-scope rule(s)." : ".") +
+              (_replaceScope ? " Previous GitPet scope rules will be replaced." : "") +
               " The AFTER pane is the exact proposed root file.";
 
         try
         {
-            _afterPreview.Text = ProjectGitIgnoreComposer.BuildPreview(_folderPath, _scopeRules, selected);
+            _afterPreview.Text = _replaceScope
+                ? ProjectGitIgnoreComposer.BuildPreviewReplacingScope(_folderPath, _scopeRules, selected)
+                : ProjectGitIgnoreComposer.BuildPreview(_folderPath, _scopeRules, selected);
             _afterHeader.Text = "AFTER — exact proposed root .gitignore";
         }
         catch (Exception ex)
