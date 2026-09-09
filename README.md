@@ -7,10 +7,13 @@
 <p align="center"><strong>A desktop Git guardian for human and AI-assisted development.</strong></p>
 
 <p align="center">
-  <img alt="Version 0.4.1" src="https://img.shields.io/badge/version-0.4.1-8b5cf6">
-  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-2563eb">
-  <img alt=".NET 8" src="https://img.shields.io/badge/.NET-8.0-512bd4">
-  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-22c55e">
+  <strong>Version 0.4.1</strong>
+  &nbsp;•&nbsp;
+  Windows 10 / 11
+  &nbsp;•&nbsp;
+  .NET 8
+  &nbsp;•&nbsp;
+  MIT License
 </p>
 
 <p align="center">
