@@ -42,8 +42,9 @@ internal static class MajorUpdateFeature
 
         foreach (var guardian in guardians)
         {
-            if (guardian.MainMenuStrip is null || guardian.Handle == IntPtr.Zero) continue;
-            if (guardian.MainMenuStrip.Items.Cast<ToolStripItem>().Any(item => item.Name == "MajorUpdateMenu"))
+            var mainMenu = guardian.MainMenuStrip;
+            if (mainMenu is null || guardian.Handle == IntPtr.Zero) continue;
+            if (mainMenu.Items.Cast<ToolStripItem>().Any(item => item.Name == "MajorUpdateMenu"))
                 continue;
 
             var menu = new ToolStripMenuItem("Milestones")
@@ -70,11 +71,11 @@ internal static class MajorUpdateFeature
             menu.DropDownItems.Add(new ToolStripMenuItem(
                 "GitPet never force-pushes main or publishes a release automatically.") { Enabled = false });
 
-            var helpIndex = guardian.MainMenuStrip.Items.Cast<ToolStripItem>()
+            var helpIndex = mainMenu.Items.Cast<ToolStripItem>()
                 .Select((item, index) => new { item, index })
                 .FirstOrDefault(value => value.item.Text.Equals("Help", StringComparison.OrdinalIgnoreCase))?.index
-                ?? guardian.MainMenuStrip.Items.Count;
-            guardian.MainMenuStrip.Items.Insert(Math.Max(0, helpIndex), menu);
+                ?? mainMenu.Items.Count;
+            mainMenu.Items.Insert(Math.Max(0, helpIndex), menu);
 
             var handle = guardian.Handle;
             Menus[handle] = menu;
