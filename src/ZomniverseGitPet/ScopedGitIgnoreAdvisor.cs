@@ -14,9 +14,6 @@ internal static class ScopedGitIgnoreAdvisor
         {
             MergeSuggestions(found, GitIgnoreAdvisor.Suggest(plan.RootPath));
 
-            // Also inspect immediate child folders as their own ignore scopes. This lets a
-            // nested home/.gitignore participate in hygiene instead of pretending only the
-            // project-root .gitignore exists.
             IEnumerable<string> children;
             try { children = Directory.EnumerateDirectories(plan.RootPath).Take(250).ToArray(); }
             catch { children = []; }
@@ -48,7 +45,6 @@ internal static class ScopedGitIgnoreAdvisor
     public static IReadOnlyList<GitIgnoreDocument> FindIgnoreDocuments(ProjectScopePlan plan)
     {
         var found = new Dictionary<string, GitIgnoreDocument>(StringComparer.OrdinalIgnoreCase);
-
         AddDocument(plan.RootPath, plan.RootPath, found);
 
         var roots = GetScanRoots(plan);
@@ -199,7 +195,8 @@ internal static class ScopedGitIgnoreAdvisor
 internal static class ProjectGitIgnoreComposer
 {
     private const string ScopeHeader = "# ZomniverseGitPet selected project scope";
-    private const string SuggestedHeader = "# Suggested by ZomniverseGitPet";
+    private const string SuggestedHeader = "# Suggested by ZomniverseGitPet — files and folders Git should leave alone";
+    private const string Divider = "# =============================================================================";
 
     public static string BuildPreview(
         string root,
@@ -222,6 +219,22 @@ internal static class ProjectGitIgnoreComposer
         return added;
     }
 
+    public static void SplitCombinedRules(
+        IEnumerable<string> rules,
+        out IReadOnlyList<string> scopeRules,
+        out IReadOnlyList<string> suggestionRules)
+    {
+        var scope = new List<string>();
+        var suggestions = new List<string>();
+        foreach (var rule in Normalize(rules))
+        {
+            if (LooksLikeScopeRule(rule)) scope.Add(rule);
+            else suggestions.Add(rule);
+        }
+        scopeRules = scope;
+        suggestionRules = suggestions;
+    }
+
     private static string BuildUpdated(
         string current,
         IEnumerable<string> scopeRules,
@@ -240,19 +253,65 @@ internal static class ProjectGitIgnoreComposer
 
         if (scope.Length > 0)
         {
-            if (builder.Length > 0) builder.AppendLine();
+            StartSection(builder);
             if (!ContainsHeader(current, ScopeHeader)) builder.AppendLine(ScopeHeader);
+            builder.AppendLine("# GitPet uses this block to make the chosen parent folder a selective project.");
+            builder.AppendLine("# '/*' hides root content first; the following ! rules re-include only what you selected.");
+            builder.AppendLine("# Existing nested Git repositories are explicitly kept outside this parent repository.");
+            builder.AppendLine(Divider);
             foreach (var rule in scope) builder.AppendLine(rule);
         }
 
         if (suggestions.Length > 0)
         {
-            if (builder.Length > 0) builder.AppendLine();
+            StartSection(builder);
             if (!ContainsHeader(current, SuggestedHeader)) builder.AppendLine(SuggestedHeader);
-            foreach (var rule in suggestions) builder.AppendLine(rule);
+            builder.AppendLine("# These ignore patterns were explicitly selected in GitPet.");
+            builder.AppendLine("# A pattern without a leading / applies by name throughout the project tree.");
+            builder.AppendLine("# Lines beginning with ! are safe exceptions that keep matching templates visible to Git.");
+            builder.AppendLine(Divider);
+            foreach (var rule in suggestions)
+            {
+                builder.AppendLine(DescribeRule(rule));
+                builder.AppendLine(rule);
+            }
         }
 
         return builder.ToString();
+    }
+
+    private static string DescribeRule(string rule)
+    {
+        if (rule.Equals(".env", StringComparison.OrdinalIgnoreCase))
+            return "# Ignore real .env secret/configuration files anywhere in the project.";
+        if (rule.Equals(".env.*", StringComparison.OrdinalIgnoreCase))
+            return "# Ignore environment variants such as .env.local or .env.production anywhere.";
+        if (rule.StartsWith("!.env.", StringComparison.OrdinalIgnoreCase))
+            return "# Keep this common environment template visible so it can be committed safely.";
+        if (rule.Contains("LEGACY", StringComparison.Ordinal) || rule.Contains("legacy", StringComparison.Ordinal))
+            return "# Ignore files or folders whose name contains LEGACY/legacy anywhere in the project.";
+        if (rule.StartsWith("*.", StringComparison.Ordinal))
+            return $"# Ignore files ending in {rule[1..]} anywhere in the project.";
+        if (rule.EndsWith('/', StringComparison.Ordinal) && !rule.StartsWith('/'))
+            return $"# Ignore folders named '{rule.TrimEnd('/')}' anywhere in the project.";
+        if (rule.StartsWith("**/*", StringComparison.Ordinal))
+            return "# Ignore names matching this text pattern anywhere in the project.";
+        if (!rule.Contains('/'))
+            return $"# Ignore items named '{rule}' anywhere in the project.";
+        return "# Ignore items matching this explicitly selected Git pattern.";
+    }
+
+    private static bool LooksLikeScopeRule(string rule) =>
+        rule.Equals("/*", StringComparison.Ordinal) ||
+        rule.Equals("!/.gitignore", StringComparison.OrdinalIgnoreCase) ||
+        rule.StartsWith("!/", StringComparison.Ordinal) ||
+        (rule.StartsWith('/', StringComparison.Ordinal) && rule.EndsWith('/', StringComparison.Ordinal));
+
+    private static void StartSection(System.Text.StringBuilder builder)
+    {
+        EnsureLineBoundary(builder);
+        if (builder.Length > 0) builder.AppendLine();
+        builder.AppendLine(Divider);
     }
 
     private static string[] Normalize(IEnumerable<string> rules) =>
