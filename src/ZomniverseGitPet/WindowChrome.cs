@@ -11,6 +11,8 @@ internal static class WindowChrome
 
     public static void ApplyGuardianChrome(Form form)
     {
+        WindowPlacementManager.Attach(form);
+
         if (!OperatingSystem.IsWindowsVersionAtLeast(10)) return;
 
         void Apply()
