@@ -74,8 +74,7 @@ internal sealed class ProjectPreparationForm : Form
                 _initializeGit,
                 scopeRules,
                 documents,
-                plan.Summary,
-                replaceScope: _chooseScope);
+                plan.Summary);
 
             if (review.ShowDialog(Owner) != DialogResult.OK)
             {
