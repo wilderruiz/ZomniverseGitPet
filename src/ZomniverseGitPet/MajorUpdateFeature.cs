@@ -5,6 +5,7 @@ namespace ZomniverseGitPet;
 internal static class MajorUpdateFeature
 {
     private static readonly Dictionary<IntPtr, ToolStripMenuItem> Menus = new();
+    private static readonly HashSet<string> PromptedBaselines = new(StringComparer.OrdinalIgnoreCase);
     private static readonly SemaphoreSlim AnalysisGate = new(1, 1);
     private static System.Windows.Forms.Timer? _timer;
     private static bool _started;
@@ -112,6 +113,7 @@ internal static class MajorUpdateFeature
                     (assessment.Reasons.Count == 0
                         ? "Open this menu to review it."
                         : string.Join("; ", assessment.Reasons.Take(3))));
+                MaybeAskUser(visibleGuardian, assessment);
             }
             else
             {
@@ -127,6 +129,23 @@ internal static class MajorUpdateFeature
         {
             AnalysisGate.Release();
         }
+    }
+
+    private static void MaybeAskUser(Form guardian, MajorUpdateAssessment assessment)
+    {
+        if (Application.OpenForms.Cast<Form>().Any(form => form.Modal && !ReferenceEquals(form, guardian))) return;
+        if (Application.OpenForms.Cast<Form>().Any(form => form is MajorUpdateNudgeForm or MajorUpdateForm)) return;
+
+        var key = Path.GetFullPath(assessment.RepositoryPath) + "|" + assessment.HeadCommit;
+        if (!PromptedBaselines.Add(key)) return;
+
+        var nudge = new MajorUpdateNudgeForm(assessment);
+        nudge.ReviewRequested += async (_, _) =>
+        {
+            nudge.Close();
+            await OpenReleaseCenterAsync(guardian);
+        };
+        nudge.Show(guardian);
     }
 
     private static async Task OpenReleaseCenterAsync(Form owner)
@@ -214,6 +233,109 @@ internal static class MajorUpdateFeature
         {
             MessageBox.Show(owner, "GitPet could not open the browser.", "Project releases", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
+    }
+}
+
+internal sealed class MajorUpdateNudgeForm : Form
+{
+    public event EventHandler? ReviewRequested;
+
+    public MajorUpdateNudgeForm(MajorUpdateAssessment assessment)
+    {
+        Text = "GitPet noticed something";
+        Icon = AppIconProvider.Icon;
+        StartPosition = FormStartPosition.CenterParent;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        ClientSize = new Size(610, 315);
+        BackColor = GuardianTheme.Surface;
+        ForeColor = GuardianTheme.Ink;
+        Font = new Font("Segoe UI", 9);
+
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            BackColor = GuardianTheme.Surface
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+
+        root.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(22, 12, 22, 8),
+            Text = "◇  " + assessment.Prompt.ToUpperInvariant(),
+            BackColor = GuardianTheme.SurfaceRaised,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 14, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 0);
+
+        var reasons = assessment.Reasons.Count == 0
+            ? "GitPet found an unusually large difference from the current baseline."
+            : "GitPet noticed:\r\n\r\n• " + string.Join("\r\n• ", assessment.Reasons.Take(4));
+        root.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(24, 18, 24, 8),
+            Text = reasons,
+            ForeColor = GuardianTheme.Ink,
+            Font = new Font("Segoe UI", 10),
+            TextAlign = ContentAlignment.TopLeft,
+            AutoEllipsis = true
+        }, 0, 1);
+
+        root.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(24, 6, 24, 4),
+            Text = "GitPet is only asking. Nothing will be branched, tagged, merged, or pushed unless you review and approve it.",
+            ForeColor = GuardianTheme.MutedInk,
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 2);
+
+        var footer = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(12, 12, 18, 10),
+            BackColor = GuardianTheme.SurfaceRaised
+        };
+        var notNow = MakeButton("Not now", 100, GuardianTheme.SurfaceSoft, GuardianTheme.Border);
+        notNow.Click += (_, _) => Close();
+        var review = MakeButton("Review major update", 180, GuardianTheme.Violet, GuardianTheme.HotPink);
+        review.Click += (_, _) => ReviewRequested?.Invoke(this, EventArgs.Empty);
+        footer.Controls.Add(notNow);
+        footer.Controls.Add(review);
+        root.Controls.Add(footer, 0, 3);
+        Controls.Add(root);
+        CancelButton = notNow;
+    }
+
+    private static Button MakeButton(string text, int width, Color fill, Color border)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = width,
+            Height = 36,
+            Margin = new Padding(7, 0, 0, 0),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = fill,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            UseVisualStyleBackColor = false
+        };
+        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.BorderColor = border;
+        return button;
     }
 }
 
