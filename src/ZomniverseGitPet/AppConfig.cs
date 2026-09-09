@@ -56,6 +56,20 @@ public sealed class AppConfig
             RecentRepositories.RemoveRange(RecentRepositoryLimit, RecentRepositories.Count - RecentRepositoryLimit);
     }
 
+    public bool ForgetRepository(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var normalized = NormalizePath(path);
+        var removed = RecentRepositories.RemoveAll(item =>
+            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase)) > 0;
+
+        if (!string.IsNullOrWhiteSpace(RepositoryPath) &&
+            string.Equals(NormalizePath(RepositoryPath), normalized, StringComparison.OrdinalIgnoreCase))
+            RepositoryPath = null;
+
+        return removed;
+    }
+
     public IReadOnlyList<string> GetTestCommandsForRepository(string? path = null)
     {
         var value = string.IsNullOrWhiteSpace(path) ? RepositoryPath : path;
