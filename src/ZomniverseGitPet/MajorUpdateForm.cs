@@ -6,6 +6,7 @@ internal sealed class MajorUpdateForm : Form
 {
     private readonly MajorUpdateAssessment _assessment;
     private readonly MajorUpdateCoordinator _coordinator;
+    private readonly ToolTip _toolTips = new() { ShowAlways = true, AutoPopDelay = 15000 };
     private readonly TextBox _legacyBranch = new();
     private readonly TextBox _legacyTag = new();
     private readonly TextBox _newBranch = new();
@@ -17,6 +18,7 @@ internal sealed class MajorUpdateForm : Form
     private readonly Button _openReleases = new();
     private readonly Button _copyDetails = new();
     private MajorReleasePlanResult? _plan;
+    private bool _busy;
 
     public MajorUpdateForm(MajorUpdateAssessment assessment, MajorUpdateCoordinator coordinator)
     {
@@ -60,13 +62,8 @@ internal sealed class MajorUpdateForm : Form
         _newBranch.Text = $"redesign/v{newMajor}";
         _releaseTitle.Text = $"Legacy version {legacyMajor} — before the v{newMajor} redesign";
 
-        var github = MajorUpdateCoordinator.TryGetGitHubWebUrl(assessment.OriginUrl);
-        _openReleases.Enabled = github is not null;
-        _openDraft.Enabled = false;
-        _publishLegacy.Enabled = false;
-        _copyDetails.Enabled = false;
-
         _status.Text = BuildInitialStatus();
+        RefreshActionState();
     }
 
     private Control BuildHeader()
@@ -77,7 +74,6 @@ internal sealed class MajorUpdateForm : Form
             BackColor = GuardianTheme.SurfaceRaised,
             Padding = new Padding(26, 15, 26, 12)
         };
-
         var title = new Label
         {
             Dock = DockStyle.Top,
@@ -124,7 +120,7 @@ internal sealed class MajorUpdateForm : Form
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
 
-        var facts = new Label
+        card.Controls.Add(new Label
         {
             Dock = DockStyle.Fill,
             ForeColor = GuardianTheme.Ink,
@@ -136,9 +132,9 @@ internal sealed class MajorUpdateForm : Form
                 $"FILES     {_assessment.ChangedFiles} changed · {_assessment.AddedFiles} added · {_assessment.DeletedFiles} removed\r\n" +
                 $"LINES     +{_assessment.AddedLines:N0} / -{_assessment.DeletedLines:N0}\r\n" +
                 $"REMOTE    {_assessment.RelationLabel}"
-        };
+        }, 0, 0);
 
-        var reasons = new RichTextBox
+        card.Controls.Add(new RichTextBox
         {
             Dock = DockStyle.Fill,
             ReadOnly = true,
@@ -150,9 +146,8 @@ internal sealed class MajorUpdateForm : Form
             Text = _assessment.Reasons.Count == 0
                 ? "GitPet did not find enough structural signals to call this a major-update candidate. You can still create a milestone manually."
                 : "WHY GITPET NOTICED\r\n\r\n• " + string.Join("\r\n• ", _assessment.Reasons)
-        };
-        card.Controls.Add(facts, 0, 0);
-        card.Controls.Add(reasons, 1, 0);
+        }, 1, 0);
+
         outer.Controls.Add(card);
         return outer;
     }
@@ -238,6 +233,7 @@ internal sealed class MajorUpdateForm : Form
 
         var close = MakeButton("Close", 90, GuardianTheme.SurfaceSoft, GuardianTheme.Border);
         close.Click += (_, _) => Close();
+
         _createPlan.Text = "Create local release plan";
         StyleButton(_createPlan, 190, GuardianTheme.Violet, GuardianTheme.HotPink);
         _createPlan.Click += async (_, _) => await CreatePlanAsync();
@@ -310,12 +306,6 @@ internal sealed class MajorUpdateForm : Form
             _legacyBranch.ReadOnly = true;
             _legacyTag.ReadOnly = true;
             _newBranch.ReadOnly = true;
-            _publishLegacy.Enabled = !string.IsNullOrWhiteSpace(_assessment.OriginUrl);
-            _copyDetails.Enabled = true;
-            var github = MajorUpdateCoordinator.TryGetGitHubWebUrl(_assessment.OriginUrl);
-            _openDraft.Enabled = github is not null;
-            _openReleases.Enabled = github is not null;
-            _createPlan.Enabled = false;
         }
         finally
         {
@@ -427,7 +417,7 @@ internal sealed class MajorUpdateForm : Form
         return builder.ToString();
     }
 
-    private static void AddField(TableLayoutPanel card, int row, string label, TextBox input, string tooltip)
+    private void AddField(TableLayoutPanel card, int row, string label, TextBox input, string tooltip)
     {
         card.Controls.Add(new Label
         {
@@ -443,8 +433,7 @@ internal sealed class MajorUpdateForm : Form
         input.BorderStyle = BorderStyle.FixedSingle;
         input.Margin = new Padding(0, 3, 0, 3);
         card.Controls.Add(input, 1, row);
-        var tips = new ToolTip { ShowAlways = true, AutoPopDelay = 12000 };
-        tips.SetToolTip(input, tooltip);
+        _toolTips.SetToolTip(input, tooltip);
     }
 
     private static Button MakeButton(string text, int width, Color fill, Color border)
@@ -471,19 +460,29 @@ internal sealed class MajorUpdateForm : Form
 
     private void SetBusy(bool busy, string? message = null)
     {
+        _busy = busy;
         UseWaitCursor = busy;
         _legacyBranch.Enabled = !busy;
         _legacyTag.Enabled = !busy;
         _newBranch.Enabled = !busy;
         _releaseTitle.Enabled = !busy;
-        if (_createPlan.Enabled) _createPlan.Enabled = !busy;
-        if (_plan is { Success: true }) _publishLegacy.Enabled = !busy && !string.IsNullOrWhiteSpace(_assessment.OriginUrl);
+
+        var planReady = _plan is { Success: true };
+        var github = MajorUpdateCoordinator.TryGetGitHubWebUrl(_assessment.OriginUrl);
+        _createPlan.Enabled = !busy && !planReady;
+        _publishLegacy.Enabled = !busy && planReady && !string.IsNullOrWhiteSpace(_assessment.OriginUrl);
+        _openDraft.Enabled = !busy && planReady && github is not null;
+        _openReleases.Enabled = !busy && github is not null;
+        _copyDetails.Enabled = !busy && planReady;
+
         if (!string.IsNullOrWhiteSpace(message))
         {
             _status.Text = message;
             _status.ForeColor = GuardianTheme.Changes;
         }
     }
+
+    private void RefreshActionState() => SetBusy(_busy);
 
     private static void OpenUrl(string url)
     {
