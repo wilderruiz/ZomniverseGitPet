@@ -41,7 +41,7 @@ Check("recent repository registry keeps newest 20", () =>
     }
     return config.RecentRepositories.Count == 20 &&
            config.RecentRepositories[0].DisplayName == "zgitpet-registry-22" &&
-           config.RepositoryPath!.EndsWith("zgitpet-tests-a", StringComparison.OrdinalIgnoreCase) == false;
+           config.RepositoryPath!.EndsWith("zgitpet-registry-22", StringComparison.OrdinalIgnoreCase);
 });
 
 Check("test commands stay isolated per project", () =>
@@ -217,15 +217,19 @@ Check("gitignore preview is exact and does not modify the file", () =>
     finally { TryDelete(root); }
 });
 
-Check("environment preset ignores secrets but keeps templates", () =>
+Check("environment preset ignores secrets but keeps simple and nested templates", () =>
 {
     var option = GitIgnoreRuleLibrary.Presets.Single(item => item.Id == "env-files");
     return option.Rules.Contains(".env") &&
            option.Rules.Contains(".env.*") &&
            option.Rules.Contains("!.env.example") &&
+           option.Rules.Contains("!.env.*.example") &&
            option.Rules.Contains("!.env.sample") &&
+           option.Rules.Contains("!.env.*.sample") &&
            option.Rules.Contains("!.env.template") &&
-           option.Rules.Contains("!.env.dist");
+           option.Rules.Contains("!.env.*.template") &&
+           option.Rules.Contains("!.env.dist") &&
+           option.Rules.Contains("!.env.*.dist");
 });
 
 Check("custom ignore builder creates friendly recursive patterns", () =>
@@ -263,12 +267,27 @@ Check("friendly gitignore composer writes explanatory blocks exactly", () =>
     finally { TryDelete(root); }
 });
 
+Check("combined scope rules keep internal exclusions before hygiene rules", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        var combined = new[] { "/*", "!/.gitignore", "!/CV/", "/CV/*", "!/CV/expertise/", "!/CV/expertise/**", "*.log" };
+        var preview = GitIgnoreAdvisor.BuildPreviewContent(root, combined);
+        var exclusion = preview.IndexOf("/CV/*", StringComparison.Ordinal);
+        var reinclude = preview.IndexOf("!/CV/expertise/", StringComparison.Ordinal);
+        var hygiene = preview.IndexOf("*.log", StringComparison.Ordinal);
+        return exclusion >= 0 && reinclude > exclusion && hygiene > reinclude;
+    }
+    finally { TryDelete(root); }
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 20 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 21 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
