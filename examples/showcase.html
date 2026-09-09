@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZomniverseGitPet Showcase</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #120d1d;
+      --surface: #211831;
+      --violet: #8b5cf6;
+      --pink: #ec4899;
+      --success: #3ddc97;
+      --text: #f8f5ff;
+      --muted: #b9accb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at top, #33204f, var(--background) 65%);
+      color: var(--text);
+      font-family: system-ui, sans-serif;
+    }
+
+    .guardian-card {
+      width: min(560px, calc(100% - 2rem));
+      padding: 2rem;
+      border: 1px solid var(--violet);
+      border-radius: 22px;
+      background: linear-gradient(145deg, #291c3d, var(--surface));
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+    }
+
+    .status {
+      display: inline-flex;
+      gap: 0.5rem;
+      align-items: center;
+      color: var(--success);
+      font-weight: 700;
+    }
+
+    .status::before {
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+      box-shadow: 0 0 18px currentColor;
+    }
+
+    h1 { margin-bottom: 0.5rem; }
+    p { color: var(--muted); line-height: 1.6; }
+
+    button {
+      padding: 0.75rem 1.15rem;
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(90deg, var(--violet), var(--pink));
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <main class="guardian-card">
+    <span class="status">Guardian online</span>
+    <h1>Your repository has a new change</h1>
+    <p>
+      ZomniverseGitPet is watching this HTML file and is ready to review it
+      before you create a safe local checkpoint.
+    </p>
+    <button type="button" id="checkpoint">Create checkpoint</button>
+  </main>
+
+  <script>
+    const button = document.querySelector("#checkpoint");
+
+    button.addEventListener("click", () => {
+      button.textContent = "Ready for review ✓";
+    });
+  </script>
+</body>
+</html>
