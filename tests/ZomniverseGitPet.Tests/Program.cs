@@ -107,6 +107,63 @@ Check("safe splitter preserves useful ratio when space returns", () =>
     return distance == 646 && distance >= 120 && distance <= 874;
 });
 
+Check("selective scope keeps deep siblings excluded", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "CV", "expertise"));
+        Directory.CreateDirectory(Path.Combine(root, "CV", "applications"));
+        File.WriteAllText(Path.Combine(root, "config.home.php"), "<?php");
+        var plan = ProjectScopePlanner.Create(root,
+            [new ProjectScopeEntry("CV/expertise", true), new ProjectScopeEntry("config.home.php", false)],
+            trackEverything: false);
+        var rules = ProjectScopePlanner.BuildIgnoreRules(plan);
+        return rules.Contains("/*") &&
+               rules.Contains("!/CV/") &&
+               rules.Contains("/CV/*") &&
+               rules.Contains("!/CV/expertise/") &&
+               rules.Contains("!/CV/expertise/**") &&
+               rules.Contains("!/config.home.php") &&
+               !rules.Contains("!/CV/**");
+    }
+    finally { TryDelete(root); }
+});
+
+Check("selective scope excludes nested repositories", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "home", "app"));
+        Directory.CreateDirectory(Path.Combine(root, "home", "app", ".git"));
+        var plan = ProjectScopePlanner.Create(root, [new ProjectScopeEntry("home", true)], trackEverything: false);
+        var rules = ProjectScopePlanner.BuildIgnoreRules(plan);
+        return plan.NestedRepositories.Contains("home/app") && rules.Contains("/home/app/");
+    }
+    finally { TryDelete(root); }
+});
+
+Check("scoped hygiene sees nested gitignore and ignores env templates", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        var home = Path.Combine(root, "home");
+        Directory.CreateDirectory(home);
+        Directory.CreateDirectory(Path.Combine(home, "node_modules"));
+        File.WriteAllText(Path.Combine(home, ".gitignore"), "node_modules/\r\n");
+        File.WriteAllText(Path.Combine(home, ".env.development.example"), "EXAMPLE=1");
+        var plan = ProjectScopePlanner.Create(root, [new ProjectScopeEntry("home", true)], trackEverything: false);
+        var suggestions = ScopedGitIgnoreAdvisor.Suggest(plan);
+        var documents = ScopedGitIgnoreAdvisor.FindIgnoreDocuments(plan);
+        return suggestions.All(item => !item.Rule.Equals("node_modules/", StringComparison.OrdinalIgnoreCase)) &&
+               suggestions.All(item => !item.Rule.Equals(".env.development.example", StringComparison.OrdinalIgnoreCase)) &&
+               documents.Any(item => item.RelativePath.Equals("home/.gitignore", StringComparison.OrdinalIgnoreCase));
+    }
+    finally { TryDelete(root); }
+});
+
 Check("gitignore advisor finds common and security candidates safely", () =>
 {
     var root = CreateTempDirectory();
@@ -165,7 +222,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 14 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 17 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
