@@ -34,7 +34,7 @@ internal sealed class ProjectPreparationForm : Form
     }
 
     public IReadOnlyList<string> AcceptedRules => _acceptedRules;
-    public bool ReplacesTrackingScope => _chooseScope;
+    public bool ReplacesTrackingScope => _chooseScope && !_initializeGit;
 
     protected override void OnShown(EventArgs e)
     {
@@ -74,7 +74,8 @@ internal sealed class ProjectPreparationForm : Form
                 _initializeGit,
                 scopeRules,
                 documents,
-                plan.Summary);
+                plan.Summary,
+                replaceScope: ReplacesTrackingScope);
 
             if (review.ShowDialog(Owner) != DialogResult.OK)
             {
