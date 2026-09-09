@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.3.7 - 2026-09-09
+
+- Added a branded **Trust this project folder?** flow for Git's `detected dubious ownership` protection instead of exposing the raw `safe.directory` command as a dead end.
+- GitPet now explains that Windows reports a different folder owner and asks for explicit approval before adding trust.
+- Approval adds only the exact selected project path to the current user's global Git `safe.directory` list; GitPet never uses `safe.directory=*`, changes Windows ownership/ACLs, stages files, commits, configures a remote, pulls, or pushes as part of this step.
+- After approval GitPet automatically retries repository-root verification, so a newly initialized project can continue preparation without requiring the user to open a terminal.
+- The same trust handling lives in repository-root detection, so an already-initialized folder blocked by dubious ownership can use the same recovery path when reopened later.
+- Bumped the application version to **0.3.7**.
+
 ## 0.3.6 - 2026-09-09
 
 - Reworked project preparation into a larger, resizable **two-row ignore builder**: detected project-specific suggestions on top and a reusable/custom ignore library below.
