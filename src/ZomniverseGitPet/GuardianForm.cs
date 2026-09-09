@@ -181,7 +181,12 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 136,
+            /*
+            PATCH: HEADER SYNC SUMMARY HEIGHT
+            DATE: 2026-09-09
+            Give commit summary enough room for two lines.
+            */
+            Height = 158,
             Padding = new Padding(20, 13, 20, 10),
             BackColor = GuardianTheme.SurfaceRaised
         };
@@ -960,13 +965,22 @@ public sealed class GuardianForm : Form
         if (_status.Files.Count > 20) preview += $"\n... and {_status.Files.Count - 20} more";
 
         var countText = FriendlyGitState.Count(_status.Files.Count, "current change");
-        var answer = MessageBox.Show(
-            this,
-            $"Save all {countText} as a local version?\n\n" + preview +
-            "\n\nThis saves the current state on this PC.\nNothing will be sent online.",
+        /*
+        PATCH: STYLED SAVE CONFIRMATION
+        DATE: 2026-09-09
+        Use GitPet theme for Save confirmation.
+        */
+        using var saveDialog = new GuardianConfirmDialog(
             "Save changes",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
+            "SAVE LOCALLY",
+            $"Save all {countText} as a local version?\r\n\r\n" +
+            preview +
+            "\r\n\r\nThis saves the current state on this PC.\r\n" +
+            "Nothing will be sent online.",
+            "Save",
+            "Cancel");
+
+        var answer = saveDialog.ShowDialog(this);
 
         if (answer != DialogResult.Yes) return;
         if (!await EnsureGitIdentityAsync(token)) return;
@@ -977,14 +991,22 @@ public sealed class GuardianForm : Form
             ? "Changes saved locally ✓\n\n" + result.Message
             : result.Message;
 
-        MessageBox.Show(
-            this,
-            result.Success
-                ? "Changes saved locally ✓\n\nNothing was sent online."
-                : result.Message,
-            "Save changes",
-            MessageBoxButtons.OK,
-            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            /*
+            PATCH: THEMED SAVE RESULT
+            DATE: 2026-09-09
+            Show Save result using Guardian dialog styling.
+            */
+            using var savedDialog = new GuardianConfirmDialog(
+                "Save changes",
+                result.Success ? "SAVED LOCALLY  ✓" : "SAVE NEEDS ATTENTION",
+                result.Success
+                    ? "Changes saved locally.\r\n\r\nNothing was sent online."
+                    : result.Message,
+                "OK",
+                "",
+                showCancel: false);
+
+            savedDialog.ShowDialog(this);
 
         await RefreshRepositoryViewAsync(token);
     });
@@ -1184,14 +1206,29 @@ public sealed class GuardianForm : Form
               "Those unsaved changes will stay on this PC and will NOT be sent."
             : "\n\nNothing unsaved will be included.";
 
-        var answer = MessageBox.Show(
-            this,
-            status.HasTrackingInformation
-                ? $"Send {savedText} to the online copy?\n\nBranch: {branch}\nLatest saved version: {commitPreview}" + unsavedText
-                : $"Send the saved committed history to the online copy?\n\nBranch: {branch}\nLatest saved version: {commitPreview}" + unsavedText,
-            "Send saved updates?",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
+        /*
+        PATCH: THEMED SEND CONFIRMATION
+        DATE: 2026-09-09
+        Use Guardian styling for Send confirmation.
+        */
+        var sendMessage = status.HasTrackingInformation
+            ? $"Send {savedText} to the online copy?\r\n\r\n" +
+            $"Branch: {branch}\r\n" +
+            $"Latest saved version: {commitPreview}" +
+            unsavedText
+            : $"Send the saved committed history to the online copy?\r\n\r\n" +
+            $"Branch: {branch}\r\n" +
+            $"Latest saved version: {commitPreview}" +
+            unsavedText;
+
+        using var sendDialog = new GuardianConfirmDialog(
+            "Send saved updates",
+            "SEND ONLINE",
+            sendMessage,
+            "Send",
+            "Cancel");
+
+        var answer = sendDialog.ShowDialog(this);
 
         if (answer != DialogResult.Yes)
         {

@@ -23,11 +23,38 @@ internal sealed class GuardianActionButton : Button
 
     private bool _hovered;
     private bool _pressed;
+    /*
+    PATCH: OPTIONAL SYNC BUTTON BEHAVIOUR
+    DATE: 2026-09-09
+    Allow styled buttons without sync counters.
+    */
     private bool _applyingSyncState;
+    private bool _syncStateAware = true;
     private GuardianActionKind _kind;
     private SyncRole _syncRole;
     private int _badgeCount;
 
+    /*
+    PATCH: SYNC STYLE OPT-OUT
+    DATE: 2026-09-09
+    Disable counters while preserving GitPet styling.
+    */
+    public bool SyncStateAware
+    {
+        get => _syncStateAware;
+        set
+        {
+            _syncStateAware = value;
+
+            if (!value)
+            {
+                _syncRole = SyncRole.None;
+                BadgeCount = 0;
+            }
+
+            Invalidate();
+        }
+    }    
     public GuardianActionKind Kind
     {
         get => _kind;
@@ -67,7 +94,12 @@ internal sealed class GuardianActionButton : Button
     protected override void OnTextChanged(EventArgs e)
     {
         base.OnTextChanged(e);
-        if (_applyingSyncState) return;
+        /*
+        PATCH: IGNORE DECORATIVE ACTION BUTTONS
+        DATE: 2026-09-09
+        Skip sync logic for decorative buttons.
+        */
+        if (!_syncStateAware || _applyingSyncState) return;        
         if (_syncRole == SyncRole.None)
         {
             if (Text.Equals("Save", StringComparison.OrdinalIgnoreCase)) _syncRole = SyncRole.Save;
@@ -208,7 +240,16 @@ internal sealed class GuardianActionButton : Button
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.Clear(Parent?.BackColor ?? GuardianTheme.Surface);
 
-        var bounds = new RectangleF(1.5f, 1.5f, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+        /*
+        PATCH: CORNER BADGE OVERHANG
+        DATE: 2026-09-09
+        Inset button body; badge floats above corner.
+        */
+        var bounds = new RectangleF(
+            1.5f,
+            5.5f,
+            Math.Max(1, Width - 3),
+            Math.Max(1, Height - 7));        
         using var path = GuardianTheme.RoundedRectangle(bounds, 11f);
 
         var (fill, border, text) = Palette();
@@ -371,8 +412,13 @@ internal sealed class GuardianActionButton : Button
 
         var value = BadgeCount > 99 ? "99+" : BadgeCount.ToString();
         var size = value.Length > 2 ? 24f : 19f;
-        var x = Width - size - 1.5f;
-        var y = 0.5f;
+        /*
+        PATCH: BADGE CORNER POSITION
+        DATE: 2026-09-09
+        Move badge upward and outward toward corner.
+        */
+        var x = Width - size - 0.5f;
+        var y = 0f;
         var accent = _syncRole switch
         {
             SyncRole.Get => GuardianTheme.Info,
