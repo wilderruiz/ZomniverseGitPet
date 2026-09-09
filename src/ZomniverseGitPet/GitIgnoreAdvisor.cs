@@ -15,8 +15,6 @@ internal sealed record GitIgnoreSuggestion(
 
 internal static class GitIgnoreAdvisor
 {
-    private const string SuggestedHeader = "# Suggested by ZomniverseGitPet";
-
     private static readonly Dictionary<string, GitIgnoreSuggestion> DirectorySuggestions =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -91,49 +89,14 @@ internal static class GitIgnoreAdvisor
 
     public static string BuildPreviewContent(string root, IEnumerable<string> rules)
     {
-        var existingText = ReadCurrentContent(root);
-        return BuildUpdatedContent(existingText, rules, out _);
+        ProjectGitIgnoreComposer.SplitCombinedRules(rules, out var scope, out var suggestions);
+        return ProjectGitIgnoreComposer.BuildPreview(root, scope, suggestions);
     }
 
     public static int AppendAcceptedRules(string root, IEnumerable<string> rules)
     {
-        var ignorePath = Path.Combine(root, ".gitignore");
-        var existingText = ReadCurrentContent(root);
-        var updatedText = BuildUpdatedContent(existingText, rules, out var addedCount);
-        if (addedCount == 0) return 0;
-
-        File.WriteAllText(ignorePath, updatedText);
-        return addedCount;
-    }
-
-    private static string BuildUpdatedContent(string existingText, IEnumerable<string> rules, out int addedCount)
-    {
-        var accepted = rules
-            .Where(rule => !string.IsNullOrWhiteSpace(rule))
-            .Select(rule => rule.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var existing = ParseRules(existingText);
-        var missing = accepted.Where(rule => !existing.Contains(rule)).ToArray();
-        addedCount = missing.Length;
-        if (missing.Length == 0) return existingText;
-
-        var builder = new System.Text.StringBuilder(existingText);
-        if (builder.Length > 0 && !EndsWithNewLine(builder)) builder.AppendLine();
-
-        var alreadyHasSuggestedSection = existingText
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-            .Any(line => line.Trim().Equals(SuggestedHeader, StringComparison.OrdinalIgnoreCase));
-
-        if (!alreadyHasSuggestedSection)
-        {
-            if (builder.Length > 0) builder.AppendLine();
-            builder.AppendLine(SuggestedHeader);
-        }
-
-        foreach (var rule in missing) builder.AppendLine(rule);
-        return builder.ToString();
+        ProjectGitIgnoreComposer.SplitCombinedRules(rules, out var scope, out var suggestions);
+        return ProjectGitIgnoreComposer.Apply(root, scope, suggestions);
     }
 
     private static HashSet<string> ReadExistingRules(string root)
@@ -195,7 +158,4 @@ internal static class GitIgnoreAdvisor
         name.Equals("venv", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("obj", StringComparison.OrdinalIgnoreCase);
-
-    private static bool EndsWithNewLine(System.Text.StringBuilder builder) =>
-        builder.Length > 0 && (builder[^1] == '\n' || builder[^1] == '\r');
 }
