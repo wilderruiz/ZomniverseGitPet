@@ -27,6 +27,7 @@ internal static class Program
             var config = configStore.Load();
             var audit = new AuditLog();
             var git = new GitService(audit);
+            using var syncWatcher = new GuardianRemoteWatcher(config, git);
             using var context = new ZomniverseGitPetContext(instanceName, config, configStore, git, audit);
             Application.Run(context);
         }
