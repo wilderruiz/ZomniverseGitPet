@@ -379,7 +379,7 @@ Current platform support: Windows 10/11 x64 with Git for Windows.
 - Additional automated integration and UI tests
 
 </details>
-
+.
 ---
 
 <h2>License</h2>
