@@ -11,6 +11,7 @@ internal sealed class ProjectPreparationReviewForm : Form
     private static readonly Color HotPink = Color.FromArgb(236, 70, 170);
 
     private readonly DataGridView _suggestions = new();
+    private readonly DataGridView _ruleLibrary = new();
     private readonly IReadOnlyList<GitIgnoreSuggestion> _items;
     private readonly string _folderPath;
     private readonly IReadOnlyList<string> _scopeRules;
@@ -20,6 +21,9 @@ internal sealed class ProjectPreparationReviewForm : Form
     private readonly Label _beforeHeader = new();
     private readonly Label _afterHeader = new();
     private readonly Label _selectionSummary = new();
+    private readonly ComboBox _customKind = new();
+    private readonly TextBox _customValue = new();
+    private readonly Button _removeCustomButton;
 
     public ProjectPreparationReviewForm(
         string folderPath,
@@ -41,8 +45,8 @@ internal sealed class ProjectPreparationReviewForm : Form
         MaximizeBox = true;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        MinimumSize = new Size(1120, 720);
-        ClientSize = new Size(1380, 900);
+        MinimumSize = new Size(1180, 760);
+        ClientSize = new Size(1460, 960);
         BackColor = Surface;
         ForeColor = Ink;
         Font = new Font("Segoe UI", 9);
@@ -51,8 +55,8 @@ internal sealed class ProjectPreparationReviewForm : Form
         var title = new Label
         {
             Dock = DockStyle.Top,
-            Height = 68,
-            Padding = new Padding(20, 14, 20, 7),
+            Height = 58,
+            Padding = new Padding(20, 11, 20, 6),
             Text = initializeGit ? "◇ PREPARE THIS PROJECT SAFELY" : "◇ REVIEW REPOSITORY HYGIENE",
             Font = new Font("Segoe UI", 13.5f, FontStyle.Bold),
             ForeColor = Color.White,
@@ -62,75 +66,129 @@ internal sealed class ProjectPreparationReviewForm : Form
         var intro = new Label
         {
             Dock = DockStyle.Top,
-            Height = 132,
-            Padding = new Padding(20, 14, 20, 12),
+            Height = 102,
+            Padding = new Padding(20, 11, 20, 8),
             ForeColor = Color.FromArgb(219, 211, 234),
             BackColor = Surface,
             Text = initializeGit
-                ? "GitPet has your tracking scope. Now review what Git should ignore before the repository is created.\r\n\r\n" +
+                ? "GitPet has your tracking scope. Now choose anything else Git should leave out before this repository is created.\r\n\r\n" +
                   (scopeSummary ?? "The selected project scope will be written safely into the root .gitignore when needed.") + " " +
-                  "Nested .gitignore files inside selected folders are shown on the right and stay untouched."
-                : "GitPet found common generated, cache, IDE, or privacy-related items worth reviewing.\r\n\r\n" +
-                  "Nested .gitignore files are shown too, so you can see rules that already apply inside subfolders. " +
-                  "Only the project-root .gitignore is modified by this screen, and only after you approve it."
+                  "Nested .gitignore files remain in their own folders and are shown read-only on the right."
+                : "Review detected hygiene suggestions, reusable ignore presets, and your own custom ignore rules.\r\n\r\n" +
+                  "Nested .gitignore files are shown too. Only the project-root .gitignore is changed by this screen, and only after you approve it."
         };
 
         ConfigureSuggestionsGrid();
-        foreach (var suggestion in suggestions)
-        {
-            var rowIndex = _suggestions.Rows.Add(
-                suggestion.DefaultSelected,
-                ConfidenceLabel(suggestion.Confidence),
-                suggestion.Rule,
-                suggestion.Description);
-            _suggestions.Rows[rowIndex].Tag = suggestion;
-        }
+        PopulateSuggestions(suggestions);
+        ConfigureRuleLibraryGrid();
+        foreach (var option in GitIgnoreRuleLibrary.Presets) AddLibraryRow(option);
 
-        if (suggestions.Count == 0)
+        WireCheckboxGrid(_suggestions);
+        WireCheckboxGrid(_ruleLibrary);
+        _ruleLibrary.SelectionChanged += (_, _) =>
         {
-            _suggestions.Rows.Add(false, "—", "Nothing suggested", "GitPet did not find another common ignore candidate in the selected project scope.");
-            _suggestions.Rows[0].ReadOnly = true;
-        }
-
-        _suggestions.CurrentCellDirtyStateChanged += (_, _) =>
-        {
-            if (_suggestions.IsCurrentCellDirty) _suggestions.CommitEdit(DataGridViewDataErrorContexts.Commit);
-        };
-        _suggestions.CellValueChanged += (_, e) =>
-        {
-            if (e.RowIndex >= 0 && e.ColumnIndex == 0) UpdatePreview();
+            _removeCustomButton.Enabled = _ruleLibrary.CurrentRow?.Tag is GitIgnoreRuleOption { Custom: true };
         };
 
-        var leftIntro = new Label
+        var detectedHeader = CreateSectionHeader(
+            "DETECTED IN THIS PROJECT",
+            "GitPet sampled the selected folders and found these project-specific candidates. PRIVACY and RECOMMENDED items start selected; CHECK FIRST waits for you.");
+
+        var detectedHost = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(6) };
+        detectedHost.Controls.Add(_suggestions);
+        detectedHost.Controls.Add(detectedHeader);
+
+        var libraryHeader = CreateSectionHeader(
+            "IGNORE LIBRARY + YOUR OWN RULES",
+            "Tick reusable categories below. Hover a row to see exactly why GitPet suggests it and the exact Git patterns that will be added.");
+
+        var customBar = new TableLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 60,
+            ColumnCount = 5,
+            Padding = new Padding(8, 9, 8, 7),
+            BackColor = Color.FromArgb(38, 28, 55)
+        };
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145));
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 136));
+
+        var customLabel = new Label
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(8, 8, 8, 6),
-            Text = "PICK THE ITEMS GIT SHOULD LEAVE ALONE\r\n\r\n" +
-                   "PRIVACY and RECOMMENDED items start selected. CHECK FIRST items wait for you. " +
-                   "These suggestions are separate from the tracking scope you chose on the previous screen.",
+            Text = "CUSTOM RULE",
+            TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = MutedInk,
-            BackColor = Surface
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
         };
 
-        _selectionSummary.Dock = DockStyle.Fill;
-        _selectionSummary.Padding = new Padding(8, 10, 8, 6);
+        _customKind.Dock = DockStyle.Fill;
+        _customKind.DropDownStyle = ComboBoxStyle.DropDownList;
+        _customKind.BackColor = PreviewSurface;
+        _customKind.ForeColor = Ink;
+        foreach (CustomIgnoreRuleKind kind in Enum.GetValues<CustomIgnoreRuleKind>())
+            _customKind.Items.Add(GitIgnoreRuleLibrary.KindLabel(kind));
+        _customKind.SelectedIndex = 0;
+
+        _customValue.Dock = DockStyle.Fill;
+        _customValue.BackColor = PreviewSurface;
+        _customValue.ForeColor = Ink;
+        _customValue.BorderStyle = BorderStyle.FixedSingle;
+        _customValue.PlaceholderText = "e.g. cache, tmp, secrets.json, LEGACY";
+
+        var addCustom = MakeActionButton("Add custom", true);
+        addCustom.Dock = DockStyle.Fill;
+        addCustom.Margin = new Padding(6, 0, 0, 0);
+        addCustom.Click += (_, _) => AddCustomRule();
+        _customValue.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            e.SuppressKeyPress = true;
+            AddCustomRule();
+        };
+
+        _removeCustomButton = MakeActionButton("Remove custom", false);
+        _removeCustomButton.Dock = DockStyle.Fill;
+        _removeCustomButton.Margin = new Padding(6, 0, 0, 0);
+        _removeCustomButton.Enabled = false;
+        _removeCustomButton.Click += (_, _) => RemoveSelectedCustomRule();
+
+        customBar.Controls.Add(customLabel, 0, 0);
+        customBar.Controls.Add(_customKind, 1, 0);
+        customBar.Controls.Add(_customValue, 2, 0);
+        customBar.Controls.Add(addCustom, 3, 0);
+        customBar.Controls.Add(_removeCustomButton, 4, 0);
+
+        var libraryHost = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(6) };
+        libraryHost.Controls.Add(_ruleLibrary);
+        libraryHost.Controls.Add(customBar);
+        libraryHost.Controls.Add(libraryHeader);
+
+        var leftRows = new SafeSplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            SplitterWidth = 8,
+            PreferredRatio = 0.38,
+            PreferredPaneMinimum = 170,
+            BackColor = Color.FromArgb(80, 57, 111),
+            BorderStyle = BorderStyle.None
+        };
+        leftRows.Panel1.Controls.Add(detectedHost);
+        leftRows.Panel2.Controls.Add(libraryHost);
+
+        _selectionSummary.Dock = DockStyle.Bottom;
+        _selectionSummary.Height = 54;
+        _selectionSummary.Padding = new Padding(12, 9, 12, 5);
         _selectionSummary.ForeColor = Color.FromArgb(214, 198, 233);
         _selectionSummary.BackColor = Surface;
 
-        var left = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            BackColor = Surface,
-            Padding = new Padding(8)
-        };
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
-        left.Controls.Add(leftIntro, 0, 0);
-        left.Controls.Add(_suggestions, 0, 1);
-        left.Controls.Add(_selectionSummary, 0, 2);
+        var left = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(4) };
+        left.Controls.Add(leftRows);
+        left.Controls.Add(_selectionSummary);
 
         ConfigurePreviewBox(_beforePreview);
         ConfigurePreviewBox(_afterPreview);
@@ -139,38 +197,41 @@ internal sealed class ProjectPreparationReviewForm : Form
 
         var target = new Label
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(12, 10, 12, 8),
+            Dock = DockStyle.Top,
+            Height = 78,
+            Padding = new Padding(12, 8, 12, 6),
             ForeColor = Color.FromArgb(222, 211, 238),
             BackColor = PanelSurface,
             AutoEllipsis = true,
             Text =
                 "ROOT FILE GITPET MAY CHANGE\r\n" + Path.Combine(_folderPath, ".gitignore") + "\r\n" +
-                "Nested .gitignore files shown below are read-only here and remain exactly where they are."
+                "Nested .gitignore files below are read-only and remain in their own folders."
         };
 
-        var right = new TableLayoutPanel
+        var previewRows = new SafeSplitContainer
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            BackColor = Surface,
-            Padding = new Padding(8)
+            Orientation = Orientation.Horizontal,
+            SplitterWidth = 8,
+            PreferredRatio = 0.5,
+            PreferredPaneMinimum = 170,
+            BackColor = Color.FromArgb(80, 57, 111),
+            BorderStyle = BorderStyle.None
         };
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        right.Controls.Add(target, 0, 0);
-        right.Controls.Add(CreatePreviewSection(_beforeHeader, _beforePreview), 0, 1);
-        right.Controls.Add(CreatePreviewSection(_afterHeader, _afterPreview), 0, 2);
+        previewRows.Panel1.Controls.Add(CreatePreviewSection(_beforeHeader, _beforePreview));
+        previewRows.Panel2.Controls.Add(CreatePreviewSection(_afterHeader, _afterPreview));
+
+        var right = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(8) };
+        right.Controls.Add(previewRows);
+        right.Controls.Add(target);
 
         var split = new SafeSplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
             SplitterWidth = 8,
-            PreferredRatio = 0.56,
-            PreferredPaneMinimum = 360,
+            PreferredRatio = 0.54,
+            PreferredPaneMinimum = 400,
             BackColor = Color.FromArgb(80, 57, 111),
             BorderStyle = BorderStyle.None
         };
@@ -180,9 +241,9 @@ internal sealed class ProjectPreparationReviewForm : Form
         var buttons = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 66,
+            Height = 60,
             FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(12, 13, 12, 9),
+            Padding = new Padding(12, 10, 12, 7),
             BackColor = PanelSurface
         };
         var accept = MakeActionButton(initializeGit ? "Prepare project" : "Apply selected changes", true);
@@ -203,22 +264,101 @@ internal sealed class ProjectPreparationReviewForm : Form
         UpdatePreview();
     }
 
-    public IReadOnlyList<string> AcceptedRules
+    public IReadOnlyList<string> AcceptedRules =>
+        GetDetectedRules()
+            .Concat(GetLibraryRules())
+            .Where(rule => !string.IsNullOrWhiteSpace(rule))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    public IReadOnlyList<string> ScopeRules => _scopeRules;
+
+    private IReadOnlyList<string> GetDetectedRules()
     {
-        get
+        var rules = new List<string>();
+        foreach (DataGridViewRow row in _suggestions.Rows)
         {
-            if (_items.Count == 0) return [];
-            var rules = new List<string>();
-            foreach (DataGridViewRow row in _suggestions.Rows)
-            {
-                if (row.Tag is not GitIgnoreSuggestion suggestion) continue;
-                if (Convert.ToBoolean(row.Cells[0].Value)) rules.Add(suggestion.Rule);
-            }
-            return rules;
+            if (row.Tag is not GitIgnoreSuggestion suggestion) continue;
+            if (Convert.ToBoolean(row.Cells[0].Value)) rules.Add(suggestion.Rule);
+        }
+        return rules;
+    }
+
+    private IReadOnlyList<string> GetLibraryRules()
+    {
+        var rules = new List<string>();
+        foreach (DataGridViewRow row in _ruleLibrary.Rows)
+        {
+            if (row.Tag is not GitIgnoreRuleOption option) continue;
+            if (!Convert.ToBoolean(row.Cells[0].Value)) continue;
+            rules.AddRange(option.Rules);
+        }
+        return rules;
+    }
+
+    private void PopulateSuggestions(IReadOnlyList<GitIgnoreSuggestion> suggestions)
+    {
+        foreach (var suggestion in suggestions)
+        {
+            var rowIndex = _suggestions.Rows.Add(
+                suggestion.DefaultSelected,
+                ConfidenceLabel(suggestion.Confidence),
+                suggestion.Rule,
+                suggestion.Description);
+            var row = _suggestions.Rows[rowIndex];
+            row.Tag = suggestion;
+            var tip = suggestion.Description + "\r\n\r\nGit pattern: " + suggestion.Rule;
+            foreach (DataGridViewCell cell in row.Cells) cell.ToolTipText = tip;
+        }
+
+        if (suggestions.Count == 0)
+        {
+            _suggestions.Rows.Add(false, "—", "Nothing detected", "No additional project-specific candidate was found. You can still use the library below or add a custom rule.");
+            _suggestions.Rows[0].ReadOnly = true;
         }
     }
 
-    public IReadOnlyList<string> ScopeRules => _scopeRules;
+    private void AddLibraryRow(GitIgnoreRuleOption option)
+    {
+        var rowIndex = _ruleLibrary.Rows.Add(
+            option.DefaultSelected,
+            option.Category,
+            option.Label,
+            option.RuleSummary);
+        var row = _ruleLibrary.Rows[rowIndex];
+        row.Tag = option;
+        var tip = option.Description + "\r\n\r\nExact Git pattern(s):\r\n" + string.Join("\r\n", option.Rules);
+        foreach (DataGridViewCell cell in row.Cells) cell.ToolTipText = tip;
+    }
+
+    private void AddCustomRule()
+    {
+        try
+        {
+            if (_customKind.SelectedIndex < 0) return;
+            var kind = (CustomIgnoreRuleKind)_customKind.SelectedIndex;
+            var option = GitIgnoreRuleLibrary.CreateCustom(kind, _customValue.Text);
+            AddLibraryRow(option);
+            _customValue.Clear();
+            _ruleLibrary.ClearSelection();
+            _ruleLibrary.Rows[^1].Selected = true;
+            _ruleLibrary.CurrentCell = _ruleLibrary.Rows[^1].Cells[2];
+            UpdatePreview();
+        }
+        catch (ArgumentException ex)
+        {
+            MessageBox.Show(this, ex.Message, "Custom ignore rule", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _customValue.Focus();
+        }
+    }
+
+    private void RemoveSelectedCustomRule()
+    {
+        if (_ruleLibrary.CurrentRow?.Tag is not GitIgnoreRuleOption { Custom: true }) return;
+        _ruleLibrary.Rows.Remove(_ruleLibrary.CurrentRow);
+        _removeCustomButton.Enabled = false;
+        UpdatePreview();
+    }
 
     private void LoadPreviews()
     {
@@ -227,12 +367,12 @@ internal sealed class ProjectPreparationReviewForm : Form
             _beforePreview.Text = ScopedGitIgnoreAdvisor.BuildCurrentOverview(_folderPath, _ignoreDocuments);
             var nestedCount = _ignoreDocuments.Count(document => !document.RelativePath.Equals(".gitignore", StringComparison.OrdinalIgnoreCase));
             _beforeHeader.Text = nestedCount == 0
-                ? "CURRENT IGNORE FILES — root only / none yet"
-                : $"CURRENT IGNORE FILES — root + {nestedCount} nested";
+                ? "CURRENT — root .gitignore only / none yet"
+                : $"CURRENT — root .gitignore + {nestedCount} nested file{(nestedCount == 1 ? "" : "s")}";
         }
         catch (Exception ex)
         {
-            _beforeHeader.Text = "CURRENT IGNORE FILES — preview unavailable";
+            _beforeHeader.Text = "CURRENT — preview unavailable";
             _beforePreview.Text = "GitPet could not read the current ignore files.\r\n\r\n" + ex.Message;
         }
     }
@@ -242,11 +382,11 @@ internal sealed class ProjectPreparationReviewForm : Form
         var selected = AcceptedRules;
         _selectionSummary.Text = selected.Count == 0
             ? _scopeRules.Count == 0
-                ? "Nothing selected — applying will leave the root .gitignore unchanged."
-                : $"Tracking scope is ready ({_scopeRules.Count} scope rule(s)); no extra hygiene suggestions selected."
-            : $"{selected.Count} hygiene suggestion(s) selected" +
+                ? "No extra ignore rules selected. The root .gitignore will remain unchanged."
+                : $"Tracking scope ready ({_scopeRules.Count} scope rule(s)); no extra ignore rules selected."
+            : $"{selected.Count} exact ignore pattern{(selected.Count == 1 ? "" : "s")} selected" +
               (_scopeRules.Count > 0 ? $" + {_scopeRules.Count} tracking-scope rule(s)." : ".") +
-              " Review the AFTER panel before approving.";
+              " The AFTER pane is the exact proposed root file.";
 
         try
         {
@@ -260,39 +400,86 @@ internal sealed class ProjectPreparationReviewForm : Form
         }
     }
 
-    private void ConfigureSuggestionsGrid()
-    {
-        _suggestions.Dock = DockStyle.Fill;
-        _suggestions.BackgroundColor = PreviewSurface;
-        _suggestions.BorderStyle = BorderStyle.None;
-        _suggestions.RowHeadersVisible = false;
-        _suggestions.AllowUserToAddRows = false;
-        _suggestions.AllowUserToDeleteRows = false;
-        _suggestions.AllowUserToResizeRows = false;
-        _suggestions.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        _suggestions.EnableHeadersVisualStyles = false;
-        _suggestions.ColumnHeadersHeight = 38;
-        _suggestions.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(63, 43, 93);
-        _suggestions.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
-        _suggestions.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9, FontStyle.Bold);
-        _suggestions.DefaultCellStyle.BackColor = Color.FromArgb(34, 26, 50);
-        _suggestions.DefaultCellStyle.ForeColor = Ink;
-        _suggestions.DefaultCellStyle.SelectionBackColor = Color.FromArgb(73, 51, 105);
-        _suggestions.DefaultCellStyle.SelectionForeColor = Color.White;
-        _suggestions.GridColor = Color.FromArgb(58, 45, 78);
-        _suggestions.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+    private void ConfigureSuggestionsGrid() => ConfigureGrid(
+        _suggestions,
+        new DataGridViewCheckBoxColumn { Name = "Use", HeaderText = "Use", FillWeight = 9, FlatStyle = FlatStyle.Flat },
+        new DataGridViewTextBoxColumn { Name = "Confidence", HeaderText = "GitPet says", ReadOnly = true, FillWeight = 18 },
+        new DataGridViewTextBoxColumn { Name = "Rule", HeaderText = "Ignore this", ReadOnly = true, FillWeight = 25 },
+        new DataGridViewTextBoxColumn { Name = "Reason", HeaderText = "Why", ReadOnly = true, FillWeight = 48 });
 
-        var selected = new DataGridViewCheckBoxColumn
+    private void ConfigureRuleLibraryGrid() => ConfigureGrid(
+        _ruleLibrary,
+        new DataGridViewCheckBoxColumn { Name = "Use", HeaderText = "Use", FillWeight = 9, FlatStyle = FlatStyle.Flat },
+        new DataGridViewTextBoxColumn { Name = "Category", HeaderText = "Category", ReadOnly = true, FillWeight = 17 },
+        new DataGridViewTextBoxColumn { Name = "Label", HeaderText = "Ignore", ReadOnly = true, FillWeight = 31 },
+        new DataGridViewTextBoxColumn { Name = "Rules", HeaderText = "Pattern(s)", ReadOnly = true, FillWeight = 43 });
+
+    private static void ConfigureGrid(DataGridView grid, params DataGridViewColumn[] columns)
+    {
+        grid.Dock = DockStyle.Fill;
+        grid.BackgroundColor = PreviewSurface;
+        grid.BorderStyle = BorderStyle.None;
+        grid.RowHeadersVisible = false;
+        grid.AllowUserToAddRows = false;
+        grid.AllowUserToDeleteRows = false;
+        grid.AllowUserToResizeRows = false;
+        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        grid.EnableHeadersVisualStyles = false;
+        grid.ColumnHeadersHeight = 34;
+        grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(63, 43, 93);
+        grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+        grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.8f, FontStyle.Bold);
+        grid.DefaultCellStyle.BackColor = Color.FromArgb(34, 26, 50);
+        grid.DefaultCellStyle.ForeColor = Ink;
+        grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(73, 51, 105);
+        grid.DefaultCellStyle.SelectionForeColor = Color.White;
+        grid.GridColor = Color.FromArgb(58, 45, 78);
+        grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+        grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        grid.MultiSelect = false;
+        grid.ShowCellToolTips = true;
+        grid.Columns.AddRange(columns);
+    }
+
+    private void WireCheckboxGrid(DataGridView grid)
+    {
+        grid.CurrentCellDirtyStateChanged += (_, _) =>
         {
-            Name = "Use",
-            HeaderText = "Use",
-            FillWeight = 10,
-            FlatStyle = FlatStyle.Flat
+            if (grid.IsCurrentCellDirty) grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
         };
-        var confidence = new DataGridViewTextBoxColumn { Name = "Confidence", HeaderText = "GitPet says", ReadOnly = true, FillWeight = 20 };
-        var rule = new DataGridViewTextBoxColumn { Name = "Rule", HeaderText = "Ignore this", ReadOnly = true, FillWeight = 25 };
-        var reason = new DataGridViewTextBoxColumn { Name = "Reason", HeaderText = "Why", ReadOnly = true, FillWeight = 45 };
-        _suggestions.Columns.AddRange(selected, confidence, rule, reason);
+        grid.CellValueChanged += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex == 0) UpdatePreview();
+        };
+    }
+
+    private static Panel CreateSectionHeader(string title, string explanation)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 68,
+            Padding = new Padding(10, 8, 10, 6),
+            BackColor = Color.FromArgb(38, 28, 55)
+        };
+        var titleLabel = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 23,
+            Text = title,
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold)
+        };
+        var explanationLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = explanation,
+            ForeColor = MutedInk,
+            AutoEllipsis = true
+        };
+        panel.Controls.Add(explanationLabel);
+        panel.Controls.Add(titleLabel);
+        return panel;
     }
 
     private static void ConfigurePreviewBox(RichTextBox box)
@@ -311,8 +498,8 @@ internal sealed class ProjectPreparationReviewForm : Form
     private static void ConfigurePreviewHeader(Label label)
     {
         label.Dock = DockStyle.Top;
-        label.Height = 40;
-        label.Padding = new Padding(10, 9, 10, 5);
+        label.Height = 36;
+        label.Padding = new Padding(10, 7, 10, 4);
         label.BackColor = Color.FromArgb(55, 39, 79);
         label.ForeColor = Color.White;
         label.Font = new Font("Segoe UI", 9, FontStyle.Bold);
@@ -324,7 +511,7 @@ internal sealed class ProjectPreparationReviewForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = PreviewSurface,
-            Margin = new Padding(0, 5, 0, 5)
+            Margin = new Padding(0, 4, 0, 4)
         };
         panel.Controls.Add(preview);
         panel.Controls.Add(header);
@@ -337,9 +524,9 @@ internal sealed class ProjectPreparationReviewForm : Form
         {
             Text = text,
             AutoSize = true,
-            MinimumSize = new Size(primary ? 150 : 90, 38),
-            Height = 38,
-            Margin = new Padding(6, 2, 0, 2),
+            MinimumSize = new Size(primary ? 126 : 90, 36),
+            Height = 36,
+            Margin = new Padding(6, 1, 0, 1),
             FlatStyle = FlatStyle.Flat,
             BackColor = primary ? Purple : Color.FromArgb(65, 53, 83),
             ForeColor = Color.White,
