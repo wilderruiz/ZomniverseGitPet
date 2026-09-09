@@ -52,6 +52,29 @@ The toolbar intentionally uses human-first labels: <strong>Projects Â· Refresh Â
 
 ---
 
+<h2>Interface showcase</h2>
+
+<p>Selected interface snapshots from the public preview. The images live inside the repository, so GitHub renders them directly from relative <code>src</code> paths without external hosting.</p>
+
+<p align="center">
+  <img src="mockups/pet/previews/5.png" width="920" alt="ZomniverseGitPet interface showcase">
+</p>
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="mockups/pet/previews/1.png" width="440" alt="ZomniverseGitPet interface preview 1"></td>
+    <td width="50%" align="center"><img src="mockups/pet/previews/2.png" width="440" alt="ZomniverseGitPet interface preview 2"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="mockups/pet/previews/3.png" width="440" alt="ZomniverseGitPet interface preview 3"></td>
+    <td width="50%" align="center"><img src="mockups/pet/previews/4.png" width="440" alt="ZomniverseGitPet interface preview 4"></td>
+  </tr>
+</table>
+
+<p align="center"><sub>Guardian Console, desktop pet, review workflows, and repository-safety UI from the evolving 0.4.x preview.</sub></p>
+
+---
+
 <h2>File Review</h2>
 
 Click any changed file and the lower Guardian area becomes a resizable comparison workspace.
