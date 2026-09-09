@@ -109,7 +109,7 @@ internal static class MajorUpdateFeature
 
             if (assessment.IsMajorCandidate)
             {
-                SetAllMenus("Major update? ✦", GuardianTheme.Changes,
+                SetAllMenus("Milestones ✦", GuardianTheme.Changes,
                     assessment.Prompt + " " +
                     (assessment.Reasons.Count == 0
                         ? "Open this menu to review it."
