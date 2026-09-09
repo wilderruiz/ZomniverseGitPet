@@ -2,6 +2,8 @@ namespace ZomniverseGitPet;
 
 internal static class GuardianReconciliation
 {
+    private static bool _restoreAutomaticSaving;
+
     public static async Task BeginAsync(Form? owner)
     {
         var config = GuardianSyncState.Config;
@@ -53,6 +55,7 @@ internal static class GuardianReconciliation
             MessageBoxIcon.Question);
         if (answer != DialogResult.Yes) return;
 
+        SuspendAutomaticSaving(owner);
         var repositoryPath = config.RepositoryPath;
         var merge = await git.RunGitAsync(
             repositoryPath,
@@ -76,6 +79,7 @@ internal static class GuardianReconciliation
 
         if (conflicts.Length == 0)
         {
+            RestoreAutomaticSaving(owner);
             await GuardianSyncState.RefreshAsync(false);
             MessageBox.Show(owner,
                 "GitPet could not prepare the reconciliation. Nothing was sent online.\r\n\r\n" + merge.Output,
@@ -210,6 +214,7 @@ internal static class GuardianReconciliation
             MessageBoxButtons.OK,
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
+        if (result.Success) RestoreAutomaticSaving(owner);
         await GuardianSyncState.RefreshAsync(true);
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
     }
@@ -231,6 +236,8 @@ internal static class GuardianReconciliation
             config.RepositoryPath,
             ["merge", "--abort"],
             TimeSpan.FromMinutes(1));
+
+        if (result.Success) RestoreAutomaticSaving(owner);
 
         MessageBox.Show(owner,
             result.Success
@@ -265,7 +272,8 @@ internal static class GuardianReconciliation
     private static async Task AbortAfterCancelledAsync(string repositoryPath, Form? owner)
     {
         var git = GuardianSyncState.Git!;
-        await git.RunGitAsync(repositoryPath, ["merge", "--abort"], TimeSpan.FromMinutes(1));
+        var abort = await git.RunGitAsync(repositoryPath, ["merge", "--abort"], TimeSpan.FromMinutes(1));
+        if (abort.Success) RestoreAutomaticSaving(owner);
         await GuardianSyncState.RefreshAsync(true);
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
         MessageBox.Show(owner,
@@ -279,6 +287,7 @@ internal static class GuardianReconciliation
     {
         var git = GuardianSyncState.Git!;
         var abort = await git.RunGitAsync(repositoryPath, ["merge", "--abort"], TimeSpan.FromMinutes(1));
+        if (abort.Success) RestoreAutomaticSaving(owner);
         await GuardianSyncState.RefreshAsync(true);
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
         if (!abort.Success)
@@ -289,6 +298,47 @@ internal static class GuardianReconciliation
             "Reconciliation stopped",
             MessageBoxButtons.OK,
             MessageBoxIcon.Warning);
+    }
+
+    private static void SuspendAutomaticSaving(Form? owner)
+    {
+        var config = GuardianSyncState.Config;
+        if (config is null) return;
+
+        _restoreAutomaticSaving = config.AutomaticCheckpointsEnabled;
+        config.AutomaticCheckpointsEnabled = false;
+
+        var checkbox = FindAutomaticSavingCheckBox(owner);
+        if (checkbox is { Checked: true }) checkbox.Checked = false;
+    }
+
+    private static void RestoreAutomaticSaving(Form? owner)
+    {
+        if (!_restoreAutomaticSaving) return;
+
+        var config = GuardianSyncState.Config;
+        if (config is not null) config.AutomaticCheckpointsEnabled = true;
+
+        var checkbox = FindAutomaticSavingCheckBox(owner);
+        if (checkbox is { Checked: false }) checkbox.Checked = true;
+        _restoreAutomaticSaving = false;
+    }
+
+    private static CheckBox? FindAutomaticSavingCheckBox(Form? owner)
+    {
+        if (owner is null) return null;
+        return EnumerateControls(owner)
+            .OfType<CheckBox>()
+            .FirstOrDefault(box => box.Text.StartsWith("Automatic verified save", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<Control> EnumerateControls(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var descendant in EnumerateControls(child)) yield return descendant;
+        }
     }
 
     private static async Task<bool> EnsureGitIdentityAsync(Form? owner, string repositoryPath)
