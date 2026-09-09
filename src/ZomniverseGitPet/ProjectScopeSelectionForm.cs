@@ -161,30 +161,34 @@ internal sealed class ProjectScopeSelectionForm : Form
         _tree.ItemHeight = 28;
         _tree.LineColor = GuardianTheme.Border;
 
-        _tree.BeforeExpand += (_, e) => EnsureChildrenLoaded(e.Node);
+        _tree.BeforeExpand += (_, e) =>
+        {
+            if (e.Node is TreeNode node) EnsureChildrenLoaded(node);
+        };
         _tree.BeforeCheck += (_, e) =>
         {
-            if (e.Action != TreeViewAction.Unknown && e.Node.Tag is ScopeNodeInfo { Locked: true })
+            if (e.Node is not TreeNode node) return;
+            if (e.Action != TreeViewAction.Unknown && node.Tag is ScopeNodeInfo { Locked: true })
                 e.Cancel = true;
         };
         _tree.AfterCheck += (_, e) =>
         {
-            if (_updatingChecks) return;
-            if (e.Node.Tag is ScopeNodeInfo { Locked: true })
+            if (_updatingChecks || e.Node is not TreeNode node) return;
+            if (node.Tag is ScopeNodeInfo { Locked: true })
             {
-                SetNodeChecked(e.Node, false, propagateLoadedChildren: false);
+                SetNodeChecked(node, false, propagateLoadedChildren: false);
                 return;
             }
 
             _updatingChecks = true;
             try
             {
-                foreach (TreeNode child in e.Node.Nodes)
+                foreach (TreeNode child in node.Nodes)
                 {
                     if (child.Tag is LazyMarker) continue;
                     if (child.Tag is ScopeNodeInfo { Locked: true }) continue;
-                    child.Checked = e.Node.Checked;
-                    SetLoadedDescendants(child, e.Node.Checked);
+                    child.Checked = node.Checked;
+                    SetLoadedDescendants(child, node.Checked);
                 }
             }
             finally { _updatingChecks = false; }
