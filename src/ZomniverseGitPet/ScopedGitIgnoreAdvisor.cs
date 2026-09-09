@@ -292,7 +292,7 @@ internal static class ProjectGitIgnoreComposer
             return "# Ignore files or folders whose name contains LEGACY/legacy anywhere in the project.";
         if (rule.StartsWith("*.", StringComparison.Ordinal))
             return $"# Ignore files ending in {rule[1..]} anywhere in the project.";
-        if (rule.EndsWith('/', StringComparison.Ordinal) && !rule.StartsWith('/'))
+        if (rule.Length > 0 && rule[^1] == '/' && rule[0] != '/')
             return $"# Ignore folders named '{rule.TrimEnd('/')}' anywhere in the project.";
         if (rule.StartsWith("**/*", StringComparison.Ordinal))
             return "# Ignore names matching this text pattern anywhere in the project.";
@@ -305,7 +305,7 @@ internal static class ProjectGitIgnoreComposer
         rule.Equals("/*", StringComparison.Ordinal) ||
         rule.Equals("!/.gitignore", StringComparison.OrdinalIgnoreCase) ||
         rule.StartsWith("!/", StringComparison.Ordinal) ||
-        (rule.StartsWith('/', StringComparison.Ordinal) && rule.EndsWith('/', StringComparison.Ordinal));
+        (rule.Length > 1 && rule[0] == '/' && rule[^1] == '/');
 
     private static void StartSection(System.Text.StringBuilder builder)
     {
