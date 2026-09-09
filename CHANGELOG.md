@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.3.6 - 2026-09-09
+
+- Reworked project preparation into a larger, resizable **two-row ignore builder**: detected project-specific suggestions on top and a reusable/custom ignore library below.
+- Added organized **PRIVACY**, **GENERATED**, **SYSTEM**, **ARCHIVE**, and **CUSTOM** ignore categories with checkboxes and per-row hover explanations showing why an item is normally kept out of Git and the exact patterns that will be written.
+- Added an environment-secret preset that ignores `.env` and `.env.*` recursively while explicitly preserving simple and nested `.example`, `.sample`, `.template`, and `.dist` environment templates.
+- Added a review-only **Names containing LEGACY** preset for projects that retain historical copies beside live source.
+- Added friendly custom ignore creation for folder names, file extensions, exact file names, and names containing text; GitPet converts these choices into `.gitignore` glob patterns instead of asking non-programmers to write Git patterns manually.
+- Changed the CURRENT and AFTER preview area to a draggable horizontal safe split so each preview can receive substantially more vertical room; the detected/library area on the left is independently resizable too.
+- Added explanatory comment blocks to generated root `.gitignore` sections so selective tracking scope, user-selected ignore patterns, recursive behavior, and safe `!` template exceptions remain understandable after the file is written.
+- Unified `.gitignore` preview and apply through the same composer so the approved AFTER preview is the exact text GitPet writes.
+- Hardened selective-scope ordering so internal rules such as `/CV/*` remain in the scope block before later hygiene patterns and cannot accidentally undo a selected deep-folder re-inclusion.
+- Expanded lightweight regression coverage to **21 checks**, including preset translation, custom patterns, explanatory preview/apply equality, environment-template exceptions, and order-sensitive scope composition.
+- Bumped the application version to **0.3.6**.
+
 ## 0.3.5 - 2026-09-09
 
 - Added a Dropbox-style **project scope tree** before preparing a normal folder for Git, with files/folders selected by checkbox and expandable subfolders for narrower tracking scopes.
