@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-09-09
+
+- Added an advisory **Major update?** detector for unusually large or structural project changes. GitPet looks at file counts, line churn, added/removed files, schema/database/dependency paths, format migrations, and local/remote divergence, then asks rather than declaring that a change is major.
+- Added a visible **Milestones** menu to Guardian. When strong signals are present it changes to **Major update? ✦** with a plain-language explanation in its tooltip.
+- Added a guided **Release & Milestone Center** that compares the current local generation with the previous/published baseline and explains what GitPet noticed.
+- Major-release planning can preserve the old generation as an ordinary local `legacy/vN` branch plus an annotated `vN.0.0-legacy` tag, then move the current redesign onto a separate `redesign/vN+1` branch.
+- When local and origin histories have diverged, the old published `origin` commit is used as the legacy target while the current local generation remains intact on the new branch; GitPet does not force-update or rewrite `main`.
+- Uncommitted redesign work can remain in the working tree while GitPet creates the legacy refs at the previous baseline and switches the work onto the new branch before the user's next Checkpoint.
+- Creating a major-release plan is **local only**. It does not push, merge, reset, clean, or publish anything.
+- Added a separate, explicit **Publish legacy refs ↑** action that atomically publishes only the protected legacy branch and tag to the existing `origin`. The redesign branch is intentionally excluded from that action.
+- Added GitHub-aware **Create GitHub Release ↗** and **Previous releases ↗** actions. GitPet can open the repository's Releases UI and copy suggested release title/notes, but final GitHub Release publication remains a deliberate browser action.
+- GitHub's normal Releases sidebar becomes the browsable archive automatically after releases are published; GitPet does not edit arbitrary project About/README content merely to create release links.
+- Added support for HTTPS and SSH GitHub origin URLs when deriving the Releases page. Non-GitHub remotes still receive normal local branch/tag milestone support.
+- Preserved existing safety rules: no automatic push, no automatic merge, no `reset --hard`, no `clean`, no force-push, no automatic remote creation or replacement.
+- Bumped the application version to **0.4.0**.
+
 ## 0.3.8 - 2026-09-09
 
 - Added a shared adaptive window-placement policy for resizable GitPet windows.
@@ -87,7 +103,7 @@
 
 - Added a friendly **Connect Remote** step when the user presses **Push ↑** and the current project has no `origin` remote.
 - The user pastes the clone URL of an already-existing GitHub, GitLab, Bitbucket, private-server, HTTPS, SSH, or other Git repository and explicitly confirms the connection.
-- GitPet adds only `origin` and then continues to the normal manual Push confirmation; it does not create an online repository, replace an existing remote, stage files, commit, or push automatically.
+- GitPet adds only `origin` and then continues to the normal manual Push confirmation; it does not create the online repository, replace an existing `origin`, stage files, commit, or push automatically.
 - Remote URLs are not written to GitPet's audit log; the audit records only whether explicit remote configuration succeeded.
 - Bumped the application version to **0.3.1**.
 
@@ -96,7 +112,7 @@
 - Introduced the dark **Guardian Console** visual system with graphite surfaces, violet structure, hot-pink action accents, dark tooltips, status chips, and a dedicated Guardian Activity console.
 - Replaced raw Git status codes in the main file list with human-readable states while preserving the underlying porcelain codes in hover help.
 - Added a clean-repository empty state and a subtle `GUARDIAN ONLINE` pulse without changing repository polling behavior.
-- Changed **Cancel** into an operation-only action that appears only while a cancellable task is running.
+- Changed **Cancel** into an operation-only action that appears only while something can actually be cancelled.
 - Added Windows dark-caption integration where supported while preserving normal resizable Windows window behavior.
 - Added the canonical purple fox-head application icon for the executable, taskbar, Guardian window, and tray icon.
 - Integrated pet chrome into the mascot: minimize now lives in the speech-bubble chrome and Exit is a hot-pink ribbon control on the fox.
