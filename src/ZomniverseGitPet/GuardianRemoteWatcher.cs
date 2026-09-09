@@ -11,7 +11,12 @@ internal sealed class GuardianRemoteWatcher : IDisposable
         GuardianSyncState.Initialize(config, git);
         _timer = new System.Windows.Forms.Timer
         {
-            Interval = Math.Max(60, config.PollSeconds) * 1000
+            /*
+            PATCH: RESPONSIVE REMOTE POLLING
+            DATE: 2026-09-09
+            Respect configured polling with safe ten-second minimum.
+            */
+            Interval = Math.Max(10, config.PollSeconds) * 1000
         };
         _timer.Tick += async (_, _) => await TickAsync();
         _timer.Start();
