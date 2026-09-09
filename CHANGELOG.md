@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.3.8 - 2026-09-09
+
+- Added a shared adaptive window-placement policy for resizable GitPet windows.
+- On first open, resizable windows now use the current monitor's usable area up to roughly 92% width and 88% height while respecting each form's minimum and maximum size.
+- Each window type remembers its own last normal bounds and maximized state, so Guardian, project preparation, trust-folder, test, identity, and remote dialogs reopen where the user left them instead of repeatedly returning to small defaults.
+- Remembered bounds are clamped back onto an available monitor when screen size, DPI, or multi-monitor layout changes.
+- Window placement is stored only as local UI convenience state under `%LOCALAPPDATA%\ZomniverseGitPet\window-layout.json`; it is never written into a watched repository.
+- Added automatic discovery for older resizable GitPet dialogs so the sizing policy remains consistent even when a form predates the shared Guardian chrome helper.
+- Bumped the application version to **0.3.8**.
+
 ## 0.3.7 - 2026-09-09
 
 - Added a branded **Trust this project folder?** flow for Git's `detected dubious ownership` protection instead of exposing the raw `safe.directory` command as a dead end.
