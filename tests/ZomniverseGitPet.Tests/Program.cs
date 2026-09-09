@@ -94,6 +94,19 @@ Check("new-file diff maps only now lines", () =>
     return map.BeforeLines.Count == 0 && map.AfterLines.SetEquals([1, 2, 3, 4]);
 });
 
+Check("safe splitter handles transient tiny bounds", () =>
+{
+    return SafeSplitContainer.CalculateSafeDistance(0, 6, 0.5, 120) == 0 &&
+           SafeSplitContainer.CalculateSafeDistance(6, 6, 0.5, 120) == 0 &&
+           SafeSplitContainer.CalculateSafeDistance(100, 6, 0.5, 120) == 47;
+});
+
+Check("safe splitter preserves useful ratio when space returns", () =>
+{
+    var distance = SafeSplitContainer.CalculateSafeDistance(1000, 6, 0.65, 120);
+    return distance == 646 && distance >= 120 && distance <= 874;
+});
+
 Check("gitignore advisor finds common and security candidates safely", () =>
 {
     var root = CreateTempDirectory();
@@ -152,7 +165,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 12 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 14 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
