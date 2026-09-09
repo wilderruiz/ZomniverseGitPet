@@ -302,10 +302,8 @@ internal static class ProjectGitIgnoreComposer
     }
 
     private static bool LooksLikeScopeRule(string rule) =>
-        rule.Equals("/*", StringComparison.Ordinal) ||
-        rule.Equals("!/.gitignore", StringComparison.OrdinalIgnoreCase) ||
-        rule.StartsWith("!/", StringComparison.Ordinal) ||
-        (rule.Length > 1 && rule[0] == '/' && rule[^1] == '/');
+        rule.StartsWith("/", StringComparison.Ordinal) ||
+        rule.StartsWith("!/", StringComparison.Ordinal);
 
     private static void StartSection(System.Text.StringBuilder builder)
     {
