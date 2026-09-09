@@ -43,13 +43,8 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     {
         if (_guardian is null || _guardian.IsDisposed)
         {
-            _guardian = new GuardianForm(
-                _config,
-                _configStore,
-                _git,
-                _audit,
-                ChooseRepositoryAsync,
-                ReconfigureCurrentProjectAsync);
+            _guardian = new GuardianForm(_config, _configStore, _git, _audit, ChooseRepositoryAsync);
+            InstallProjectSetupMenu(_guardian);
             _guardian.FormClosed += (_, _) => _guardian = null;
         }
         _guardian.Show();
@@ -66,6 +61,17 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private async Task ReconfigureCurrentProjectAsync()
     {
+        if (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian))
+        {
+            MessageBox.Show(
+                DialogOwner,
+                "Finish or cancel the current Guardian operation before changing Project setup.",
+                "Project setup",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_config.RepositoryPath) || !Directory.Exists(_config.RepositoryPath))
         {
             ShowProjectsMenu();
@@ -73,6 +79,41 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
 
         await ReconfigureRepositoryAsync(_config.RepositoryPath);
+    }
+
+    private void InstallProjectSetupMenu(GuardianForm guardian)
+    {
+        var menu = guardian.MainMenuStrip;
+        if (menu is null || menu.Items.Cast<ToolStripItem>().Any(item => item.Name == "ProjectSetupMenu")) return;
+
+        var setup = new ToolStripMenuItem("Project setup")
+        {
+            Name = "ProjectSetupMenu",
+            ToolTipText = "Reopen CHOOSE WHAT BELONGS TO THIS PROJECT, then REVIEW REPOSITORY HYGIENE. No git init, commit, pull, or push is performed."
+        };
+        setup.Click += async (_, _) => await ReconfigureCurrentProjectAsync();
+        menu.Items.Insert(0, setup);
+    }
+
+    private static bool GuardianOperationInProgress(Control root)
+    {
+        foreach (var control in EnumerateControls(root))
+        {
+            if (control is GuardianActionButton button &&
+                button.Visible &&
+                button.Text.Equals("Cancel", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static IEnumerable<Control> EnumerateControls(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var descendant in EnumerateControls(child)) yield return descendant;
+        }
     }
 
     private void ShowProjectsMenu()
