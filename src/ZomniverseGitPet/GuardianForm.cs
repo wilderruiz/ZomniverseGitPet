@@ -85,11 +85,11 @@ public sealed class GuardianForm : Form
 
         var projects = MakeActionButton("Projects ▾", GuardianActionKind.Standard, 112, async () => await _chooseRepository());
         var refresh = MakeActionButton("Refresh", GuardianActionKind.Standard, 92, RefreshAsync);
-        var diff = MakeActionButton("Diff", GuardianActionKind.Standard, 82, ShowDiffAsync);
+        var diff = MakeActionButton("Review", GuardianActionKind.Standard, 82, ShowDiffAsync);
         var tests = MakeActionButton("Tests", GuardianActionKind.Standard, 82, RunTestsAsync);
-        var checkpoint = MakeActionButton("Checkpoint", GuardianActionKind.Primary, 118, CreateCheckpointAsync);
-        var pull = MakeActionButton("Pull ↓", GuardianActionKind.Pull, 92, PullFromOriginAsync);
-        var push = MakeActionButton("Push ↑", GuardianActionKind.Push, 92, PushToOriginAsync);
+        var checkpoint = MakeActionButton("Save", GuardianActionKind.Primary, 92, CreateCheckpointAsync);
+        var pull = MakeActionButton("Get ↓", GuardianActionKind.Pull, 92, PullFromOriginAsync);
+        var push = MakeActionButton("Send ↑", GuardianActionKind.Push, 92, PushToOriginAsync);
         var recent = MakeActionButton("History", GuardianActionKind.Standard, 92, RecentCommitsAsync);
         var health = MakeActionButton("Health", GuardianActionKind.Standard, 92, HealthCheckAsync);
         _cancelButton = MakeActionButton("Cancel", GuardianActionKind.Danger, 92, () =>
@@ -109,26 +109,28 @@ public sealed class GuardianForm : Form
             "Refresh\n\nRe-read the current branch and working-tree status.\n" +
             "Background monitoring also refreshes quietly without taking over the mouse cursor.");
         _toolTips.SetToolTip(diff,
-            "Diff / File Review\n\nSelect a changed file and open a side-by-side BEFORE / NOW review.\n" +
-            "The left side comes from the latest local commit/checkpoint; the right side is the current working file.");
+            "Review\n\nGit operation: diff / working-tree comparison.\n\n" +
+            "Compares the current working item with the version stored in the latest local Git commit.");
         _toolTips.SetToolTip(tests,
             "Tests\n\nRun the test commands saved for THIS project. If none are configured, GitPet opens a friendly setup window\n" +
             "and suggests likely commands for review. Hold Shift while clicking Tests to edit the saved commands later.");
         _toolTips.SetToolTip(checkpoint,
-            "Checkpoint\n\nSave the current working state as an ordinary LOCAL Git commit.\n" +
-            "GitPet previews the files, asks for confirmation, and never pushes this commit automatically.");
+            "Save\n\nGit operation: local commit.\n\n" +
+            "Saves the current non-ignored changes as a local Git commit (called a checkpoint internally by GitPet).\n\n" +
+            "Nothing is pushed online.");
         _toolTips.SetToolTip(pull,
-            "Pull ↓ — MANUAL ONLY\n\nBring committed changes from origin into the CURRENT branch.\n" +
-            "GitPet requires a clean working tree and uses fast-forward only, so it will never create an automatic merge commit.");
+            "Get updates\n\nGit operation:\ngit pull --ff-only origin <branch>\n\n" +
+            "Gets committed updates from the configured remote.\n\n" +
+            "GitPet requires a clean working tree and uses fast-forward-only safety. It will never create an automatic merge commit.");
         _toolTips.SetToolTip(push,
-            "Push ↑ — MANUAL ONLY\n\nPush committed history to the existing origin remote on the CURRENT branch.\n" +
-            "GitPet shows the destination and commit first. Uncommitted changes are never included.");
+            "Send saved updates\n\nGit operation:\ngit push origin <branch>\n\n" +
+            "Sends committed history only.\n\nUnsaved / uncommitted working changes are never included.");
         _toolTips.SetToolTip(recent,
             "History\n\nShow the latest 12 local Git commits, including normal commits and checkpoints.");
         _toolTips.SetToolTip(health,
             "Health\n\nRun git fsck --no-progress to check the internal integrity of the local repository.");
         _toolTips.SetToolTip(_cancelButton,
-            "Cancel\n\nRequest cancellation of the Git, test, pull, push, or health operation currently running.");
+            "Cancel\n\nRequest cancellation of the Git, test, get, send, or health operation currently running.");
 
         ConfigureFilesGrid();
         var filesPanel = BuildFilesPanel();
@@ -308,7 +310,7 @@ public sealed class GuardianForm : Form
         _emptyState.Font = new Font("Segoe UI", 11);
         _emptyState.TextAlign = ContentAlignment.MiddleCenter;
         _emptyState.Text =
-            "ALL CLEAR  ✓\n\nNo uncommitted changes in this project.\nThe fox is happy. Your working tree is clean.";
+            "ALL CLEAR  ✓\n\nNo unsaved changes in this project.\nThe fox is happy. Everything currently on this PC is saved locally.";
         _emptyState.Visible = false;
 
         panel.Controls.Add(_files);
@@ -382,7 +384,7 @@ public sealed class GuardianForm : Form
         _output.Text = "Guardian ready. Click a changed file to open the side-by-side File Review.";
 
         _toolTips.SetToolTip(_output,
-            "Guardian Activity\n\nResults from Tests, Checkpoint, Pull, Push, History, and Health appear here.\n" +
+            "Guardian Activity\n\nResults from Tests, Save, Get, Send, History, and Health appear here.\n" +
             "Click a changed file to switch this area to the Before / Now review workspace.");
 
         panel.Controls.Add(_output);
@@ -404,12 +406,12 @@ public sealed class GuardianForm : Form
         {
             AutoSize = true,
             Location = new Point(16, 9),
-            Text = "CHECKPOINT POLICY",
+            Text = "AUTOMATIC SAVING",
             ForeColor = GuardianTheme.FaintInk,
             Font = new Font("Segoe UI", 7.5f, FontStyle.Bold)
         };
 
-        _automatic.Text = "Automatic verified checkpoints";
+        _automatic.Text = "Automatic verified saves";
         _automatic.AutoSize = true;
         _automatic.Location = new Point(16, 28);
         _automatic.ForeColor = GuardianTheme.Ink;
@@ -420,15 +422,15 @@ public sealed class GuardianForm : Form
         {
             AutoSize = true,
             Location = new Point(250, 29),
-            Text = "OFF BY DEFAULT · local commits only · never auto-pushes",
+            Text = "OFF BY DEFAULT · local saves only · never sends automatically",
             ForeColor = GuardianTheme.FaintInk,
             Font = new Font("Segoe UI", 8)
         };
 
         _toolTips.SetToolTip(_automatic,
-            "Automatic verified checkpoints\n\nOFF by default. When enabled, GitPet may create LOCAL checkpoint commits\n" +
-            "after the configured quiet period. Configured tests can be required first.\n\n" +
-            "Automatic checkpoints never push and never configure remotes.");
+            "Automatic verified saves\n\nOFF by default. When enabled, GitPet may save after the configured quiet period.\n" +
+            "Configured tests can be required first.\n\n" +
+            "Technically this creates a local Git commit/checkpoint. It never pushes automatically and never configures remotes.");
 
         _automatic.CheckedChanged += async (_, _) =>
         {
@@ -579,7 +581,7 @@ public sealed class GuardianForm : Form
             row.Cells[0].Style.ForeColor = StatusColor(file.Status);
             row.Cells[0].ToolTipText = DescribeGitStatus(file.Status);
             row.Cells[1].ToolTipText =
-                $"{file.Path}\n\nClick this row to compare the latest local commit/checkpoint with the current working file.";
+                $"{file.Path}\n\nClick this row to compare the latest saved version with the current working file.\n\nTechnical baseline: latest local Git commit.";
         }
 
         var isClean = _status.Healthy && _status.Files.Count == 0;
@@ -587,7 +589,7 @@ public sealed class GuardianForm : Form
         _files.Visible = !isClean;
         if (isClean)
         {
-            _emptyState.Text = "ALL CLEAR  ✓\n\nNo uncommitted changes in this project.\nThe fox is happy. Your working tree is clean.";
+            _emptyState.Text = "ALL CLEAR  ✓\n\nNo unsaved changes in this project.\nThe fox is happy. Everything currently on this PC is saved locally.";
             _emptyState.BringToFront();
         }
 
@@ -640,7 +642,9 @@ public sealed class GuardianForm : Form
         _changesChip.Tone = status.Files.Count == 0
             ? GuardianChipTone.Healthy
             : GuardianChipTone.Changes;
-        _commitLabel.Text = $"LATEST  {FormatCommitPreview(commit)}";
+        _commitLabel.Text =
+            $"LATEST  {FormatCommitPreview(commit)}\r\n" +
+            FriendlyGitState.FormatSyncSummary(status);
     }
 
     private void SetNoProjectHeader()
@@ -770,7 +774,7 @@ public sealed class GuardianForm : Form
 
             var model = new FileComparisonModel(
                 relativePath,
-                hasBaseline ? FormatCommitPreview(commit) : "no baseline",
+                hasBaseline ? FormatCommitPreview(commit) : "no saved version",
                 hasBaseline,
                 beforeExists,
                 beforeText,
@@ -778,7 +782,7 @@ public sealed class GuardianForm : Form
                 working.Text,
                 marks,
                 hasBaseline && !beforeExists
-                    ? "NEW FILE\n\nThis item did not exist in the latest local commit/checkpoint."
+                    ? "NEW FILE\n\nThis item did not exist in the latest local Git commit/checkpoint."
                     : null,
                 !working.Exists
                     ? "DELETED FROM WORKING TREE\n\nThis item existed in the baseline but is no longer present on disk."
@@ -933,33 +937,34 @@ public sealed class GuardianForm : Form
         });
     });
 
-    private async Task CreateCheckpointAsync() => await RunOperationAsync("Preparing checkpoint...", async token =>
+    private async Task CreateCheckpointAsync() => await RunOperationAsync("Preparing save...", async token =>
     {
         if (!HasRepository()) return;
 
         _status = await _git.GetStatusAsync(_config.RepositoryPath!, token);
         if (!_status.Healthy || _status.Files.Count == 0)
         {
-            _output.Text = _status.Healthy ? "The working tree is already clean." : _status.Error;
+            _output.Text = _status.Healthy ? "Everything is already saved locally." : _status.Error;
             return;
         }
 
         var suspicious = GitService.FindSuspiciousPaths(_status.Files, _config.SuspiciousPathPatterns);
         if (suspicious.Count > 0)
         {
-            _output.Text = "Checkpoint blocked because suspicious paths are present:\n\n" + string.Join("\n", suspicious);
+            _output.Text = "Save blocked because suspicious paths are present:\n\n" + string.Join("\n", suspicious);
             await _audit.WriteAsync("checkpoint_blocked_suspicious_paths", new { files = suspicious });
             return;
         }
 
-        var preview = string.Join("\n", _status.Files.Take(20).Select(f => $"{f.Status}  {f.Path}"));
+        var preview = string.Join("\n", _status.Files.Take(20).Select(f => $"{HumanizeGitStatus(f.Status)}  {f.Path}"));
         if (_status.Files.Count > 20) preview += $"\n... and {_status.Files.Count - 20} more";
 
+        var countText = FriendlyGitState.Count(_status.Files.Count, "current change");
         var answer = MessageBox.Show(
             this,
-            "Create a LOCAL checkpoint containing every current non-ignored change?\n\n" + preview +
-            "\n\nThis creates an ordinary local Git commit. It does not push anything.",
-            "Create checkpoint",
+            $"Save all {countText} as a local version?\n\n" + preview +
+            "\n\nThis saves the current state on this PC.\nNothing will be sent online.",
+            "Save changes",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
 
@@ -968,12 +973,16 @@ public sealed class GuardianForm : Form
 
         var message = $"checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}";
         var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, token);
-        _output.Text = result.Message;
+        _output.Text = result.Success
+            ? "Changes saved locally ✓\n\n" + result.Message
+            : result.Message;
 
         MessageBox.Show(
             this,
-            result.Message,
-            "Checkpoint",
+            result.Success
+                ? "Changes saved locally ✓\n\nNothing was sent online."
+                : result.Message,
+            "Save changes",
             MessageBoxButtons.OK,
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
@@ -998,7 +1007,7 @@ public sealed class GuardianForm : Form
         using var identity = new GitIdentityForm(projectName, currentName, currentEmail);
         if (identity.ShowDialog(this) != DialogResult.OK)
         {
-            _output.Text = "Checkpoint cancelled. Git still needs an author name and email before it can create a commit.";
+            _output.Text = "Save cancelled. Git still needs an author name and email before it can save a local version.";
             return false;
         }
 
@@ -1014,7 +1023,7 @@ public sealed class GuardianForm : Form
             _output.Text = save.Output;
             MessageBox.Show(
                 this,
-                "GitPet could not save the Git identity. No checkpoint was created.\n\n" + save.Output,
+                "GitPet could not save the Git identity. No changes were saved.\n\n" + save.Output,
                 "Git identity",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
@@ -1022,12 +1031,12 @@ public sealed class GuardianForm : Form
         }
 
         _output.Text = identity.UseGlobal
-            ? "Git identity saved for Git projects on this PC. Creating checkpoint..."
-            : "Git identity saved for this project. Creating checkpoint...";
+            ? "Git identity saved for Git projects on this PC. Saving changes..."
+            : "Git identity saved for this project. Saving changes...";
         return true;
     }
 
-    private async Task PullFromOriginAsync() => await RunOperationAsync("Checking pull safety...", async token =>
+    private async Task PullFromOriginAsync() => await RunOperationAsync("Checking Get safety...", async token =>
     {
         if (!HasRepository()) return;
 
@@ -1035,20 +1044,22 @@ public sealed class GuardianForm : Form
         var status = await _git.GetStatusAsync(repositoryPath, token);
         if (!status.Healthy)
         {
-            _output.Text = "Pull unavailable because Git could not read the working tree.\n\n" + status.Error;
+            _output.Text = "Get unavailable because Git could not read the current project state.\n\n" + status.Error;
             return;
         }
 
         if (status.Files.Count > 0)
         {
+            var countText = FriendlyGitState.Count(status.Files.Count, "unsaved change");
             _output.Text =
-                $"Pull blocked safely: {status.Files.Count} uncommitted change{(status.Files.Count == 1 ? "" : "s")} detected.\n\n" +
-                "Create a Checkpoint (or otherwise commit your work) before pulling. GitPet will not risk mixing incoming changes with an uncommitted working tree.";
+                $"Get blocked safely: {countText} detected.\n\n" +
+                "Save the current work before getting online updates so the two versions are not accidentally mixed.";
             MessageBox.Show(
                 this,
-                "Pull was not started because this project has uncommitted changes.\n\n" +
-                "Create a Checkpoint first, then try Pull ↓ again.",
-                "Pull blocked safely",
+                $"GitPet found {countText}.\n\n" +
+                "Save them before getting online updates so the two versions are not accidentally mixed.\n\n" +
+                "Save first, then try Get ↓ again.",
+                "Save first",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             return;
@@ -1058,7 +1069,7 @@ public sealed class GuardianForm : Form
         var branch = branchResult.Success ? branchResult.Output.Trim() : "";
         if (string.IsNullOrWhiteSpace(branch))
         {
-            _output.Text = "Pull unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            _output.Text = "Get unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
             return;
         }
 
@@ -1066,7 +1077,7 @@ public sealed class GuardianForm : Form
         if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
         {
             _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
-                ? "Pull unavailable: no readable origin remote is configured."
+                ? "Get unavailable: no readable origin remote is configured."
                 : originResult.Output;
             return;
         }
@@ -1075,52 +1086,82 @@ public sealed class GuardianForm : Form
         var commitPreview = FormatCommitPreview(commit);
         var answer = MessageBox.Show(
             this,
-            $"Pull the latest committed changes from origin into this local branch?\n\n" +
-            $"Remote: origin\nBranch: {branch}\nCurrent local commit: {commitPreview}\n\n" +
-            $"Command:\ngit pull --ff-only origin {branch}\n\n" +
-            "FAST-FORWARD ONLY means GitPet will update the branch only when Git can do so without creating a merge commit. " +
-            "If local and remote histories have diverged, Pull stops safely and leaves the history unchanged.",
-            "Confirm manual pull",
+            "Get committed updates from the online copy into this local branch?\n\n" +
+            $"Branch: {branch}\nLatest saved version: {commitPreview}\n\n" +
+            "GitPet will only update the branch when this can happen safely without creating a merge commit.",
+            "Get updates?",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
 
         if (answer != DialogResult.Yes)
         {
-            _output.Text = "Pull cancelled. Nothing was changed.";
+            _output.Text = "Get cancelled. Nothing was changed.";
             return;
         }
 
-        _output.Text = $"Pulling origin/{branch} with fast-forward-only safety...";
+        _output.Text = $"Getting updates from origin/{branch} with fast-forward-only safety...";
         var result = await _git.PullFromOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
 
         _output.Text = result.Success
-            ? $"Pull completed ✓\norigin/{branch} → local {branch}\n\n{details}"
-            : $"Pull stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.";
+            ? $"Updates received ✓\norigin/{branch} → local {branch}\n\n{details}"
+            : $"Get stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.";
 
         MessageBox.Show(
             this,
             result.Success
-                ? $"Pull completed successfully.\n\norigin/{branch} → {branch}"
-                : "Pull could not fast-forward safely. No merge commit was created. See Guardian Activity for details.",
-            "Pull from origin",
+                ? "Updates received successfully."
+                : "GitPet could not safely get the updates. No merge commit was created. See Guardian Activity for details.",
+            "Get updates",
             MessageBoxButtons.OK,
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
         await RefreshRepositoryViewAsync(token);
     });
 
-    private async Task PushToOriginAsync() => await RunOperationAsync("Checking push destination...", async token =>
+    private async Task PushToOriginAsync() => await RunOperationAsync("Checking what is ready to send...", async token =>
     {
         if (!HasRepository()) return;
 
         var repositoryPath = _config.RepositoryPath!;
+        var status = await _git.GetStatusAsync(repositoryPath, token);
+        if (!status.Healthy)
+        {
+            _output.Text = "Send unavailable because Git could not read the current project state.\n\n" + status.Error;
+            return;
+        }
+
+        var readiness = FriendlyGitState.GetSendReadiness(status);
+        if (readiness == SendReadiness.SaveFirst)
+        {
+            var countText = FriendlyGitState.Count(status.Files.Count, "unsaved change");
+            _output.Text = $"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\nSave them first, then use Send.";
+            MessageBox.Show(
+                this,
+                $"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\n\nSave them first, then use Send.",
+                "Save your changes first",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        if (readiness == SendReadiness.AlreadyUpToDate)
+        {
+            _output.Text = "Everything saved is already online.\n\nThere is nothing new to send.";
+            MessageBox.Show(
+                this,
+                "Everything saved is already online.\n\nThere is nothing new to send.",
+                "Already up to date",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
         var branchResult = await _git.GetCurrentBranchAsync(repositoryPath, token);
         var branch = branchResult.Success ? branchResult.Output.Trim() : "";
-
         if (string.IsNullOrWhiteSpace(branch))
         {
-            _output.Text = "Push unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            _output.Text = "Send unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
             return;
         }
 
@@ -1128,52 +1169,54 @@ public sealed class GuardianForm : Form
         if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
         {
             _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
-                ? "Push unavailable: no readable origin remote is configured."
+                ? "Send unavailable: no readable origin remote is configured."
                 : originResult.Output;
             return;
         }
 
         var commit = await _git.GetLastCommitAsync(repositoryPath, token);
-        var status = await _git.GetStatusAsync(repositoryPath, token);
-        var uncommittedCount = status.Healthy ? status.Files.Count : 0;
-        var uncommittedNote = uncommittedCount > 0
-            ? $"\n\nUncommitted changes: {uncommittedCount}\nThese changes will remain local and will NOT be included in this push."
-            : "";
         var commitPreview = FormatCommitPreview(commit);
+        var savedText = status.HasTrackingInformation
+            ? FriendlyGitState.Count(status.Ahead, "saved update")
+            : "saved committed history";
+        var unsavedText = status.Files.Count > 0
+            ? $"\n\nYou also have {FriendlyGitState.Count(status.Files.Count, "unsaved change")}.\n" +
+              "Those unsaved changes will stay on this PC and will NOT be sent."
+            : "\n\nNothing unsaved will be included.";
 
         var answer = MessageBox.Show(
             this,
-            $"Push committed history to the configured origin remote?\n\n" +
-            $"Remote: origin\nBranch: {branch}\nCommit: {commitPreview}" +
-            uncommittedNote +
-            $"\n\nCommand:\ngit push origin {branch}\n\n" +
-            "ZomniverseGitPet will not stage, commit, create/configure a remote, or push automatically.",
-            "Confirm manual push",
+            status.HasTrackingInformation
+                ? $"Send {savedText} to the online copy?\n\nBranch: {branch}\nLatest saved version: {commitPreview}" + unsavedText
+                : $"Send the saved committed history to the online copy?\n\nBranch: {branch}\nLatest saved version: {commitPreview}" + unsavedText,
+            "Send saved updates?",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
 
         if (answer != DialogResult.Yes)
         {
-            _output.Text = "Push cancelled. Nothing was sent to the remote.";
+            _output.Text = "Send cancelled. Nothing was sent online.";
             return;
         }
 
-        _output.Text = $"Pushing committed history to origin/{branch}...";
+        _output.Text = $"Sending saved updates to origin/{branch}...";
         var result = await _git.PushToOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
 
         _output.Text = result.Success
-            ? $"Push completed ✓\norigin/{branch}\n\n{details}"
-            : $"Push failed.\norigin/{branch}\n\n{details}";
+            ? $"Send completed ✓\norigin/{branch}\n\n{details}"
+            : $"Send failed.\norigin/{branch}\n\n{details}";
 
         MessageBox.Show(
             this,
             result.Success
-                ? $"Push completed successfully.\n\norigin/{branch}"
-                : "Push failed. See the Guardian Activity panel for details.",
-            "Push to origin",
+                ? "Saved updates sent successfully."
+                : "Send failed. See Guardian Activity for details.",
+            "Send saved updates",
             MessageBoxButtons.OK,
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+
+        await RefreshRepositoryViewAsync(token);
     });
 
     private static string FormatCommitPreview(CommandResult commit)

@@ -301,10 +301,28 @@ public sealed class GitService(AuditLog audit)
     {
         var files = new List<ChangedFile>();
         var branch = "?";
+        var ahead = 0;
+        var behind = 0;
+        var hasTrackingInformation = false;
+
         foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
             if (line.StartsWith("# branch.head ", StringComparison.Ordinal))
                 branch = line[14..].Trim();
+            else if (line.StartsWith("# branch.ab ", StringComparison.Ordinal))
+            {
+                var fields = line[12..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (fields.Length >= 2 &&
+                    fields[0].StartsWith('+') &&
+                    fields[1].StartsWith('-') &&
+                    int.TryParse(fields[0][1..], out var parsedAhead) &&
+                    int.TryParse(fields[1][1..], out var parsedBehind))
+                {
+                    ahead = Math.Max(0, parsedAhead);
+                    behind = Math.Max(0, parsedBehind);
+                    hasTrackingInformation = true;
+                }
+            }
             else if (line.StartsWith("? ", StringComparison.Ordinal))
                 files.Add(new("??", line[2..]));
             else if (line.StartsWith("1 ", StringComparison.Ordinal) || line.StartsWith("2 ", StringComparison.Ordinal))
@@ -319,7 +337,11 @@ public sealed class GitService(AuditLog audit)
                 if (fields.Length >= 2) files.Add(new(fields[1], fields[^1]));
             }
         }
-        return new(true, branch, files);
+
+        return new(true, branch, files,
+            Ahead: ahead,
+            Behind: behind,
+            HasTrackingInformation: hasTrackingInformation);
     }
 
     public static IReadOnlyList<string> FindSuspiciousPaths(IEnumerable<ChangedFile> files, IEnumerable<string> patterns) =>

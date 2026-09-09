@@ -14,6 +14,57 @@ Check("changed file parsing", () =>
     return status.Files.Count == 2 && status.Files[0].Path == "src/file.cs" && status.Files[1].Status == "??";
 });
 
+Check("clean status without branch.ab keeps remote counts unknown", () =>
+{
+    var status = GitService.ParsePorcelainV2("# branch.head main\n");
+    return !status.HasTrackingInformation && status.Ahead == 0 && status.Behind == 0;
+});
+
+Check("branch.ab parses ahead and behind", () =>
+{
+    var status = GitService.ParsePorcelainV2(
+        "# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -1\n");
+    return status.HasTrackingInformation && status.Ahead == 2 && status.Behind == 1;
+});
+
+Check("friendly sync state uses singular and plural grammar", () =>
+{
+    var singular = new RepositoryStatus(
+        true, "main", [new ChangedFile(".M", "one.cs")],
+        Ahead: 1, Behind: 1, HasTrackingInformation: true);
+    var plural = new RepositoryStatus(
+        true, "main", [new ChangedFile(".M", "one.cs"), new ChangedFile("??", "two.cs")],
+        Ahead: 3, Behind: 2, HasTrackingInformation: true);
+
+    return FriendlyGitState.FormatSyncSummary(singular) ==
+               "1 unsaved change · 1 saved update ready to send · 1 update ready to get" &&
+           FriendlyGitState.FormatSyncSummary(plural) ==
+               "2 unsaved changes · 3 saved updates ready to send · 2 updates ready to get";
+});
+
+Check("unsaved plus ahead zero requires Save first", () =>
+{
+    var status = new RepositoryStatus(
+        true, "main", [new ChangedFile(".M", "one.cs")],
+        Ahead: 0, Behind: 0, HasTrackingInformation: true);
+    return FriendlyGitState.GetSendReadiness(status) == SendReadiness.SaveFirst;
+});
+
+Check("clean plus ahead zero is already up to date", () =>
+{
+    var status = new RepositoryStatus(
+        true, "main", [], Ahead: 0, Behind: 0, HasTrackingInformation: true);
+    return FriendlyGitState.GetSendReadiness(status) == SendReadiness.AlreadyUpToDate;
+});
+
+Check("unsaved plus ahead allows sending saved commits", () =>
+{
+    var status = new RepositoryStatus(
+        true, "main", [new ChangedFile(".M", "one.cs"), new ChangedFile("??", "two.cs")],
+        Ahead: 2, Behind: 0, HasTrackingInformation: true);
+    return FriendlyGitState.GetSendReadiness(status) == SendReadiness.Ready;
+});
+
 Check("suspicious path detection", () =>
 {
     var hits = GitService.FindSuspiciousPaths([new ChangedFile("??", ".env"), new ChangedFile("M", "src/app.cs")], [@"(^|/)\.env($|\.)"]);
@@ -342,7 +393,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 25 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 31 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)

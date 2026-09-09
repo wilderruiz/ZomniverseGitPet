@@ -116,15 +116,15 @@ internal sealed class FileComparisonPanel : Panel
         _technicalMode = false;
 
         _pathLabel.Text = relativePath;
-        _baselineLabel.Text = "Loading the saved baseline and the current working item…";
+        _baselineLabel.Text = "Loading the latest saved version and the current version…";
         _checkpointButton.Visible = false;
         _technicalButton.Visible = false;
         _openButton.Visible = false;
 
-        _beforePane.SetTitle("BEFORE  ·  SAVED VERSION");
-        _afterPane.SetTitle("NOW  ·  CURRENT VERSION");
-        _beforePane.ShowSummary("LOADING…", "GitPet is checking the latest local checkpoint.", GuardianTheme.MutedInk);
-        _afterPane.ShowSummary("LOADING…", "GitPet is checking the current working item.", GuardianTheme.MutedInk);
+        _beforePane.SetTitle("SAVED VERSION");
+        _afterPane.SetTitle("CURRENT VERSION");
+        _beforePane.ShowSummary("LOADING…", "GitPet is checking the latest saved version.", GuardianTheme.MutedInk);
+        _afterPane.ShowSummary("LOADING…", "GitPet is checking the current version.", GuardianTheme.MutedInk);
     }
 
     public void ShowComparison(FileComparisonModel model)
@@ -136,13 +136,13 @@ internal sealed class FileComparisonPanel : Panel
         _pathLabel.Text = model.RelativePath;
         _checkpointButton.Visible = !model.HasBaseline;
         _baselineLabel.Text = model.HasBaseline
-            ? $"Human view · comparing the saved version against {model.BaselineLabel}. Technical text is optional."
-            : "Human view · no local checkpoint exists yet. Create one to establish a BEFORE baseline.";
+            ? $"Human view · comparing the latest saved version against {model.BaselineLabel}. Technical text is optional."
+            : "Human view · no saved version exists yet. Save to create the first comparison baseline.";
 
         _beforePane.SetTitle(model.HasBaseline
-            ? "BEFORE  ·  SAVED VERSION / CHECKPOINT"
-            : "BEFORE  ·  NO BASELINE YET");
-        _afterPane.SetTitle("NOW  ·  CURRENT WORKING ITEM");
+            ? "SAVED VERSION"
+            : "NO SAVED VERSION YET");
+        _afterPane.SetTitle("CURRENT VERSION");
 
         _technicalButton.Visible = CanShowTechnical(model);
         _technicalButton.Text = "Technical view";
@@ -167,8 +167,8 @@ internal sealed class FileComparisonPanel : Panel
         _technicalButton.Visible = false;
         _openButton.Visible = false;
 
-        _beforePane.SetTitle("BEFORE");
-        _afterPane.SetTitle("NOW");
+        _beforePane.SetTitle("SAVED VERSION");
+        _afterPane.SetTitle("CURRENT VERSION");
         _beforePane.ShowSummary("REVIEW UNAVAILABLE", "Nothing was changed by GitPet.", GuardianTheme.Warning);
         _afterPane.ShowSummary("DETAILS", message, GuardianTheme.MutedInk);
     }
@@ -252,7 +252,7 @@ internal sealed class FileComparisonPanel : Panel
         open.Name = "Open / locate";
         open.Visible = false;
 
-        var checkpoint = MakeHeaderButton("Create checkpoint", 136);
+        var checkpoint = MakeHeaderButton("Save", 86);
         checkpoint.Name = "Create checkpoint";
         checkpoint.BackColor = GuardianTheme.Violet;
         checkpoint.FlatAppearance.BorderColor = GuardianTheme.HotPink;
@@ -304,16 +304,16 @@ internal sealed class FileComparisonPanel : Panel
         if (!model.HasBaseline)
         {
             _beforePane.ShowSummary(
-                "NO BASELINE YET",
-                "GitPet does not have a saved checkpoint to compare against.\r\n\r\n" +
-                "Create a checkpoint to establish the first BEFORE version.",
+                "NO SAVED VERSION YET",
+                "GitPet does not have a saved version to compare against.\r\n\r\n" +
+                "Save to create the first comparison baseline.",
                 GuardianTheme.Warning);
         }
         else if (!model.BeforeExists)
         {
             _beforePane.ShowSummary(
                 "DID NOT EXIST",
-                "This item was not present in the latest local checkpoint.\r\n\r\n" +
+                "This item was not present in the latest saved version.\r\n\r\n" +
                 "That means the current item is NEW.",
                 GuardianTheme.HotPinkSoft);
         }
@@ -321,7 +321,7 @@ internal sealed class FileComparisonPanel : Panel
         {
             _beforePane.ShowSummary(
                 "SAVED VERSION",
-                "Status     Saved in the latest local checkpoint\r\n" +
+                "Status     Saved in the latest local version\r\n" +
                 $"Size       {FormatSize(beforeSize)}\r\n" +
                 $"Baseline   {model.BaselineLabel}",
                 GuardianTheme.HotPinkSoft);
@@ -351,7 +351,7 @@ internal sealed class FileComparisonPanel : Panel
 
         var status = model.BeforeExists ? "MODIFIED" : "NEW FILE";
         var detail =
-            $"Status     {(model.BeforeExists ? "Changed since the saved checkpoint" : "Added after the saved checkpoint")}\r\n" +
+            $"Status     {(model.BeforeExists ? "Changed since the saved version" : "Added after the saved version")}\r\n" +
             $"Size       {FormatSize(afterSize)}";
 
         if (model.BeforeExists && beforeSize.HasValue && afterSize.HasValue)
@@ -429,8 +429,8 @@ internal sealed class FileComparisonPanel : Panel
             RenderHumanSummary(model, beforeSize: null, afterSize: location?.SizeBytes, afterIsDirectory: location?.IsDirectory == true);
             _ = LoadExactBaselineSizeAsync(model, _renderGeneration);
             _baselineLabel.Text = model.HasBaseline
-                ? $"Human view · comparing the saved version against {model.BaselineLabel}. Technical text is optional."
-                : "Human view · no local checkpoint exists yet. Create one to establish a BEFORE baseline.";
+                ? $"Human view · comparing the latest saved version against {model.BaselineLabel}. Technical text is optional."
+                : "Human view · no saved version exists yet. Save to create the first comparison baseline.";
             return;
         }
 
@@ -438,7 +438,7 @@ internal sealed class FileComparisonPanel : Panel
             "Technical text view · read-only. GitPet is showing raw text only because this item appears safe to render as text.";
 
         if (!model.HasBaseline)
-            _beforePane.ShowTechnicalMessage("NO BASELINE YET\r\n\r\nCreate a checkpoint first.");
+            _beforePane.ShowTechnicalMessage("NO BASELINE YET\r\n\r\nCreate a local Git commit/checkpoint first.");
         else if (!model.BeforeExists)
             _beforePane.ShowTechnicalMessage(model.BeforeMessage ?? "NEW FILE\r\n\r\nThis item did not exist in the saved version.");
         else if (IsReasonablyText(model.BeforeText))

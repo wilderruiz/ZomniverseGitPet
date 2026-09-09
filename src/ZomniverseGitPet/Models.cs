@@ -6,7 +6,10 @@ public sealed record RepositoryStatus(
     bool Healthy,
     string Branch,
     IReadOnlyList<ChangedFile> Files,
-    string Error = "")
+    string Error = "",
+    int Ahead = 0,
+    int Behind = 0,
+    bool HasTrackingInformation = false)
 {
     public static RepositoryStatus Failure(string error) => new(false, "?", [], error);
 }
