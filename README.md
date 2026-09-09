@@ -6,275 +6,216 @@
 
 <p align="center"><strong>A desktop Git guardian for human and AI-assisted development.</strong></p>
 
-ZomniverseGitPet is a lightweight Windows desktop companion that keeps a small purple fox near your workspace and turns Git safety into a visible, low-friction habit. It is designed for experienced developers, people working with AI coding agents, and users who do not want to memorize Git commands just to keep their projects safe.
+<p align="center">
+  <img alt="Version 0.4.1" src="https://img.shields.io/badge/version-0.4.1-8b5cf6">
+  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-2563eb">
+  <img alt=".NET 8" src="https://img.shields.io/badge/.NET-8.0-512bd4">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-22c55e">
+</p>
 
-Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, choose a selective tracking scope, safely initialize local Git metadata, explain and preview root and nested `.gitignore` behavior, build friendly ignore rules from presets or custom choices, review changed files side-by-side, configure and run project-specific tests, create local checkpoints, recognize possible major-generation changes, protect legacy milestones with ordinary branches/tags, explicitly connect an existing remote repository, manually pull remote updates, manually push committed history, display recent commits, and run Git health checks.
+<p align="center">
+  <strong>Review what changed → Save locally → Get remote updates → Send saved updates</strong>
+</p>
 
-GitPet never pulls or pushes automatically, never invents or creates online repositories automatically, never replaces an existing remote automatically, never force-pushes `main`, and never uses destructive operations such as `reset --hard` or `clean`.
+ZomniverseGitPet is a lightweight Windows desktop companion that turns Git safety into a visible, low-friction workflow. A small purple fox stays near the workspace while the Guardian Console explains repository state in plain English, reviews changed files, keeps local save points, runs project tests, protects milestones, and performs remote Git actions only when the user explicitly requests them.
 
-## Guardian Console — 0.4
+It is designed for developers, people working with AI coding agents, and anyone who wants Git protection without having to translate every normal action into terminal vocabulary first.
 
-The Guardian Console uses a dark, compact visual system built around:
+> **Current release:** `0.4.1` · native .NET 8 WinForms · Windows x64 · Git for Windows
 
-- dark graphite / near-black working surfaces
-- violet structure and status surfaces
-- hot-pink emphasis for deliberate state-changing actions
-- human-readable file states instead of exposing Git porcelain codes as the primary UI
-- compact repository status chips for health, branch, and changed-item state
-- a dedicated **Guardian Activity** console for command output
-- a resizable **File Review** workspace for side-by-side Before / Now code inspection
-- a visible **Milestones** / **Major update? ✦** menu for generation changes
-- dark hover help that explains actions in plain language
-- a clean-project state instead of a large empty file table
-- operation-only **Cancel**, visible only when something can actually be cancelled
-- a subtle `GUARDIAN ONLINE` pulse
-- native resizable Windows behavior with remembered placement where supported
+---
 
-The application also ships with a canonical purple fox-head Windows icon used by the executable, taskbar, Guardian window, and system tray.
+<h2>Current experience</h2>
 
-The pet itself follows the same visual language: its speech bubble is a dark violet status surface, minimize is integrated into the bubble chrome, and Exit is a small hot-pink ribbon control on the fox rather than a detached Windows-style button.
+<table>
+  <tr>
+    <td width="25%"><strong>Review</strong><br><sub>Inspect unsaved files and compare the latest saved version with the current version.</sub></td>
+    <td width="25%"><strong>Save</strong><br><sub>Create an ordinary local Git commit after preview and confirmation.</sub></td>
+    <td width="25%"><strong>Get ↓</strong><br><sub>Bring remote commits into the current branch with fast-forward-only safety.</sub></td>
+    <td width="25%"><strong>Send ↑</strong><br><sub>Send saved local commits to the configured origin. Unsaved work is never included.</sub></td>
+  </tr>
+</table>
 
-## Meet the guardian
+The Guardian header distinguishes three things that Git users often have to infer manually:
 
-| Quiet sentinel | All checks green | Changes spotted | Watchful caution |
-| --- | --- | --- | --- |
-| <img src="mockups/pet/svg/pet_idle_01.svg" width="120" alt="Idle fox"> | <img src="mockups/pet/svg/pet_happy_01.svg" width="120" alt="Happy fox"> | <img src="mockups/pet/svg/pet_review_ready_01.svg" width="120" alt="Review-ready fox"> | <img src="mockups/pet/svg/pet_warning_01.svg" width="120" alt="Warning fox"> |
-| Waiting / checking | Clean repository | Changes ready to review | Git needs attention |
+<table>
+  <tr><th>What GitPet shows</th><th>Meaning</th></tr>
+  <tr><td><strong>Unsaved changes</strong></td><td>Files changed on this PC since the latest local save.</td></tr>
+  <tr><td><strong>Saved updates ready to send</strong></td><td>Local commits ahead of the tracked remote branch.</td></tr>
+  <tr><td><strong>Updates ready to get</strong></td><td>Remote commits not yet present locally.</td></tr>
+</table>
 
-Two additional approved mascot states, `pet_idle_02` and `pet_sleep_01`, remain reserved for later idle/sleep behavior.
+The toolbar intentionally uses human-first labels: <strong>Projects · Refresh · Review · Tests · Save · Get ↓ · Send ↑ · History · Health</strong>.
 
-## Side-by-side File Review
+---
 
-The changed-file list is not just a status display. Click a changed file and the lower Guardian area becomes a resizable review workspace:
+<h2>File Review</h2>
 
-```text
-┌──────────────────────────────┬──────────────────────────────┐
-│ BEFORE                       │ NOW                          │
-│ latest local commit /        │ current working-tree file    │
-│ checkpoint                   │                              │
-│                              │                              │
-│ syntax-coloured source       │ syntax-coloured source       │
-│ changed lines highlighted    │ changed lines highlighted    │
-└──────────────────────────────┴──────────────────────────────┘
-```
+Click any changed file and the lower Guardian area becomes a resizable comparison workspace.
 
-**BEFORE** is read from the current local `HEAD` commit. **NOW** is read from the current file on disk. The viewer does not rewrite or reformat either version: the source indentation and text remain the project's own. GitPet adds Zomniverse-style syntax colours and softly illuminates lines that differ from the baseline.
+<table>
+  <tr>
+    <th width="50%">SAVED VERSION</th>
+    <th width="50%">CURRENT VERSION</th>
+  </tr>
+  <tr>
+    <td>Latest local commit / save point</td>
+    <td>Current file on disk</td>
+  </tr>
+  <tr>
+    <td>Human summary by default</td>
+    <td>Human summary by default</td>
+  </tr>
+  <tr>
+    <td>Technical source view when the item is text</td>
+    <td>Technical source view when the item is text</td>
+  </tr>
+  <tr>
+    <td>Changed baseline lines highlighted</td>
+    <td>Changed current lines highlighted</td>
+  </tr>
+</table>
 
-The review understands common JavaScript/TypeScript, C#, PHP, Python, SQL, PowerShell, JSON, HTML/XML/SVG, and CSS-family source files. New files clearly show that no previous version exists; deleted files show that the working-tree version is gone.
+The default **Human view** answers the useful question first: what happened to this file? The optional **Technical view** shows the actual source text for ordinary text files. GitPet keeps the project's own indentation and content; the viewer is read-only.
 
-If a newly initialized repository has **no commit/checkpoint baseline yet**, File Review explains why the Before side cannot exist and presents **Create checkpoint**. That checkpoint stays local and establishes the baseline for future edits.
+Untracked folders are expanded to individual untracked files, so a new file such as `examples/showcase.html` can be selected directly and its HTML/CSS source can be reviewed instead of treating the whole folder as one opaque change.
 
-Normal operations such as Tests, Checkpoint, Pull, Push, History, and Health switch the lower area back to **Guardian Activity**. File Review has an **Activity** button to return there manually.
+New files clearly show that no saved version existed. Deleted files show that the current version is gone. Binary or very large files remain protected from accidental source rendering and can be opened or located instead.
 
-This workflow is particularly useful with AI coding agents: let the agent edit, let GitPet detect the files, then click each row to inspect exactly what changed since the latest local checkpoint.
+---
 
-## Major updates, milestones, and releases
+<h2>Meet the guardian</h2>
 
-GitPet does not assume every change is another small patch. It can look for unusually large or structural differences and ask whether the project may be entering a new generation.
+<table>
+  <tr>
+    <th>Quiet sentinel</th>
+    <th>All checks green</th>
+    <th>Changes spotted</th>
+    <th>Watchful caution</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="mockups/pet/svg/pet_idle_01.svg" width="120" alt="Idle fox"></td>
+    <td align="center"><img src="mockups/pet/svg/pet_happy_01.svg" width="120" alt="Happy fox"></td>
+    <td align="center"><img src="mockups/pet/svg/pet_review_ready_01.svg" width="120" alt="Review-ready fox"></td>
+    <td align="center"><img src="mockups/pet/svg/pet_warning_01.svg" width="120" alt="Warning fox"></td>
+  </tr>
+  <tr>
+    <td align="center">Waiting / checking</td>
+    <td align="center">Repository healthy</td>
+    <td align="center">Changes ready to review</td>
+    <td align="center">Git needs attention</td>
+  </tr>
+</table>
 
-Signals include:
+The executable, taskbar, Guardian window, and tray all use the same canonical fox-head identity. Additional approved mascot states remain available for richer idle/sleep behavior later.
 
-- unusually high file and line churn
-- many files added and removed together
-- database, schema, migration, or dependency-structure changes
-- older data formats being replaced by JSON/SQL-style structures
-- local and `origin` histories that both contain unique commits
+---
 
-When the signal is strong, Guardian changes **Milestones** to **Major update? ✦**. GitPet still treats this as a question: the user decides whether the work is actually a new concept/version.
+<h2>How the application is structured</h2>
 
-A typical v1 → v2 plan is:
+<table>
+  <tr><th colspan="3">ZomniverseGitPet 0.4.1 architecture</th></tr>
+  <tr>
+    <td align="center"><strong>Desktop shell</strong><br><sub>PetForm · tray · single-instance activation</sub></td>
+    <td align="center">→</td>
+    <td align="center"><strong>Guardian Console</strong><br><sub>GuardianForm · File Review · project setup · milestones</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Typed local state</strong><br><sub>AppConfig · recent projects · per-project tests · UI state</sub></td>
+    <td align="center">↔</td>
+    <td align="center"><strong>Git service layer</strong><br><sub>status · save · get · send · history · health · identity · remotes</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Safety helpers</strong><br><sub>scope planner · ignore advisor · safe-directory flow · milestone coordinator</sub></td>
+    <td align="center">↔</td>
+    <td align="center"><strong>Local repository</strong><br><sub>ordinary Git metadata and working files remain authoritative</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Tests</strong><br><sub>lightweight regression suite + project-specific commands</sub></td>
+    <td align="center">→</td>
+    <td align="center"><strong>Audit trail</strong><br><sub>append-only local activity metadata under LocalAppData</sub></td>
+  </tr>
+</table>
 
-```text
-previous / published generation
-        │
-        ├── legacy/v1          ordinary branch
-        └── v1.0.0-legacy     exact annotated tag
+<details>
+<summary><strong>Important source areas</strong></summary>
 
-current redesign
-        │
-        └── redesign/v2        new working branch
-```
+| Area | Responsibility |
+| --- | --- |
+| `src/ZomniverseGitPet/GuardianForm.cs` | Main Guardian UI, project state, Save/Get/Send interactions |
+| `src/ZomniverseGitPet/FileComparisonPanel.cs` | Human and Technical File Review |
+| `src/ZomniverseGitPet/GitService.cs` | Serialized Git process execution and repository operations |
+| `src/ZomniverseGitPet/FriendlyGitState.cs` | Human-readable sync state and Send readiness |
+| `src/ZomniverseGitPet/AppConfig.cs` | Typed per-user configuration and recent-project registry |
+| `src/ZomniverseGitPet/ProjectScopePlanner.cs` | Selective project tracking scope |
+| `src/ZomniverseGitPet/GitIgnoreAdvisor.cs` | Safe `.gitignore` guidance and application |
+| `src/ZomniverseGitPet/MajorUpdateCoordinator.cs` | Legacy branch/tag and generation planning |
+| `tests/ZomniverseGitPet.Tests/` | Lightweight regression checks |
+| `scripts/publish-local.ps1` | Local self-contained Windows build workflow |
 
-**Create local release plan** creates only those local Git refs and switches the current work onto the new branch. It does not push, merge, reset, clean, or rewrite `main`.
+</details>
 
-If the project has diverged from `origin`, GitPet can protect the previous online generation as the legacy branch/tag while leaving the current local redesign intact on its own branch. If the redesign is still uncommitted, the old `HEAD` remains the legacy baseline and the working changes move with the new branch before the next Checkpoint.
+---
 
-**Publish legacy refs ↑** is a separate explicit action. It publishes only the protected legacy branch/tag to the existing `origin`; the redesign branch remains local until the user chooses the normal **Push ↑** action.
+<h2>Project workflow</h2>
 
-For GitHub remotes, GitPet also provides:
+<table>
+  <tr><td align="center"><strong>1 · Choose or open a folder</strong></td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>2 · GitPet inspects it</strong></td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>Existing Git project?</strong> Open safely &nbsp; · &nbsp; <strong>Ordinary folder?</strong> Offer Git preparation</td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>3 · Choose what belongs to the project</strong><br><sub>Selective scope and nested-repository protection</sub></td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>4 · Review repository hygiene</strong><br><sub>Detected ignore candidates · presets · custom rules · CURRENT / AFTER preview</sub></td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>5 · Monitor and Review changed files</strong><br><sub>Human summary or Technical source comparison</sub></td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>6 · Run Tests when useful</strong></td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>7 · Save locally</strong><br><sub>Ordinary local Git commit after preview and confirmation</sub></td></tr>
+  <tr><td align="center">↓</td></tr>
+  <tr><td align="center"><strong>8 · Get ↓ / Send ↑</strong><br><sub>Explicit remote actions only</sub></td></tr>
+</table>
 
-- **Create GitHub Release ↗** — opens GitHub's release editor for the legacy tag and copies suggested title/notes
-- **Previous releases ↗** — opens the repository's Releases archive
+When a selected folder is not already a Git repository, GitPet can prepare it only after the user approves the scope and repository-hygiene plan. The Git initialization command it ultimately runs is a real command and is therefore shown as code:
 
-Once a GitHub Release is published, GitHub automatically shows the Releases archive in the repository sidebar, so older generations stay browsable without GitPet rewriting arbitrary project README/About content.
-
-See [Major updates, milestones, and releases](docs/MAJOR_UPDATES_AND_RELEASES.md) for the detailed safety model.
-
-## Designed for humans, not just Git experts
-
-GitPet tries to explain *what will happen before it happens*.
-
-- **Projects** remembers up to 20 recent repositories so you can switch quickly.
-- **Project setup** reopens the project-scope tree and repository-hygiene builder for an already-known project without running `git init` again.
-- **Open folder** accepts an existing Git repository immediately.
-- **Prepare folder for Git** can safely turn an ordinary local folder into a Git repository with `git init -b main` after confirmation.
-- **Choose project contents** shows a Dropbox-style checkbox tree before preparation so a parent folder can be narrowed to the files/folders that actually belong to the project.
-- **Nested repository protection** locks existing child Git repositories out of a new parent tracking scope instead of silently absorbing them.
-- **Detected ignore suggestions** show project-specific privacy/generated candidates found inside the selected scope.
-- **Ignore library** provides reusable PRIVACY, GENERATED, SYSTEM, and ARCHIVE checkboxes with hover explanations and exact Git patterns.
-- **Custom ignore rule** lets users enter a folder name, file extension, exact file name, or text contained in a name; GitPet generates the `.gitignore` pattern automatically.
-- **Current ignore files** shows the root `.gitignore` plus nested `.gitignore` files already in effect inside the selected folders.
-- **Before / After preview** shows the exact proposed root `.gitignore` before anything is written.
-- **File Review** shows changed source side-by-side against the latest local commit/checkpoint.
-- **Tests** stores a separate test profile for each project; if none exists, GitPet suggests likely commands for review and lets the user Save or Save & run tests.
-- **Checkpoint** creates an ordinary local Git commit after showing the files and asking for confirmation.
-- **Major update? / Milestones** can preserve the old generation as an ordinary legacy branch/tag and continue a redesign on a separate branch.
-- **Git Identity** appears automatically when Git does not yet know the commit author's name/email, with a safe project-only default and an optional PC-wide setting.
-- **Trust project folder** handles Git's ownership safety check by explicitly trusting only the exact chosen folder; GitPet never uses `safe.directory=*`.
-- **Connect Remote** appears when a remote action needs `origin`; the user pastes the clone URL of an existing online repository and explicitly approves the connection.
-- **Pull ↓** is always manual, requires a clean working tree, and uses fast-forward-only safety so GitPet never creates an automatic merge commit.
-- **Push ↑** is always manual and shows the destination branch and commit before sending committed history to `origin`.
-- **Help → About ZomniverseGitPet** shows the installed version, builder, build date, platform, MIT license, repository link, and copyright information.
-
-Background repository checks run quietly; they do not take over the mouse cursor or present themselves as foreground work.
-
-## Project workflow
-
-```text
-Choose or open a folder
-        ↓
-GitPet inspects it
-        ↓
-For a project new to GitPet:
-CHOOSE WHAT BELONGS TO THIS PROJECT
-        ↓
-REVIEW REPOSITORY HYGIENE
-        ↓
-Monitor changed files → review Before / Now
-        ↓
-Configure / run tests if useful
-        ↓
-Checkpoint locally as often as you want
-        ↓
-Small change? continue normally
-Major generation change? Milestones / Major update? ✦
-        ↓
-Pull remote updates ↓   /   Push local commits ↑
-```
-
-When a folder is selected, GitPet classifies it before doing anything:
-
-- **Ready** — an existing readable Git repository; a project new to GitPet still receives Scope → Hygiene onboarding.
-- **Nested repository** — the folder is inside another Git repository; GitPet identifies the real root and offers to use it rather than silently creating nested Git metadata.
-- **Can prepare** — an ordinary readable folder with no Git metadata; GitPet can initialize local Git only after confirmation.
-- **Invalid/unavailable** — Git metadata is unreadable, Git is unavailable, or the folder cannot be accessed; GitPet explains the problem and does not overwrite anything.
-
-## Safe project preparation
-
-For a non-Git folder, GitPet first shows a selective project tree. Everything starts selected, but the user can clear the selection, choose only specific folders/files, and expand a folder to make a narrower selection. Existing nested Git repositories are displayed as protected exclusions.
-
-When a selective scope is used, GitPet converts it into root `.gitignore` allow-list rules. That means unselected content is actually outside the new Git tracking scope rather than merely hidden from the interface. Deep selections re-open only the required parent path, so selecting `CV/expertise/` does not implicitly include all other `CV/` content.
-
-After the scope is approved, GitPet opens the ignore builder. The left side is independently resizable and contains two rows: detected project-specific suggestions and a reusable/custom rule library. The right side has a draggable **CURRENT / AFTER** split so either preview can receive more vertical room.
-
-Only after those reviews does GitPet perform:
-
-```text
+```bash
 git init -b main
 ```
 
-It then verifies the repository root and applies only the tracking-scope and ignore rules the user approved. The AFTER preview and the text GitPet writes are generated by the same composer.
+Project preparation does **not** create an online hosting repository, configure `origin`, stage files, create the first save, get remote changes, or send anything. Those remain separate actions.
 
-Project preparation does **not** create a hosting repository, configure `origin`, stage files, create the first commit, pull, or push anything. Those remain separate, deliberate user actions.
+---
 
-## Per-project tests
+<h2>Friendly repository hygiene</h2>
 
-Each remembered repository can keep its own local test profile. Test commands are stored in GitPet's per-user configuration, not written into the repository itself.
+GitPet separates ignore decisions into two layers:
 
-When **Tests** is pressed on a project that has no saved test commands, GitPet opens a **Project Tests** window. It can suggest likely commands from common project metadata such as:
+<table>
+  <tr><th>Layer</th><th>Purpose</th></tr>
+  <tr><td><strong>Detected in this project</strong></td><td>Project-specific privacy/generated candidates discovered inside the selected scope.</td></tr>
+  <tr><td><strong>Ignore library + your own rules</strong></td><td>Reusable privacy, generated, system, archive, and custom choices.</td></tr>
+</table>
 
-- `package.json` test scripts → `npm test` / `npm run test:*`
-- `.sln` / `.csproj` → `dotnet test`
-- `pyproject.toml` / `pytest.ini` / `tox.ini` → `python -m pytest`
-- `composer.json` test script → `composer test`
-- `Cargo.toml` → `cargo test`
+The environment preset is documentation rather than a command, so it is presented as a readable table instead of a copy/paste code block:
 
-Suggestions are advisory only. Discovery does not edit files and does not execute anything. The user reviews the commands, one per line, and chooses **Save** or **Save & run tests**.
+<table>
+  <tr><th>Pattern</th><th>Effect</th></tr>
+  <tr><td><code>.env</code></td><td>Ignore the base environment file.</td></tr>
+  <tr><td><code>.env.*</code></td><td>Ignore environment variants.</td></tr>
+  <tr><td><code>!.env.example</code></td><td>Keep the simple example template.</td></tr>
+  <tr><td><code>!.env.*.example</code></td><td>Keep named example templates.</td></tr>
+  <tr><td><code>!.env.sample</code></td><td>Keep the simple sample template.</td></tr>
+  <tr><td><code>!.env.*.sample</code></td><td>Keep named sample templates.</td></tr>
+  <tr><td><code>!.env.template</code></td><td>Keep the simple template file.</td></tr>
+  <tr><td><code>!.env.*.template</code></td><td>Keep named template files.</td></tr>
+  <tr><td><code>!.env.dist</code></td><td>Keep the simple distribution template.</td></tr>
+  <tr><td><code>!.env.*.dist</code></td><td>Keep named distribution templates.</td></tr>
+</table>
 
-Manual test runs:
-
-1. run from the active repository root
-2. execute commands in the saved order
-3. stop on the first failure
-4. show each command plus PASS/FAIL in **Guardian Activity**
-
-Hold **Shift** while clicking **Tests** to reopen the editor for an already-configured project.
-
-If automatic verified checkpoints are explicitly enabled and configured to require tests, GitPet uses the active project's own saved test profile before creating an automatic checkpoint. Test commands are treated as trusted local commands.
-
-## Explicit remote connection
-
-A local Git repository and an online Git repository are separate things. Git identity (`user.name` / `user.email`) is enough to create local commits, but Pull and Push also need a destination/source remote.
-
-If the user starts **Pull ↓** or **Push ↑** and no readable `origin` exists, GitPet opens a **Connect Remote** window. The user pastes the clone URL of an already-existing repository, for example:
-
-```text
-https://github.com/user/project.git
-```
-
-or:
-
-```text
-git@github.com:user/project.git
-```
-
-The same flow works with GitLab, Bitbucket, private Git servers, HTTPS, SSH, and other Git-compatible remote addresses.
-
-After explicit approval GitPet performs the equivalent of:
-
-```text
-git remote add origin <user-provided-url>
-```
-
-GitPet then returns to the Pull or Push action that the user started. It does **not** create the online repository, does not replace an existing `origin`, does not stage or commit anything, and does not pull or push merely because the remote was connected. The remote URL itself is not copied into GitPet's audit log.
-
-## Friendly `.gitignore` hygiene
-
-A `.gitignore` file is Git's list of files and folders it should leave out of repository tracking. Because ignored files do not enter commits, they also do not later get pushed through normal Git history.
-
-GitPet separates ignore choices into two layers:
-
-1. **DETECTED IN THIS PROJECT** — project-specific candidates found by sampling the selected scope
-2. **IGNORE LIBRARY + YOUR OWN RULES** — reusable categories and user-created patterns
-
-The reusable library is organized as:
-
-- **PRIVACY** — environment secrets, private keys/certificates
-- **GENERATED** — logs, package dependencies, virtual environments, caches, temporary files
-- **SYSTEM** — Windows/macOS metadata and IDE user state
-- **ARCHIVE** — optional historical/backup rules such as names containing `LEGACY`
-- **CUSTOM** — rules created by the user
-
-Every library row has a checkbox and a hover explanation with the exact Git pattern(s). Library presets do not run automatically merely because they exist.
-
-The environment preset uses normal Git ignore globs (not regular expressions):
-
-```text
-.env
-.env.*
-!.env.example
-!.env.*.example
-!.env.sample
-!.env.*.sample
-!.env.template
-!.env.*.template
-!.env.dist
-!.env.*.dist
-```
-
-This ignores real environment variants recursively while keeping common simple and nested templates available to commit.
-
-The custom builder translates friendly values automatically:
+The custom builder translates friendly choices automatically:
 
 | User chooses | Example input | Generated Git pattern | Meaning |
 | --- | --- | --- | --- |
@@ -283,96 +224,116 @@ The custom builder translates friendly values automatically:
 | File name | `secrets.json` | `secrets.json` | ignore that file name throughout the project |
 | Name contains | `LEGACY` | `**/*LEGACY*` | ignore files/folders containing that text anywhere |
 
-The right side provides two draggable read-only views:
+The right side of the setup review contains draggable **CURRENT** and **AFTER** views. Existing root content is preserved; nested `.gitignore` files are shown for context but are not silently rewritten.
 
-1. **CURRENT** — the root `.gitignore` plus nested `.gitignore` files already in effect inside selected folders
-2. **AFTER** — the exact proposed project-root `.gitignore`
+---
 
-Nested `.gitignore` files are not rewritten by this review. Existing root content is preserved and only approved missing rules are added.
+<h2>Tests</h2>
 
-Generated GitPet sections include explanatory comment blocks in the actual `.gitignore`, so future readers can understand which block defines the selective project scope and which rules were deliberately selected to keep files/folders outside Git.
+Each remembered project can keep its own local test profile. GitPet can suggest likely commands from common project metadata, but discovery is advisory and does not edit project files.
 
-## Friendly Git identity setup
+Examples include `npm test`, `dotnet test`, `python -m pytest`, `composer test`, and `cargo test` when corresponding project metadata is detected.
 
-Git requires an author identity before it can create a commit. If a user tries to create a Checkpoint and Git does not yet know `user.name` and `user.email`, GitPet shows a normal form instead of exposing Git's raw terminal instructions.
+Manual test runs execute saved commands in order, stop on the first failure, and show PASS/FAIL output in **Guardian Activity**. Hold <kbd>Shift</kbd> while clicking **Tests** to edit an existing project's saved commands.
 
-The user enters:
+---
 
-- **Display name** — the author name stored in commit history
-- **Email address** — the address stored in commit history; Git hosting noreply addresses are supported
-- **This project only** — the default and safest option
-- **All Git projects on this PC** — optional, explicit global configuration
+<h2>Save, Get and Send</h2>
 
-GitPet explains that commit metadata can become public if a commit is later pushed. The privacy explanation remains available in a scrollable read-only panel, and the identity window itself is resizable within sensible limits.
+<h3>Save</h3>
 
-## Core features
+Save previews every current non-ignored change, asks for confirmation, verifies that Git has an author identity, stages the approved working state, and creates an ordinary **local** Git commit. Saving never sends anything automatically.
 
-- Friendly purple fox desktop pet with repository-state visuals
-- Canonical fox-head executable, taskbar, window, and tray icon
-- Dark Guardian Console visual system
-- Side-by-side File Review against the latest local commit/checkpoint
-- Syntax-aware source colouring with changed-line illumination
-- Single-instance behavior; a second launch activates the existing Guardian
-- Quiet background repository monitoring
-- Recent-project registry with up to 20 repositories and safe forget/re-onboard behavior
-- Folder suitability inspection and safe local Git initialization
-- Dropbox-style selective project scope before Git initialization/onboarding
-- Nested-repository protection in project scope selection
-- Scope-aware `.gitignore` advisor with nested ignore-file visibility
-- Organized ignore-rule library with per-rule hover explanations
-- Friendly custom folder/extension/file/name-pattern builder
-- Commented exact CURRENT / AFTER `.gitignore` preview and apply
-- Friendly first-time Git identity setup
-- Exact-path `safe.directory` trust flow for Git ownership protection
-- Explicit, user-approved `origin` connection for an existing remote repository
-- Human-readable changed-file states
-- Per-project test profiles with reviewable command discovery and sequential PASS/FAIL output
-- Advisory major-update detection and local legacy/redesign milestone planning
-- GitHub Releases navigation for preserved generations
-- Recent commit history
-- `git fsck` repository health checks
-- Confirmed full-working-tree checkpoints using ordinary local Git commits
-- Explicit, confirmed **Pull ↓** from `origin` on the current branch with clean-tree and fast-forward-only safeguards
-- Explicit, confirmed **Push ↑** to `origin` on the current branch
-- Suspicious-file safeguards and append-only local audit logging
-- Built-in Help/About panel
-- Typed per-user configuration under `%LOCALAPPDATA%\ZomniverseGitPet`
+<h3>Get ↓</h3>
 
-## Safety philosophy
+Get is manual and requires a clean working tree. After confirmation GitPet runs the equivalent of:
 
-A checkpoint previews all current non-ignored changes, asks for confirmation, ensures Git has an author identity, stages with `git add -A`, and creates a normal **local** Git commit.
-
-File Review is read-only: GitPet reads the baseline from `HEAD` and reads the current file from disk. Reviewing a file never stages, commits, rewrites, restores, or pushes it.
-
-Remote connection is a separate explicit action. GitPet only adds `origin` after the user supplies the clone URL and approves it, and it refuses to overwrite an existing `origin` automatically.
-
-**Pull ↓** refuses to start if the working tree has uncommitted changes. After confirmation it runs the equivalent of:
-
-```text
+```bash
 git pull --ff-only origin <current-branch>
 ```
 
-Fast-forward-only means GitPet never creates an automatic merge commit. If local and remote histories have diverged, Pull stops and leaves the history unchanged. The separate Milestones flow can then preserve generations without force-pushing `main`.
+Fast-forward-only means GitPet will not create an automatic merge commit. If local and remote history diverge, Get stops safely.
 
-**Push ↑** shows the destination and latest commit and asks for explicit confirmation before running the equivalent of:
+<h3>Send ↑</h3>
 
-```text
+Send works only with already-saved commits. Before sending, GitPet distinguishes these cases:
+
+<table>
+  <tr><th>State</th><th>GitPet response</th></tr>
+  <tr><td>Unsaved work, nothing saved ahead</td><td>Ask the user to Save first.</td></tr>
+  <tr><td>No unsaved work, nothing saved ahead</td><td>Explain that the remote is already up to date.</td></tr>
+  <tr><td>Saved commits ready, no unsaved work</td><td>Offer normal Send confirmation.</td></tr>
+  <tr><td>Saved commits ready plus newer unsaved work</td><td>Allow sending only the already-saved commits and clearly exclude unsaved work.</td></tr>
+</table>
+
+The actual Git command is:
+
+```bash
 git push origin <current-branch>
 ```
 
-Push sends committed history only. It does not stage or commit working-tree changes, create an online repository, force-push, reset, or clean. Automatic checkpoints are off by default and never trigger Pull or Push.
+GitPet never force-pushes `main`, never stages or commits as a side effect of Send, and never invents an online repository.
 
-Major-update planning also preserves these boundaries. Creating a release plan is local only; publishing legacy refs and publishing the redesign are separate explicit actions.
+---
 
-## Project status
+<h2>Connecting an existing remote</h2>
 
-ZomniverseGitPet **0.4.0** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
+A local repository and an online repository are separate things. If Get or Send needs `origin` and no readable remote exists, GitPet opens **Connect Remote** and asks the user for the clone address of an existing repository.
 
-Current platform support: Windows 10/11, x64, with Git for Windows available as `git.exe`.
+Example addresses are documentation, not terminal commands: <code>https://github.com/user/project.git</code> or <code>git@github.com:user/project.git</code>.
 
-## Build
+After explicit approval, GitPet performs the real Git command:
 
-Requirements: Windows, the .NET 8 SDK, and Git for Windows.
+```bash
+git remote add origin <user-provided-url>
+```
+
+It does not replace an existing `origin`, create the online repository, Save, Get, or Send merely because the remote was connected.
+
+---
+
+<h2>Major updates and milestones</h2>
+
+GitPet can flag unusually large or structural changes and ask whether the project may be entering a new generation. The user decides; detection is advisory.
+
+Signals can include high file/line churn, many additions/removals together, schema or dependency-structure changes, format replacements, or local/remote divergence.
+
+The **Milestones / Major update? ✦** flow can preserve a previous generation as an ordinary legacy branch and annotated tag while continuing redesign work on a separate branch. It does not rewrite `main`, reset working files, clean the repository, or publish a release automatically.
+
+For GitHub remotes it can also open GitHub's release editor for a protected legacy tag and navigate to previous releases.
+
+See [Major updates, milestones, and releases](docs/MAJOR_UPDATES_AND_RELEASES.md) for the detailed model.
+
+---
+
+<h2>Safety contract</h2>
+
+<table>
+  <tr><th>GitPet may do</th><th>GitPet does not do automatically</th></tr>
+  <tr><td>Read repository status and history</td><td>Pull/Get remote changes</td></tr>
+  <tr><td>Review saved/current files</td><td>Push/Send commits</td></tr>
+  <tr><td>Create confirmed local saves</td><td>Create online repositories</td></tr>
+  <tr><td>Run configured project tests</td><td>Replace an existing remote</td></tr>
+  <tr><td>Add an explicitly approved origin</td><td>Force-push main</td></tr>
+  <tr><td>Use exact-path safe.directory approval</td><td>Use <code>safe.directory=*</code></td></tr>
+  <tr><td>Create explicit milestone branches/tags</td><td>Use destructive <code>reset --hard</code> or <code>clean</code> workflows inside the app</td></tr>
+</table>
+
+Background repository checks run quietly and do not masquerade as foreground work. Automatic Saving is **off by default**, creates local saves only, and never triggers Get or Send.
+
+---
+
+<h2>Configuration</h2>
+
+ZomniverseGitPet stores typed JSON configuration and an append-only audit trail beneath `%LOCALAPPDATA%\ZomniverseGitPet`.
+
+Configuration can include the active repository, up to 20 recent repositories, project-specific test commands, automatic-save preferences, and local UI convenience state. Machine-specific paths are not built into the public source tree.
+
+---
+
+<h2>Build</h2>
+
+Requirements: Windows, the .NET 8 SDK, and Git for Windows available as `git.exe`.
 
 ```powershell
 dotnet build ZomniverseGitPet.sln -c Release
@@ -385,34 +346,39 @@ Create a self-contained single executable:
 dotnet publish src/ZomniverseGitPet/ZomniverseGitPet.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-## Local development build
-
-Run `scripts/publish-local.ps1` to create the runnable self-contained executable in the sibling `ZomniverseGitPet_Releases/current` directory.
+For local development, the repository includes a convenience publisher:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/publish-local.ps1
 ```
 
-Normal compiler output remains under the ignored `bin/` and `obj/` directories; the runnable local copy is outside the source repository.
+That script places the runnable development executable in the sibling `ZomniverseGitPet_Releases/current` directory while ordinary compiler output remains under ignored `bin/` and `obj/` directories.
 
-## Configuration
+---
 
-ZomniverseGitPet writes its typed JSON configuration and append-only audit trail beneath `%LOCALAPPDATA%\ZomniverseGitPet`. The configuration stores the active repository, an MRU registry of up to 20 recent repositories, each project's local test profile, and local UI convenience state; no machine path is built into the application or public source tree.
+<h2>Project status</h2>
 
-Test profiles can be configured directly from **Tests** in Guardian. Treat saved test commands as trusted local configuration.
+<strong>ZomniverseGitPet 0.4.1</strong> is an early public preview. The maintained application is the native C#/.NET 8 WinForms project under `src/ZomniverseGitPet/`. The original PowerShell proof of concept remains under `prototype/powershell/` as a historical reference.
 
-## Roadmap
+Current platform support: Windows 10/11 x64 with Git for Windows.
+
+<details>
+<summary><strong>Near-term roadmap</strong></summary>
 
 - Micro-animation and richer repository-state transitions
 - Richer shared repository snapshot/state model across pet and Guardian
-- Curated public screenshot/feature gallery using a safe demo repository
-- In-app settings editor for checkpoint policy
+- Curated screenshot/feature gallery from a safe demo repository
+- In-app settings editor for automatic-saving policy
 - File-system-assisted refresh with polling fallback
 - Signed release artifacts and installer packaging
 - Broader accessibility and multi-monitor refinements
-- Task/worktree-aware checkpoints for parallel AI agents
+- Task/worktree-aware saves for parallel AI agents
 - Additional automated integration and UI tests
 
-## License
+</details>
+
+---
+
+<h2>License</h2>
 
 ZomniverseGitPet is available under the [MIT License](LICENSE).
