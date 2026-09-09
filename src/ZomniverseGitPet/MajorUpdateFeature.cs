@@ -73,7 +73,7 @@ internal static class MajorUpdateFeature
 
             var helpIndex = mainMenu.Items.Cast<ToolStripItem>()
                 .Select((item, index) => new { item, index })
-                .FirstOrDefault(value => value.item.Text.Equals("Help", StringComparison.OrdinalIgnoreCase))?.index
+                .FirstOrDefault(value => string.Equals(value.item.Text, "Help", StringComparison.OrdinalIgnoreCase))?.index
                 ?? mainMenu.Items.Count;
             mainMenu.Items.Insert(Math.Max(0, helpIndex), menu);
 
