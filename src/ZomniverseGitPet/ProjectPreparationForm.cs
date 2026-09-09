@@ -154,14 +154,17 @@ internal sealed class ProjectPreparationForm : Form
         right.Controls.Add(CreatePreviewSection(_beforeHeader, _beforePreview), 0, 1);
         right.Controls.Add(CreatePreviewSection(_afterHeader, _afterPreview), 0, 2);
 
-        var split = new SplitContainer
+        // Do not assign SplitterDistance or native Panel*MinSize here. WinForms validates
+        // those values during construction before the dialog has a real width, which can
+        // throw on DPI/layout transitions. SafeSplitContainer applies the visual 50/50
+        // policy only after usable bounds exist.
+        var split = new SafeSplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
             SplitterWidth = 8,
-            SplitterDistance = 540,
-            Panel1MinSize = 430,
-            Panel2MinSize = 430,
+            PreferredRatio = 0.5,
+            PreferredPaneMinimum = 430,
             BackColor = Color.FromArgb(80, 57, 111),
             BorderStyle = BorderStyle.None
         };
