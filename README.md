@@ -8,7 +8,7 @@
 
 ZomniverseGitPet is a lightweight Windows desktop companion that keeps a small purple fox near your workspace and turns Git safety into a visible, low-friction habit. It is designed for experienced developers, people working with AI coding agents, and users who do not want to memorize Git commands just to keep their projects safe.
 
-Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, safely initialize local Git metadata, explain and preview `.gitignore` changes, review changed files side-by-side, configure and run project-specific tests, create local checkpoints, explicitly connect an existing remote repository, manually pull remote updates, manually push committed history, display recent commits, and run Git health checks.
+Double-click the pet to open the Guardian Console. GitPet can watch and switch between projects, inspect ordinary folders before Git setup, choose a selective tracking scope, safely initialize local Git metadata, explain and preview `.gitignore` changes including nested ignore files, review changed files side-by-side, configure and run project-specific tests, create local checkpoints, explicitly connect an existing remote repository, manually pull remote updates, manually push committed history, display recent commits, and run Git health checks.
 
 GitPet never pulls or pushes automatically, never invents or creates online repositories automatically, never replaces an existing remote automatically, and never uses destructive operations such as `reset --hard` or `clean`.
 
@@ -74,8 +74,11 @@ GitPet tries to explain *what will happen before it happens*.
 - **Projects** remembers up to 20 recent repositories so you can switch quickly.
 - **Open folder** accepts an existing Git repository immediately.
 - **Prepare folder for Git** can safely turn an ordinary local folder into a Git repository with `git init -b main` after confirmation.
+- **Choose project contents** shows a Dropbox-style checkbox tree before preparation so a parent folder can be narrowed to the files/folders that actually belong to the project.
+- **Nested repository protection** locks existing child Git repositories out of a new parent tracking scope instead of silently absorbing them.
 - **What Git should ignore** explains `.gitignore` as Git's “do not track these files” list instead of assuming the user already knows the term.
-- **Before / After preview** shows the exact `.gitignore` content before anything is written.
+- **Current ignore files** shows the root `.gitignore` plus nested `.gitignore` files already in effect inside the selected folders.
+- **Before / After preview** shows the proposed root `.gitignore` before anything is written.
 - **File Review** shows changed source side-by-side against the latest local commit/checkpoint.
 - **Tests** stores a separate test profile for each project; if none exists, GitPet suggests likely commands for review and lets the user Save or Save & run tests.
 - **Checkpoint** creates an ordinary local Git commit after showing the files and asking for confirmation.
@@ -99,7 +102,9 @@ GitPet inspects it
 │ Open immediately      │ Offer safe Git preparation │
 └───────────────────────┴────────────────────────────┘
         ↓
-Review what Git should ignore
+For a new repo: choose the tracking scope
+        ↓
+Review root + nested .gitignore context
         ↓
 Monitor changed files → click to review Before / Now
         ↓
@@ -123,13 +128,19 @@ When a folder is selected, GitPet classifies it before doing anything:
 
 ## Safe project preparation
 
-For a non-Git folder, GitPet can perform only:
+For a non-Git folder, GitPet first shows a selective project tree. Everything starts selected, but the user can clear the selection, choose only specific folders/files, and expand a folder to make a narrower selection. Existing nested Git repositories are displayed as protected exclusions.
+
+When a selective scope is used, GitPet converts it into root `.gitignore` allow-list rules. That means unselected content is actually outside the new Git tracking scope rather than merely hidden from the interface. Deep selections re-open only the required parent path, so selecting `CV/expertise/` does not implicitly include all other `CV/` content.
+
+After the scope is approved, GitPet shows an expanded hygiene review. The CURRENT pane includes the root `.gitignore` plus nested `.gitignore` files discovered in selected folders; nested files remain read-only in this workflow and continue to govern their own subtrees.
+
+Only after those reviews does GitPet perform:
 
 ```text
 git init -b main
 ```
 
-It then verifies the repository root and applies only the `.gitignore` rules you explicitly accepted.
+It then verifies the repository root and applies only the tracking-scope and hygiene rules the user approved.
 
 Project preparation does **not** create a hosting repository, configure `origin`, stage files, create the first commit, pull, or push anything. Those remain separate, deliberate user actions.
 
@@ -186,7 +197,7 @@ GitPet then returns to the Pull or Push action that the user started. It does **
 
 ## Friendly `.gitignore` hygiene
 
-A `.gitignore` file is simply Git's list of files and folders it should leave alone. GitPet samples the project tree and can recommend common candidates such as:
+A `.gitignore` file is simply Git's list of files and folders it should leave alone. GitPet samples the selected project scope and can recommend common candidates such as:
 
 - `bin/`, `obj/`, `.vs/`, `.idea/`
 - `node_modules/`, Python caches and virtual environments
@@ -200,14 +211,14 @@ The review window uses plain-language labels:
 - **RECOMMENDED** — usually generated/cache/IDE material
 - **CHECK FIRST** — may be generated, but some projects intentionally commit it
 
-The right side of the review window shows the target `.gitignore` file in two read-only panels:
+The right side of the review window gives substantial vertical space to two read-only views:
 
-1. **CURRENT** — exactly what the file contains now
-2. **AFTER** — exactly what the file would contain if the selected suggestions were applied
+1. **CURRENT IGNORE FILES** — the root `.gitignore` plus nested `.gitignore` files already in effect inside selected folders
+2. **AFTER** — the proposed project-root `.gitignore` after the selected tracking-scope and hygiene rules are applied
 
-Nothing is written until the user approves the action. Existing `.gitignore` content is preserved and only accepted missing rules are appended.
+Nested `.gitignore` files are not rewritten by this review. Existing root content is preserved and only approved missing rules are added.
 
-Environment templates such as `.env.example`, `.env.sample`, `.env.template`, and `.env.dist` are deliberately protected from broad ignore suggestions because projects often need to commit those examples.
+Environment templates such as `.env.example`, `.env.development.example`, `.env.sample`, `.env.template`, and `.env.dist` are deliberately protected from privacy suggestions because projects often need to commit those examples.
 
 ## Friendly Git identity setup
 
@@ -233,8 +244,9 @@ GitPet explains that commit metadata can become public if a commit is later push
 - Quiet background repository monitoring
 - Recent-project registry with up to 20 repositories
 - Folder suitability inspection and safe local Git initialization
-- Nested-repository protection
-- Reviewable `.gitignore` advisor with exact before/after preview
+- Dropbox-style selective project scope before Git initialization
+- Nested-repository protection in project scope selection
+- Scope-aware `.gitignore` advisor with nested ignore-file visibility
 - Friendly first-time Git identity setup
 - Explicit, user-approved `origin` connection for an existing remote repository
 - Human-readable changed-file states
@@ -274,7 +286,7 @@ Push sends committed history only. It does not stage or commit working-tree chan
 
 ## Project status
 
-ZomniverseGitPet **0.3.4** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
+ZomniverseGitPet **0.3.5** is an early public preview. The native C# application replaces the original PowerShell proof of concept, which remains in `prototype/powershell/` as a reference implementation.
 
 Current platform support: Windows 10/11, x64, with Git for Windows available as `git.exe`.
 
