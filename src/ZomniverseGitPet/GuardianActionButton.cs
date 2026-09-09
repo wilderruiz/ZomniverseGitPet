@@ -122,6 +122,26 @@ internal sealed class GuardianActionButton : Button
         }
 
         base.OnClick(e);
+        if (_syncRole != SyncRole.None) _ = RefreshAfterOperationAsync();
+    }
+
+    private async Task RefreshAfterOperationAsync()
+    {
+        for (var attempt = 0; attempt < 1200 && !IsDisposed; attempt++)
+        {
+            await Task.Delay(250);
+            if (OperationInProgress()) continue;
+
+            try
+            {
+                await GuardianSyncState.RefreshAsync(true);
+            }
+            catch
+            {
+                // Keep the last known counters; the next watcher/manual Refresh will retry.
+            }
+            return;
+        }
     }
 
     protected override void OnMouseEnter(EventArgs e)
