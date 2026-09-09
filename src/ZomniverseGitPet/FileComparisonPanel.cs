@@ -624,7 +624,7 @@ internal sealed class FileComparisonPanel : Panel
 
         var sign = delta > 0 ? "+" : "−";
         var magnitude = FormatSize(Math.Abs(delta));
-        var percent = before == 0 ? null : Math.Abs(delta) * 100d / before;
+        double? percent = before == 0 ? null : Math.Abs(delta) * 100d / before;
         return percent.HasValue
             ? $"{sign}{magnitude}  ({sign}{percent.Value:N1}%)"
             : $"{sign}{magnitude}";
