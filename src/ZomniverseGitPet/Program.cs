@@ -9,6 +9,8 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
+        SplitContainerSafety.InstallForApplication();
+
         var userId = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
         var instanceName = "ZomniverseGitPet-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(userId)))[..16];
@@ -45,4 +47,3 @@ internal static class Program
         catch { }
     }
 }
-
