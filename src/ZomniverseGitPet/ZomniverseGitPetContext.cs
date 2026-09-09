@@ -43,7 +43,13 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     {
         if (_guardian is null || _guardian.IsDisposed)
         {
-            _guardian = new GuardianForm(_config, _configStore, _git, _audit, ChooseRepositoryAsync);
+            _guardian = new GuardianForm(
+                _config,
+                _configStore,
+                _git,
+                _audit,
+                ChooseRepositoryAsync,
+                ReconfigureCurrentProjectAsync);
             _guardian.FormClosed += (_, _) => _guardian = null;
         }
         _guardian.Show();
@@ -56,6 +62,17 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     {
         ShowProjectsMenu();
         return Task.CompletedTask;
+    }
+
+    private async Task ReconfigureCurrentProjectAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_config.RepositoryPath) || !Directory.Exists(_config.RepositoryPath))
+        {
+            ShowProjectsMenu();
+            return;
+        }
+
+        await ReconfigureRepositoryAsync(_config.RepositoryPath);
     }
 
     private void ShowProjectsMenu()
@@ -99,7 +116,10 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
 
         menu.Items.Add(new ToolStripSeparator());
-        var openFolder = new ToolStripMenuItem("Open folder…");
+        var openFolder = new ToolStripMenuItem("Add / open project folder…")
+        {
+            ToolTipText = "A folder that is new to GitPet always opens Project Scope first, followed by Repository Hygiene."
+        };
         openFolder.Click += async (_, _) => await OpenFolderAsync(false);
         menu.Items.Add(openFolder);
 
@@ -119,7 +139,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             reconfigure.Click += async (_, _) => await ReconfigureRepositoryAsync(_config.RepositoryPath!);
             menu.Items.Add(reconfigure);
 
-            var hygiene = new ToolStripMenuItem("Review .gitignore suggestions…");
+            var hygiene = new ToolStripMenuItem("Review .gitignore suggestions only…");
             hygiene.Click += async (_, _) => await ReviewGitIgnoreSuggestionsAsync(_config.RepositoryPath!, true);
             menu.Items.Add(hygiene);
         }
@@ -164,8 +184,8 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         using var dialog = new FolderBrowserDialog
         {
             Description = preparationRequested
-                ? "Choose any folder ZomniverseGitPet should prepare or reconfigure. Existing Git repositories can reopen the full project-scope wizard."
-                : "Choose a project folder for ZomniverseGitPet",
+                ? "Choose a folder to prepare or reconfigure. GitPet will show Project Scope first, then Repository Hygiene."
+                : "Choose a project folder. If it is new to GitPet, Project Scope and Repository Hygiene will open before the Guardian.",
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true,
             InitialDirectory = _config.RepositoryPath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
@@ -183,15 +203,14 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             case ProjectSuitability.Ready:
             {
                 var root = inspection.RepositoryRoot!;
-                if (preparationRequested)
-                {
-                    await ReconfigureRepositoryAsync(root);
-                    break;
-                }
+                var alreadyRegistered = IsRecentRepository(root);
 
-                var wasKnown = IsRecentRepository(root);
-                await ActivateRepositoryAsync(root);
-                if (!wasKnown) await ReviewGitIgnoreSuggestionsAsync(root, false);
+                // Opening a folder for the first time in GitPet is onboarding, even when Git already exists.
+                // The canonical onboarding flow is always Scope -> Hygiene -> Guardian.
+                if (preparationRequested || !alreadyRegistered)
+                    await ReconfigureRepositoryAsync(root);
+                else
+                    await ActivateRepositoryAsync(root);
                 break;
             }
             case ProjectSuitability.NestedRepository:
@@ -202,10 +221,11 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                     "Existing parent repository found", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                 if (answer == DialogResult.Yes && !string.IsNullOrWhiteSpace(inspection.RepositoryRoot))
                 {
-                    if (preparationRequested)
-                        await ReconfigureRepositoryAsync(inspection.RepositoryRoot);
+                    var root = inspection.RepositoryRoot;
+                    if (preparationRequested || !IsRecentRepository(root))
+                        await ReconfigureRepositoryAsync(root);
                     else
-                        await ActivateRepositoryAsync(inspection.RepositoryRoot);
+                        await ActivateRepositoryAsync(root);
                 }
                 break;
             }
@@ -273,8 +293,8 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
         {
             MessageBox.Show(DialogOwner,
-                "GitPet could not verify this existing repository before reconfiguration. Nothing was changed.\r\n\r\n" + rootResult.Output,
-                "Reconfigure project", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "GitPet could not verify this existing repository before project setup. Nothing was changed.\r\n\r\n" + rootResult.Output,
+                "Project setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -285,26 +305,32 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
         try
         {
-            var added = GitIgnoreAdvisor.AppendAcceptedRules(root, preparation.AcceptedRules);
+            ProjectGitIgnoreComposer.SplitCombinedRules(
+                preparation.AcceptedRules,
+                out var scopeRules,
+                out var suggestionRules);
+            var changed = ProjectGitIgnoreComposer.ApplyReplacingScope(root, scopeRules, suggestionRules);
+
             await _audit.WriteAsync("repository_scope_reviewed", new
             {
                 repository = root,
-                gitignoreRulesAdded = added,
-                rules = preparation.AcceptedRules
+                gitignoreChanged = changed,
+                scopeRules,
+                suggestionRules
             });
             await ActivateRepositoryAsync(root);
 
             MessageBox.Show(DialogOwner,
-                "Project scope reviewed ✓\r\n\r\n" +
-                $"Repository: {root}\r\n.gitignore rules added: {added}\r\n\r\n" +
+                "Project setup saved ✓\r\n\r\n" +
+                $"Repository: {root}\r\nRoot .gitignore changed: {(changed ? "yes" : "no")}\r\n\r\n" +
                 "GitPet did not run git init again. No files were staged or committed, no remote was changed, and nothing was pushed.",
-                "Project reconfigured", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "Project setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
             MessageBox.Show(DialogOwner,
-                "GitPet could not apply the approved project-scope/.gitignore rules. No commit, pull, or push was attempted.\r\n\r\n" + ex.Message,
-                "Reconfigure project", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "GitPet could not apply the approved project scope/.gitignore rules. No commit, pull, or push was attempted.\r\n\r\n" + ex.Message,
+                "Project setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -317,18 +343,9 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             if (showWhenEmpty)
                 MessageBox.Show(DialogOwner,
                     "GitPet did not find any new common .gitignore candidates in the sampled project contents.\r\n\r\n" +
-                    "Use 'Reconfigure current project scope…' if you want the full folder tree, ignore library, and custom rule builder.",
+                    "Use Project setup if you want the full folder tree, ignore library, and custom rule builder.",
                     "Repository hygiene", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
-        }
-
-        if (!showWhenEmpty)
-        {
-            var review = MessageBox.Show(DialogOwner,
-                $"GitPet found {suggestions.Count} possible .gitignore rule(s). Review them now?\r\n\r\n" +
-                "Nothing will be added unless you explicitly select and accept the suggestions.",
-                "Repository hygiene", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (review != DialogResult.Yes) return;
         }
 
         using var form = new ProjectPreparationForm(repositoryPath, suggestions, initializeGit: false);
