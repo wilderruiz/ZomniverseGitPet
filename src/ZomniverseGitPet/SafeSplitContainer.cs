@@ -8,7 +8,7 @@ namespace ZomniverseGitPet;
 /// Native panel minimums intentionally stay at zero; the preferred minimum is a visual
 /// policy applied only when there is enough real space.
 /// </summary>
-internal sealed class SafeSplitContainer : SplitContainer
+internal sealed class SafeSplitContainer : System.Windows.Forms.SplitContainer
 {
     private bool _applyingLayout;
     private double _preferredRatio = 0.5;
@@ -167,9 +167,9 @@ internal sealed class SafeSplitContainer : SplitContainer
 }
 
 /// <summary>
-/// Retrofits older SplitContainer instances that predate SafeSplitContainer. This keeps
-/// their native panel minimums at zero so modal dialogs/project switches cannot make the
-/// current bounds mathematically impossible. New splitters should use SafeSplitContainer.
+/// Retrofits any SplitContainer created outside GitPet source code. Current in-project
+/// SplitContainer references are aliased to SafeSplitContainer, but this remains as a
+/// defensive guard for third-party/designer-created controls.
 /// </summary>
 internal static class SplitContainerSafety
 {
@@ -179,7 +179,7 @@ internal static class SplitContainerSafety
         public bool Applying { get; set; }
     }
 
-    private static readonly ConditionalWeakTable<SplitContainer, LegacyState> Guarded = new();
+    private static readonly ConditionalWeakTable<System.Windows.Forms.SplitContainer, LegacyState> Guarded = new();
     private static bool _installed;
 
     public static void InstallForApplication()
@@ -197,14 +197,14 @@ internal static class SplitContainerSafety
 
     private static void GuardTree(Control root)
     {
-        if (root is SplitContainer split && root is not SafeSplitContainer)
+        if (root is System.Windows.Forms.SplitContainer split && root is not SafeSplitContainer)
             GuardLegacy(split);
 
         foreach (Control child in root.Controls)
             GuardTree(child);
     }
 
-    private static void GuardLegacy(SplitContainer split)
+    private static void GuardLegacy(System.Windows.Forms.SplitContainer split)
     {
         if (Guarded.TryGetValue(split, out _)) return;
 
@@ -230,7 +230,7 @@ internal static class SplitContainerSafety
         };
     }
 
-    private static int Available(SplitContainer split)
+    private static int Available(System.Windows.Forms.SplitContainer split)
     {
         var primary = split.Orientation == Orientation.Vertical
             ? split.ClientSize.Width
@@ -238,7 +238,7 @@ internal static class SplitContainerSafety
         return Math.Max(0, primary - split.SplitterWidth);
     }
 
-    private static void NormalizeLegacy(SplitContainer split, LegacyState state)
+    private static void NormalizeLegacy(System.Windows.Forms.SplitContainer split, LegacyState state)
     {
         if (state.Applying || split.IsDisposed) return;
 
