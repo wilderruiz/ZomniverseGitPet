@@ -44,7 +44,7 @@ internal sealed class MajorUpdateForm : Form
             BackColor = GuardianTheme.Window
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 185));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
@@ -120,12 +120,17 @@ internal sealed class MajorUpdateForm : Form
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
 
-        card.Controls.Add(new Label
+        card.Controls.Add(new RichTextBox
         {
             Dock = DockStyle.Fill,
+            ReadOnly = true,
+            BorderStyle = BorderStyle.None,
+            BackColor = GuardianTheme.Surface,
             ForeColor = GuardianTheme.Ink,
-            TextAlign = ContentAlignment.TopLeft,
             Font = new Font("Segoe UI", 9.5f),
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            DetectUrls = false,
+            TabStop = false,
             Text =
                 $"PROJECT   {Path.GetFileName(Path.TrimEndingDirectorySeparator(_assessment.RepositoryPath))}\r\n" +
                 $"BRANCH    {_assessment.Branch}\r\n" +
