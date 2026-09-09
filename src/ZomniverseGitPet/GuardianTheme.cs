@@ -46,8 +46,26 @@ internal static class GuardianTheme
         return path;
     }
 
-    public static ToolStripRenderer CreateMenuRenderer() =>
-        new ToolStripProfessionalRenderer(new GuardianColorTable());
+    public static ToolStripRenderer CreateMenuRenderer() => new GuardianMenuRenderer();
+
+    private sealed class GuardianMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public GuardianMenuRenderer() : base(new GuardianColorTable())
+        {
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            // WinForms can fall back to system-black text for dynamically added dropdown
+            // items even when the drop-down itself is using GitPet's dark renderer.
+            // Keep top-level menu colours untouched (for example Major update? ✦), but
+            // make every drop-down command readable against the purple surface.
+            if (e.Item.Owner is ToolStripDropDown)
+                e.TextColor = e.Item.Enabled ? Ink : FaintInk;
+
+            base.OnRenderItemText(e);
+        }
+    }
 
     private sealed class GuardianColorTable : ProfessionalColorTable
     {
