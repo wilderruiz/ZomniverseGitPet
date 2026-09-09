@@ -1244,14 +1244,22 @@ public sealed class GuardianForm : Form
             ? $"Send completed ✓\norigin/{branch}\n\n{details}"
             : $"Send failed.\norigin/{branch}\n\n{details}";
 
-        MessageBox.Show(
-            this,
-            result.Success
-                ? "Saved updates sent successfully."
-                : "Send failed. See Guardian Activity for details.",
+        /*
+        PATCH: THEMED SEND RESULT
+        DATE: 2026-09-09
+        Style final Send result with Guardian dialog.
+        */
+        using var sentDialog = new GuardianConfirmDialog(
             "Send saved updates",
-            MessageBoxButtons.OK,
-            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            result.Success ? "SENT ONLINE  ✓" : "SEND NEEDS ATTENTION",
+            result.Success
+                ? "Saved updates were sent successfully.\r\n\r\nThe online copy is now updated."
+                : "Send failed.\r\n\r\nSee Guardian Activity for details.",
+            "OK",
+            "",
+            showCancel: false);
+
+        sentDialog.ShowDialog(this);
 
         await RefreshRepositoryViewAsync(token);
     });
