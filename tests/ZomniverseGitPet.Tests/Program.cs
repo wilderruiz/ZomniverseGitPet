@@ -260,6 +260,7 @@ Check("friendly gitignore composer writes explanatory blocks exactly", () =>
         var actual = File.ReadAllText(Path.Combine(root, ".gitignore"));
         return added == 8 && preview == actual &&
                preview.Contains("selected project scope") &&
+               preview.Contains("managed project scope") &&
                preview.Contains("files and folders Git should leave alone") &&
                preview.Contains("Ignore real .env secret/configuration files") &&
                preview.Contains("name contains LEGACY/legacy");
@@ -282,12 +283,40 @@ Check("combined scope rules keep internal exclusions before hygiene rules", () =
     finally { TryDelete(root); }
 });
 
+Check("reconfigure replaces previous managed scope", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        ProjectGitIgnoreComposer.Apply(
+            root,
+            ["/*", "!/.gitignore", "!/home/", "!/home/**"],
+            ["*.log"]);
+
+        var preview = ProjectGitIgnoreComposer.BuildPreviewReplacingScope(
+            root,
+            ["/*", "!/.gitignore", "!/CV/", "!/CV/**"],
+            ["*.log"]);
+        var changed = ProjectGitIgnoreComposer.ApplyReplacingScope(
+            root,
+            ["/*", "!/.gitignore", "!/CV/", "!/CV/**"],
+            ["*.log"]);
+        var actual = File.ReadAllText(Path.Combine(root, ".gitignore"));
+
+        return changed && preview == actual &&
+               !actual.Contains("!/home/", StringComparison.Ordinal) &&
+               actual.Contains("!/CV/", StringComparison.Ordinal) &&
+               actual.Contains("# >>> ZomniverseGitPet managed project scope >>>", StringComparison.Ordinal);
+    }
+    finally { TryDelete(root); }
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 21 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 22 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
