@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 namespace ZomniverseGitPet;
@@ -16,17 +17,27 @@ internal static class WindowPlacementManager
     private static readonly object Gate = new();
     private static readonly string StorePath = Path.Combine(AppPaths.Root, "window-layout.json");
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly ConditionalWeakTable<Form, object> Attached = new();
     private static Dictionary<string, WindowPlacementState>? _states;
+    private static bool _globalDiscoveryEnabled;
 
     public static void Attach(Form form, string? key = null)
     {
+        EnableGlobalDiscovery();
+
         if (form.FormBorderStyle is FormBorderStyle.None or FormBorderStyle.FixedDialog or FormBorderStyle.FixedSingle or FormBorderStyle.Fixed3D or FormBorderStyle.FixedToolWindow)
             return;
+
+        lock (Gate)
+        {
+            if (Attached.TryGetValue(form, out _)) return;
+            Attached.Add(form, new object());
+        }
 
         key ??= form.GetType().Name;
         var applied = false;
 
-        form.Shown += (_, _) =>
+        void ApplyPlacement()
         {
             if (applied || form.IsDisposed) return;
             applied = true;
@@ -52,7 +63,15 @@ internal static class WindowPlacementManager
             {
                 form.Bounds = CalculateFirstBounds(working, form.MinimumSize, form.MaximumSize);
             }
-        };
+        }
+
+        form.Shown += (_, _) => ApplyPlacement();
+
+        if (form.Visible && form.IsHandleCreated)
+        {
+            try { form.BeginInvoke((Action)ApplyPlacement); }
+            catch { }
+        }
 
         form.FormClosing += (_, _) =>
         {
@@ -99,6 +118,25 @@ internal static class WindowPlacementManager
         var x = Math.Clamp(desired.X, workingArea.Left, workingArea.Right - width);
         var y = Math.Clamp(desired.Y, workingArea.Top, workingArea.Bottom - height);
         return new Rectangle(x, y, width, height);
+    }
+
+    private static void EnableGlobalDiscovery()
+    {
+        lock (Gate)
+        {
+            if (_globalDiscoveryEnabled) return;
+            _globalDiscoveryEnabled = true;
+        }
+
+        Application.Idle += (_, _) =>
+        {
+            Form[] forms;
+            try { forms = Application.OpenForms.Cast<Form>().ToArray(); }
+            catch { return; }
+
+            foreach (var openForm in forms)
+                Attach(openForm);
+        };
     }
 
     private static WindowPlacementState? TryGet(string key)
