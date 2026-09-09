@@ -52,11 +52,75 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> GetGitVersionAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["--version"], cancellationToken: token);
 
-    public Task<CommandResult> GetRepositoryRootAsync(string path, CancellationToken token = default) =>
-        RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+    public async Task<CommandResult> GetRepositoryRootAsync(string path, CancellationToken token = default)
+    {
+        var result = await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+        if (result.Success || !IsDubiousOwnershipError(result.Output)) return result;
+
+        using var trust = new SafeDirectorySetupForm(path, result.Output);
+        if (trust.ShowDialog() != DialogResult.OK)
+            return new(result.ExitCode,
+                "Git's ownership safety check was not approved. No trust setting was changed.\r\n\r\n" + result.Output,
+                result.TimedOut);
+
+        var configured = await AddSafeDirectoryAsync(path, token);
+        if (!configured.Success) return configured;
+
+        return await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+    }
 
     public Task<CommandResult> InitializeRepositoryAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["init", "-b", "main"], TimeSpan.FromMinutes(1), token);
+
+    internal static bool IsDubiousOwnershipError(string output) =>
+        !string.IsNullOrWhiteSpace(output) &&
+        output.Contains("detected dubious ownership in repository", StringComparison.OrdinalIgnoreCase) &&
+        output.Contains("safe.directory", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<CommandResult> AddSafeDirectoryAsync(string path, CancellationToken token)
+    {
+        string normalized;
+        try
+        {
+            normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).Replace('\\', '/');
+        }
+        catch (Exception ex)
+        {
+            return new(-1, "GitPet could not normalize the selected project path.\r\n\r\n" + ex.Message);
+        }
+
+        var configWorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(configWorkingDirectory) || !Directory.Exists(configWorkingDirectory))
+            configWorkingDirectory = path;
+
+        var existing = await RunGitAsync(configWorkingDirectory,
+            ["config", "--global", "--get-all", "safe.directory"], cancellationToken: token);
+        if (!string.IsNullOrWhiteSpace(existing.Output))
+        {
+            var alreadyTrusted = existing.Output
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(value => value.Replace('\\', '/').TrimEnd('/'))
+                .Any(value => value.Equals(normalized.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
+            if (alreadyTrusted)
+                return new(0, "This exact project folder is already in your Git safe.directory list.");
+        }
+
+        var result = await RunGitAsync(configWorkingDirectory,
+            ["config", "--global", "--add", "safe.directory", normalized], cancellationToken: token);
+        await audit.WriteAsync("safe_directory_configured", new
+        {
+            scope = "exact_project",
+            success = result.Success,
+            result.ExitCode,
+            result.TimedOut
+        });
+
+        return result.Success
+            ? new(0, "This exact project folder is now trusted by Git for the current Windows user.")
+            : new(result.ExitCode,
+                "GitPet could not add the selected project to your personal Git safe.directory list.\r\n\r\n" + result.Output,
+                result.TimedOut);
+    }
 
     public Task<CommandResult> GetLastCommitAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-1", "--format=%H%x09%h%x09%ad%x09%s", "--date=iso-strict"], cancellationToken: token);
