@@ -74,9 +74,10 @@ internal static class MajorUpdateFeature
                 .FirstOrDefault(value => value.item.Text.Equals("Help", StringComparison.OrdinalIgnoreCase))?.index
                 ?? guardian.MainMenuStrip.Items.Count;
             guardian.MainMenuStrip.Items.Insert(Math.Max(0, helpIndex), menu);
-            Menus[guardian.Handle] = menu;
 
-            guardian.FormClosed += (_, _) => Menus.Remove(guardian.Handle);
+            var handle = guardian.Handle;
+            Menus[handle] = menu;
+            guardian.FormClosed += (_, _) => Menus.Remove(handle);
         }
     }
 
@@ -192,7 +193,7 @@ internal static class MajorUpdateFeature
     {
         foreach (var entry in Menus.ToArray())
         {
-            if (entry.Value.IsDisposed)
+            if (entry.Value.Owner is null)
             {
                 Menus.Remove(entry.Key);
                 continue;
