@@ -1,29 +1,31 @@
 namespace ZomniverseGitPet;
 
 /// <summary>
-/// Compatibility wrapper for the existing preparation call sites. New-project preparation
-/// is now a two-step wizard: choose the tracking scope first, then review the exact root
-/// .gitignore proposal with nested ignore files visible. Existing repository hygiene skips
-/// the scope step and opens the review directly.
+/// Compatibility wrapper for project preparation/reconfiguration. Creating Git metadata and
+/// choosing a tracking scope are intentionally separate decisions: an existing repository can
+/// reopen the full scope tree without running git init again.
 /// </summary>
 internal sealed class ProjectPreparationForm : Form
 {
     private readonly string _folderPath;
     private readonly bool _initializeGit;
+    private readonly bool _chooseScope;
     private IReadOnlyList<string> _acceptedRules = [];
     private bool _wizardStarted;
 
     public ProjectPreparationForm(
         string folderPath,
         IReadOnlyList<GitIgnoreSuggestion> suggestions,
-        bool initializeGit)
+        bool initializeGit,
+        bool chooseScope = false)
     {
         _folderPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folderPath));
         _initializeGit = initializeGit;
+        _chooseScope = initializeGit || chooseScope;
 
         // This form is only the modal result carrier now. The visible UX is provided by
         // ProjectScopeSelectionForm followed by ProjectPreparationReviewForm.
-        Text = initializeGit ? "Prepare project for Git" : "Repository hygiene";
+        Text = initializeGit ? "Prepare project for Git" : _chooseScope ? "Reconfigure project" : "Repository hygiene";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -32,6 +34,7 @@ internal sealed class ProjectPreparationForm : Form
     }
 
     public IReadOnlyList<string> AcceptedRules => _acceptedRules;
+    public bool ReplacesTrackingScope => _chooseScope;
 
     protected override void OnShown(EventArgs e)
     {
@@ -46,7 +49,7 @@ internal sealed class ProjectPreparationForm : Form
         try
         {
             ProjectScopePlan plan;
-            if (_initializeGit)
+            if (_chooseScope)
             {
                 using var scope = new ProjectScopeSelectionForm(_folderPath);
                 if (scope.ShowDialog(Owner) != DialogResult.OK)
@@ -63,7 +66,7 @@ internal sealed class ProjectPreparationForm : Form
 
             var scopedSuggestions = ScopedGitIgnoreAdvisor.Suggest(plan);
             var documents = ScopedGitIgnoreAdvisor.FindIgnoreDocuments(plan);
-            var scopeRules = _initializeGit ? ProjectScopePlanner.BuildIgnoreRules(plan) : [];
+            var scopeRules = _chooseScope ? ProjectScopePlanner.BuildIgnoreRules(plan) : [];
 
             using var review = new ProjectPreparationReviewForm(
                 _folderPath,
@@ -71,7 +74,8 @@ internal sealed class ProjectPreparationForm : Form
                 _initializeGit,
                 scopeRules,
                 documents,
-                plan.Summary);
+                plan.Summary,
+                replaceScope: _chooseScope);
 
             if (review.ShowDialog(Owner) != DialogResult.OK)
             {
@@ -91,7 +95,7 @@ internal sealed class ProjectPreparationForm : Form
             MessageBox.Show(
                 Owner,
                 "GitPet could not build the project preparation review. Nothing was initialized or changed.\r\n\r\n" + ex.Message,
-                "Prepare project for Git",
+                _initializeGit ? "Prepare project for Git" : "Reconfigure project",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
             Finish(DialogResult.Cancel);
