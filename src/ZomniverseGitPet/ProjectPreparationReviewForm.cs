@@ -7,6 +7,11 @@ internal sealed class ProjectPreparationReviewForm : Form
     private static readonly Color Surface = Color.FromArgb(30, 23, 45);
     private static readonly Color PanelSurface = Color.FromArgb(45, 31, 66);
     private static readonly Color PreviewSurface = Color.FromArgb(22, 17, 34);
+    private static readonly Color CurrentPreviewSurface = Color.FromArgb(17, 29, 43);
+    private static readonly Color CurrentHeaderSurface = Color.FromArgb(38, 75, 115);
+    private static readonly Color AfterPreviewSurface = Color.FromArgb(29, 20, 43);
+    private static readonly Color AfterHeaderSurface = Color.FromArgb(83, 47, 118);
+    private static readonly Color DuplicateHighlight = Color.FromArgb(111, 70, 31);
     private static readonly Color Purple = Color.FromArgb(112, 70, 180);
     private static readonly Color HotPink = Color.FromArgb(236, 70, 170);
 
@@ -25,6 +30,8 @@ internal sealed class ProjectPreparationReviewForm : Form
     private readonly ComboBox _customKind = new();
     private readonly TextBox _customValue = new();
     private Button _removeCustomButton = null!;
+    private Button _cleanDuplicatesButton = null!;
+    private IReadOnlyList<GitIgnoreDuplicateRule> _currentDuplicates = Array.Empty<GitIgnoreDuplicateRule>();
 
     public ProjectPreparationReviewForm(
         string folderPath,
@@ -113,10 +120,15 @@ internal sealed class ProjectPreparationReviewForm : Form
             BackColor = Color.FromArgb(38, 28, 55)
         };
         customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
-        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145));
+        /*
+        PATCH: POWERFUL CUSTOM IGNORE BUILDER
+        DATE: 2026-09-09
+        Widen matcher menu and expose more safe patterns.
+        */
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 215));
         customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
-        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 136));
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118));
+        customBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
 
         var customLabel = new Label
         {
@@ -129,17 +141,19 @@ internal sealed class ProjectPreparationReviewForm : Form
 
         _customKind.Dock = DockStyle.Fill;
         _customKind.DropDownStyle = ComboBoxStyle.DropDownList;
+        _customKind.DropDownWidth = 250;
         _customKind.BackColor = PreviewSurface;
         _customKind.ForeColor = Ink;
         foreach (CustomIgnoreRuleKind kind in Enum.GetValues<CustomIgnoreRuleKind>())
             _customKind.Items.Add(GitIgnoreRuleLibrary.KindLabel(kind));
+        _customKind.SelectedIndexChanged += (_, _) => UpdateCustomBuilderUi();
         _customKind.SelectedIndex = 0;
 
         _customValue.Dock = DockStyle.Fill;
         _customValue.BackColor = PreviewSurface;
         _customValue.ForeColor = Ink;
         _customValue.BorderStyle = BorderStyle.FixedSingle;
-        _customValue.PlaceholderText = "e.g. cache, tmp, secrets.json, LEGACY";
+        UpdateCustomBuilderUi();
 
         var addCustom = MakeActionButton("Add custom", true);
         addCustom.Dock = DockStyle.Fill;
@@ -157,10 +171,8 @@ internal sealed class ProjectPreparationReviewForm : Form
         _removeCustomButton.Margin = new Padding(6, 0, 0, 0);
         _removeCustomButton.Enabled = false;
         _removeCustomButton.Click += (_, _) => RemoveSelectedCustomRule();
-        _ruleLibrary.SelectionChanged += (_, _) =>
-        {
-            _removeCustomButton.Enabled = _ruleLibrary.CurrentRow?.Tag is GitIgnoreRuleOption { Custom: true };
-        };
+        _ruleLibrary.SelectionChanged += (_, _) => UpdateRemoveCustomButtonState();
+        _ruleLibrary.CellClick += (_, _) => UpdateRemoveCustomButtonState();
 
         customBar.Controls.Add(customLabel, 0, 0);
         customBar.Controls.Add(_customKind, 1, 0);
@@ -196,10 +208,15 @@ internal sealed class ProjectPreparationReviewForm : Form
         left.Controls.Add(leftRows);
         left.Controls.Add(_selectionSummary);
 
-        ConfigurePreviewBox(_beforePreview);
-        ConfigurePreviewBox(_afterPreview);
-        ConfigurePreviewHeader(_beforeHeader);
-        ConfigurePreviewHeader(_afterHeader);
+        /*
+        PATCH: DISTINCT CURRENT AND AFTER PREVIEWS
+        DATE: 2026-09-09
+        Use blue current and GitPet-purple proposed states.
+        */
+        ConfigurePreviewBox(_beforePreview, after: false);
+        ConfigurePreviewBox(_afterPreview, after: true);
+        ConfigurePreviewHeader(_beforeHeader, after: false);
+        ConfigurePreviewHeader(_afterHeader, after: true);
 
         var target = new Label
         {
@@ -224,8 +241,8 @@ internal sealed class ProjectPreparationReviewForm : Form
             BackColor = Color.FromArgb(80, 57, 111),
             BorderStyle = BorderStyle.None
         };
-        previewRows.Panel1.Controls.Add(CreatePreviewSection(_beforeHeader, _beforePreview));
-        previewRows.Panel2.Controls.Add(CreatePreviewSection(_afterHeader, _afterPreview));
+        previewRows.Panel1.Controls.Add(CreatePreviewSection(_beforeHeader, _beforePreview, after: false));
+        previewRows.Panel2.Controls.Add(CreatePreviewSection(_afterHeader, _afterPreview, after: true));
 
         var right = new Panel { Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(8) };
         right.Controls.Add(previewRows);
@@ -256,10 +273,15 @@ internal sealed class ProjectPreparationReviewForm : Form
             initializeGit ? "Prepare project" : replaceScope ? "Apply project setup" : "Apply selected changes",
             true);
         var cancel = MakeActionButton("Cancel", false);
+        _cleanDuplicatesButton = MakeActionButton("Clean duplicates", false);
+        _cleanDuplicatesButton.MinimumSize = new Size(150, 36);
+        _cleanDuplicatesButton.Enabled = false;
+        _cleanDuplicatesButton.Click += (_, _) => CleanDuplicateRules();
         accept.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
         cancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         buttons.Controls.Add(accept);
         buttons.Controls.Add(cancel);
+        buttons.Controls.Add(_cleanDuplicatesButton);
         AcceptButton = accept;
         CancelButton = cancel;
 
@@ -335,8 +357,21 @@ internal sealed class ProjectPreparationReviewForm : Form
             option.RuleSummary);
         var row = _ruleLibrary.Rows[rowIndex];
         row.Tag = option;
+        if (option.Custom)
+        {
+            row.DefaultCellStyle.ForeColor = Color.FromArgb(255, 214, 241);
+            row.DefaultCellStyle.SelectionBackColor = Color.FromArgb(88, 45, 104);
+        }
         var tip = option.Description + "\r\n\r\nExact Git pattern(s):\r\n" + string.Join("\r\n", option.Rules);
+        if (option.Custom) tip += "\r\n\r\nSelect this CUSTOM row to enable Remove custom.";
         foreach (DataGridViewCell cell in row.Cells) cell.ToolTipText = tip;
+    }
+
+    private void UpdateCustomBuilderUi()
+    {
+        if (_customKind.SelectedIndex < 0) return;
+        var kind = (CustomIgnoreRuleKind)_customKind.SelectedIndex;
+        _customValue.PlaceholderText = GitIgnoreRuleLibrary.KindPlaceholder(kind);
     }
 
     private void AddCustomRule()
@@ -352,13 +387,26 @@ internal sealed class ProjectPreparationReviewForm : Form
             var addedRow = _ruleLibrary.Rows[_ruleLibrary.Rows.Count - 1];
             addedRow.Selected = true;
             _ruleLibrary.CurrentCell = addedRow.Cells[2];
+            UpdateRemoveCustomButtonState();
             UpdatePreview();
         }
         catch (ArgumentException ex)
         {
-            MessageBox.Show(this, ex.Message, "Custom ignore rule", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            using var dialog = new GuardianConfirmDialog(
+                "Custom ignore rule",
+                "CHECK CUSTOM RULE",
+                ex.Message,
+                "OK",
+                "",
+                showCancel: false);
+            dialog.ShowDialog(this);
             _customValue.Focus();
         }
+    }
+
+    private void UpdateRemoveCustomButtonState()
+    {
+        _removeCustomButton.Enabled = _ruleLibrary.CurrentRow?.Tag is GitIgnoreRuleOption { Custom: true };
     }
 
     private void RemoveSelectedCustomRule()
@@ -366,7 +414,7 @@ internal sealed class ProjectPreparationReviewForm : Form
         var row = _ruleLibrary.CurrentRow;
         if (row?.Tag is not GitIgnoreRuleOption { Custom: true }) return;
         _ruleLibrary.Rows.Remove(row);
-        _removeCustomButton.Enabled = false;
+        UpdateRemoveCustomButtonState();
         UpdatePreview();
     }
 
@@ -379,11 +427,121 @@ internal sealed class ProjectPreparationReviewForm : Form
             _beforeHeader.Text = nestedCount == 0
                 ? "CURRENT — root .gitignore only / none yet"
                 : $"CURRENT — root .gitignore + {nestedCount} nested file{(nestedCount == 1 ? "" : "s")}";
+            RefreshDuplicateHighlight();
         }
         catch (Exception ex)
         {
             _beforeHeader.Text = "CURRENT — preview unavailable";
             _beforePreview.Text = "GitPet could not read the current ignore files.\r\n\r\n" + ex.Message;
+            _currentDuplicates = Array.Empty<GitIgnoreDuplicateRule>();
+            _cleanDuplicatesButton.Enabled = false;
+            _cleanDuplicatesButton.Text = "Clean duplicates";
+        }
+    }
+
+    private void RefreshDuplicateHighlight()
+    {
+        var current = GitIgnoreAdvisor.ReadCurrentContent(_folderPath);
+        _currentDuplicates = GitIgnoreCleaner.FindDuplicateRules(current);
+        var extraLines = _currentDuplicates.Sum(item => item.Occurrences - 1);
+        _cleanDuplicatesButton.Enabled = extraLines > 0;
+        _cleanDuplicatesButton.Text = extraLines > 0 ? $"Clean duplicates ({extraLines})" : "Clean duplicates";
+
+        _beforePreview.SelectAll();
+        _beforePreview.SelectionBackColor = _beforePreview.BackColor;
+        _beforePreview.SelectionColor = Color.FromArgb(226, 236, 247);
+        _beforePreview.Select(0, 0);
+
+        if (extraLines == 0) return;
+        _beforeHeader.Text += $"  •  {extraLines} duplicate{(extraLines == 1 ? "" : "s")}";
+        HighlightDuplicateRules(current, _currentDuplicates);
+    }
+
+    private void HighlightDuplicateRules(string rootContent, IReadOnlyList<GitIgnoreDuplicateRule> duplicates)
+    {
+        var rootText = rootContent.TrimEnd('\r', '\n');
+        if (rootText.Length == 0) return;
+        var rootStart = _beforePreview.Text.IndexOf(rootText, StringComparison.Ordinal);
+        if (rootStart < 0) return;
+
+        var duplicateRules = duplicates.Select(item => item.Rule).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var lineStart = 0;
+        while (lineStart < rootText.Length)
+        {
+            var lineEnd = lineStart;
+            while (lineEnd < rootText.Length && rootText[lineEnd] != '\r' && rootText[lineEnd] != '\n') lineEnd++;
+
+            var rawLine = rootText[lineStart..lineEnd];
+            var trimmed = rawLine.Trim();
+            if (duplicateRules.Contains(trimmed))
+            {
+                var leading = rawLine.Length - rawLine.TrimStart().Length;
+                _beforePreview.Select(rootStart + lineStart + leading, trimmed.Length);
+                _beforePreview.SelectionBackColor = DuplicateHighlight;
+                _beforePreview.SelectionColor = Color.FromArgb(255, 231, 177);
+            }
+
+            if (lineEnd >= rootText.Length) break;
+            if (rootText[lineEnd] == '\r' && lineEnd + 1 < rootText.Length && rootText[lineEnd + 1] == '\n')
+                lineStart = lineEnd + 2;
+            else
+                lineStart = lineEnd + 1;
+        }
+        _beforePreview.Select(0, 0);
+    }
+
+    private void CleanDuplicateRules()
+    {
+        try
+        {
+            var path = Path.Combine(_folderPath, ".gitignore");
+            var current = GitIgnoreAdvisor.ReadCurrentContent(_folderPath);
+            var duplicates = GitIgnoreCleaner.FindDuplicateRules(current);
+            var extraLines = duplicates.Sum(item => item.Occurrences - 1);
+            if (extraLines == 0)
+            {
+                RefreshDuplicateHighlight();
+                return;
+            }
+
+            var list = string.Join("\r\n", duplicates.Take(10).Select(item => $"• {item.Rule}  ×{item.Occurrences}"));
+            if (duplicates.Count > 10) list += $"\r\n• ... and {duplicates.Count - 10} more duplicated rule(s)";
+
+            /*
+            PATCH: SAFE GITIGNORE DUPLICATE CLEANER
+            DATE: 2026-09-09
+            Confirm before removing repeated root ignore rules.
+            */
+            using var confirm = new GuardianConfirmDialog(
+                "Clean .gitignore duplicates",
+                "CLEAN DUPLICATES",
+                $"GitPet found {extraLines} repeated rule line{(extraLines == 1 ? "" : "s")} in the ROOT .gitignore.\r\n\r\n" +
+                list +
+                "\r\n\r\nClean keeps the first occurrence of every rule and removes only later duplicates. " +
+                "Comments, ordering, unique rules, and nested .gitignore files stay untouched.",
+                "Clean",
+                "Cancel");
+
+            if (confirm.ShowDialog(this) != DialogResult.Yes) return;
+
+            var cleaned = GitIgnoreCleaner.RemoveDuplicateRules(current, out var removed);
+            if (removed == 0) return;
+            File.WriteAllText(path, cleaned);
+
+            LoadPreviews();
+            UpdatePreview();
+            _selectionSummary.Text = $"Cleaned {removed} duplicate rule line{(removed == 1 ? "" : "s")} from the root .gitignore. Review CURRENT and AFTER before continuing.";
+        }
+        catch (Exception ex)
+        {
+            using var error = new GuardianConfirmDialog(
+                "Clean .gitignore duplicates",
+                "CLEAN NEEDS ATTENTION",
+                "GitPet could not clean the root .gitignore. No nested .gitignore file was changed.\r\n\r\n" + ex.Message,
+                "OK",
+                "",
+                showCancel: false);
+            error.ShowDialog(this);
         }
     }
 
@@ -497,35 +655,35 @@ internal sealed class ProjectPreparationReviewForm : Form
         return panel;
     }
 
-    private static void ConfigurePreviewBox(RichTextBox box)
+    private static void ConfigurePreviewBox(RichTextBox box, bool after)
     {
         box.Dock = DockStyle.Fill;
         box.ReadOnly = true;
         box.WordWrap = false;
         box.DetectUrls = false;
         box.BorderStyle = BorderStyle.None;
-        box.BackColor = PreviewSurface;
-        box.ForeColor = Color.FromArgb(235, 229, 246);
+        box.BackColor = after ? AfterPreviewSurface : CurrentPreviewSurface;
+        box.ForeColor = after ? Color.FromArgb(241, 229, 247) : Color.FromArgb(226, 236, 247);
         box.Font = new Font("Cascadia Mono", 9f);
         box.ScrollBars = RichTextBoxScrollBars.Both;
     }
 
-    private static void ConfigurePreviewHeader(Label label)
+    private static void ConfigurePreviewHeader(Label label, bool after)
     {
         label.Dock = DockStyle.Top;
         label.Height = 36;
         label.Padding = new Padding(10, 7, 10, 4);
-        label.BackColor = Color.FromArgb(55, 39, 79);
-        label.ForeColor = Color.White;
+        label.BackColor = after ? AfterHeaderSurface : CurrentHeaderSurface;
+        label.ForeColor = after ? Color.FromArgb(255, 211, 240) : Color.FromArgb(222, 239, 255);
         label.Font = new Font("Segoe UI", 9, FontStyle.Bold);
     }
 
-    private static Control CreatePreviewSection(Label header, RichTextBox preview)
+    private static Control CreatePreviewSection(Label header, RichTextBox preview, bool after)
     {
         var panel = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = PreviewSurface,
+            BackColor = after ? AfterPreviewSurface : CurrentPreviewSurface,
             Margin = new Padding(0, 4, 0, 4)
         };
         panel.Controls.Add(preview);

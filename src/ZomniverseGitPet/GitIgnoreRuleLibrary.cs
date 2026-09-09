@@ -17,7 +17,11 @@ internal enum CustomIgnoreRuleKind
     FolderName,
     FileExtension,
     FileName,
-    NameContains
+    NameStartsWith,
+    NameContains,
+    NameEndsWith,
+    RelativeFilePath,
+    RelativeFolderPath
 }
 
 internal static class GitIgnoreRuleLibrary
@@ -107,42 +111,42 @@ internal static class GitIgnoreRuleLibrary
     public static GitIgnoreRuleOption CreateCustom(CustomIgnoreRuleKind kind, string rawValue)
     {
         var value = NormalizeInput(rawValue);
-        if (value.Length == 0) throw new ArgumentException("Enter a name or extension first.", nameof(rawValue));
+        if (value.Length == 0) throw new ArgumentException("Enter a name, path, or extension first.", nameof(rawValue));
 
         return kind switch
         {
-            CustomIgnoreRuleKind.FolderName => new(
-                "custom-" + Guid.NewGuid().ToString("N"),
-                "CUSTOM",
-                $"Folder: {value}",
-                $"Ignore folders named '{value}' anywhere in the project.",
-                [NormalizeFolderRule(value)],
-                true,
-                true),
-            CustomIgnoreRuleKind.FileExtension => new(
-                "custom-" + Guid.NewGuid().ToString("N"),
-                "CUSTOM",
+            CustomIgnoreRuleKind.FolderName => CreateOption(
+                $"Folder: {NormalizeSimpleName(value, "folder name")}",
+                $"Ignore folders named '{NormalizeSimpleName(value, "folder name")}' anywhere in the project.",
+                [NormalizeFolderRule(NormalizeSimpleName(value, "folder name"))]),
+            CustomIgnoreRuleKind.FileExtension => CreateOption(
                 $"Extension: {NormalizeExtension(value)}",
                 $"Ignore files ending in '{NormalizeExtension(value)}' anywhere in the project.",
-                ["*" + NormalizeExtension(value)],
-                true,
-                true),
-            CustomIgnoreRuleKind.FileName => new(
-                "custom-" + Guid.NewGuid().ToString("N"),
-                "CUSTOM",
-                $"File: {value}",
-                $"Ignore files named '{value}' anywhere in the project.",
-                [value],
-                true,
-                true),
-            CustomIgnoreRuleKind.NameContains => new(
-                "custom-" + Guid.NewGuid().ToString("N"),
-                "CUSTOM",
-                $"Name contains: {value}",
-                $"Ignore files or folders whose name contains '{value}' anywhere in the project.",
-                [$"**/*{value}*"],
-                true,
-                true),
+                ["*" + NormalizeExtension(value)]),
+            CustomIgnoreRuleKind.FileName => CreateOption(
+                $"File: {NormalizeSimpleName(value, "file name")}",
+                $"Ignore files named '{NormalizeSimpleName(value, "file name")}' anywhere in the project.",
+                [NormalizeSimpleName(value, "file name")]),
+            CustomIgnoreRuleKind.NameStartsWith => CreateOption(
+                $"Name starts: {NormalizeNameFragment(value)}",
+                $"Ignore files or folders whose name starts with '{NormalizeNameFragment(value)}' anywhere in the project.",
+                [$"**/{NormalizeNameFragment(value)}*"]),
+            CustomIgnoreRuleKind.NameContains => CreateOption(
+                $"Name contains: {NormalizeNameFragment(value)}",
+                $"Ignore files or folders whose name contains '{NormalizeNameFragment(value)}' anywhere in the project.",
+                [$"**/*{NormalizeNameFragment(value)}*"]),
+            CustomIgnoreRuleKind.NameEndsWith => CreateOption(
+                $"Name ends: {NormalizeNameFragment(value)}",
+                $"Ignore files or folders whose name ends with '{NormalizeNameFragment(value)}' anywhere in the project.",
+                [$"**/*{NormalizeNameFragment(value)}"]),
+            CustomIgnoreRuleKind.RelativeFilePath => CreateOption(
+                $"File path: {NormalizeRelativePath(value, false)}",
+                $"Ignore the project-relative file path '{NormalizeRelativePath(value, false)}'.",
+                [NormalizeRelativePath(value, false)]),
+            CustomIgnoreRuleKind.RelativeFolderPath => CreateOption(
+                $"Folder path: {NormalizeRelativePath(value, true)}",
+                $"Ignore the project-relative folder path '{NormalizeRelativePath(value, true)}'.",
+                [NormalizeRelativePath(value, true)]),
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
     }
@@ -152,21 +156,71 @@ internal static class GitIgnoreRuleLibrary
         CustomIgnoreRuleKind.FolderName => "Folder name",
         CustomIgnoreRuleKind.FileExtension => "File extension",
         CustomIgnoreRuleKind.FileName => "File name",
+        CustomIgnoreRuleKind.NameStartsWith => "Name starts with",
         CustomIgnoreRuleKind.NameContains => "Name contains",
+        CustomIgnoreRuleKind.NameEndsWith => "Name ends with",
+        CustomIgnoreRuleKind.RelativeFilePath => "Relative file path",
+        CustomIgnoreRuleKind.RelativeFolderPath => "Relative folder path",
         _ => kind.ToString()
     };
+
+    public static string KindPlaceholder(CustomIgnoreRuleKind kind) => kind switch
+    {
+        CustomIgnoreRuleKind.FolderName => "e.g. cache",
+        CustomIgnoreRuleKind.FileExtension => "e.g. .tmp",
+        CustomIgnoreRuleKind.FileName => "e.g. secrets.json",
+        CustomIgnoreRuleKind.NameStartsWith => "e.g. ~$  →  **/~$*",
+        CustomIgnoreRuleKind.NameContains => "e.g. LEGACY",
+        CustomIgnoreRuleKind.NameEndsWith => "e.g. .old",
+        CustomIgnoreRuleKind.RelativeFilePath => "e.g. docs/private-notes.md",
+        CustomIgnoreRuleKind.RelativeFolderPath => "e.g. tools/generated",
+        _ => "Enter a value"
+    };
+
+    private static GitIgnoreRuleOption CreateOption(string label, string description, IReadOnlyList<string> rules) =>
+        new(
+            "custom-" + Guid.NewGuid().ToString("N"),
+            "CUSTOM",
+            label,
+            description,
+            rules,
+            true,
+            true);
 
     private static string NormalizeInput(string raw)
     {
         var value = (raw ?? "").Trim().Replace('\\', '/').Trim('/');
         if (value.Contains('\r') || value.Contains('\n') || value.StartsWith('!') || value.StartsWith('#'))
-            throw new ArgumentException("Use a simple folder name, file name, extension, or text fragment. GitPet generates the Git pattern for you.");
+            throw new ArgumentException("Use a name, relative path, extension, or text fragment. GitPet generates the Git pattern for you.");
         if (value.Contains("../", StringComparison.Ordinal) || value.Equals("..", StringComparison.Ordinal))
             throw new ArgumentException("Parent-directory paths are not allowed in a custom ignore rule.");
         return value;
     }
 
+    private static string NormalizeSimpleName(string value, string label)
+    {
+        if (value.Contains('/') || value.Contains('*') || value.Contains('?'))
+            throw new ArgumentException($"Enter a simple {label} without folders or wildcard characters.");
+        return value;
+    }
+
+    private static string NormalizeNameFragment(string value)
+    {
+        if (value.Contains('/') || value.Contains('*') || value.Contains('?'))
+            throw new ArgumentException("Enter plain text for the name match. GitPet adds the wildcard pattern automatically.");
+        return value;
+    }
+
     private static string NormalizeFolderRule(string value) => value.TrimEnd('/') + "/";
+
+    private static string NormalizeRelativePath(string value, bool folder)
+    {
+        if (value.Contains('*') || value.Contains('?'))
+            throw new ArgumentException("Relative paths should not contain wildcard characters. Use a name-matching option instead.");
+        var normalized = value.Trim('/');
+        if (normalized.Length == 0) throw new ArgumentException("Enter a project-relative path.");
+        return folder ? normalized.TrimEnd('/') + "/" : normalized;
+    }
 
     private static string NormalizeExtension(string value)
     {
