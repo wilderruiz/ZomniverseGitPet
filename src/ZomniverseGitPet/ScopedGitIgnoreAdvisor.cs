@@ -195,6 +195,8 @@ internal static class ScopedGitIgnoreAdvisor
 internal static class ProjectGitIgnoreComposer
 {
     private const string ScopeHeader = "# ZomniverseGitPet selected project scope";
+    private const string ScopeBegin = "# >>> ZomniverseGitPet managed project scope >>>";
+    private const string ScopeEnd = "# <<< ZomniverseGitPet managed project scope <<<";
     private const string SuggestedHeader = "# Suggested by ZomniverseGitPet — files and folders Git should leave alone";
     private const string Divider = "# =============================================================================";
 
@@ -207,6 +209,16 @@ internal static class ProjectGitIgnoreComposer
         return BuildUpdated(current, scopeRules, suggestionRules, out _);
     }
 
+    public static string BuildPreviewReplacingScope(
+        string root,
+        IEnumerable<string> scopeRules,
+        IEnumerable<string> suggestionRules)
+    {
+        var current = GitIgnoreAdvisor.ReadCurrentContent(root);
+        var withoutManagedScope = RemoveManagedScopeSection(current);
+        return BuildUpdated(withoutManagedScope, scopeRules, suggestionRules, out _);
+    }
+
     public static int Apply(
         string root,
         IEnumerable<string> scopeRules,
@@ -217,6 +229,20 @@ internal static class ProjectGitIgnoreComposer
         var updated = BuildUpdated(current, scopeRules, suggestionRules, out var added);
         if (added > 0) File.WriteAllText(path, updated);
         return added;
+    }
+
+    public static bool ApplyReplacingScope(
+        string root,
+        IEnumerable<string> scopeRules,
+        IEnumerable<string> suggestionRules)
+    {
+        var path = Path.Combine(root, ".gitignore");
+        var current = GitIgnoreAdvisor.ReadCurrentContent(root);
+        var withoutManagedScope = RemoveManagedScopeSection(current);
+        var updated = BuildUpdated(withoutManagedScope, scopeRules, suggestionRules, out _);
+        if (string.Equals(current, updated, StringComparison.Ordinal)) return false;
+        File.WriteAllText(path, updated);
+        return true;
     }
 
     public static void SplitCombinedRules(
@@ -254,12 +280,15 @@ internal static class ProjectGitIgnoreComposer
         if (scope.Length > 0)
         {
             StartSection(builder);
-            if (!ContainsHeader(current, ScopeHeader)) builder.AppendLine(ScopeHeader);
+            builder.AppendLine(ScopeBegin);
+            builder.AppendLine(ScopeHeader);
             builder.AppendLine("# GitPet uses this block to make the chosen parent folder a selective project.");
             builder.AppendLine("# '/*' hides root content first; the following ! rules re-include only what you selected.");
             builder.AppendLine("# Existing nested Git repositories are explicitly kept outside this parent repository.");
+            builder.AppendLine("# Reconfigure Project Setup to replace this managed scope safely later.");
             builder.AppendLine(Divider);
             foreach (var rule in scope) builder.AppendLine(rule);
+            builder.AppendLine(ScopeEnd);
         }
 
         if (suggestions.Length > 0)
@@ -278,6 +307,56 @@ internal static class ProjectGitIgnoreComposer
         }
 
         return builder.ToString();
+    }
+
+    private static string RemoveManagedScopeSection(string current)
+    {
+        if (string.IsNullOrEmpty(current)) return current;
+
+        var newline = current.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var normalized = current.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var lines = normalized.Split('\n').ToList();
+
+        var markerStart = lines.FindIndex(line => line.Trim().Equals(ScopeBegin, StringComparison.OrdinalIgnoreCase));
+        if (markerStart >= 0)
+        {
+            var markerEnd = lines.FindIndex(markerStart + 1,
+                line => line.Trim().Equals(ScopeEnd, StringComparison.OrdinalIgnoreCase));
+            if (markerEnd < markerStart) markerEnd = markerStart;
+            var start = ExpandStartToSectionBoundary(lines, markerStart);
+            lines.RemoveRange(start, markerEnd - start + 1);
+            return string.Join(newline, lines);
+        }
+
+        // Compatibility with 0.3.6-0.3.9 scope blocks, which predate explicit begin/end markers.
+        var header = lines.FindIndex(line => line.Trim().Equals(ScopeHeader, StringComparison.OrdinalIgnoreCase));
+        if (header < 0) return current;
+
+        var legacyStart = ExpandStartToSectionBoundary(lines, header);
+        var cursor = header + 1;
+        while (cursor < lines.Count && !lines[cursor].Trim().Equals(Divider, StringComparison.Ordinal)) cursor++;
+        if (cursor < lines.Count) cursor++;
+
+        while (cursor < lines.Count)
+        {
+            var value = lines[cursor].Trim();
+            if (value.Length == 0 || LooksLikeScopeRule(value))
+            {
+                cursor++;
+                continue;
+            }
+            break;
+        }
+
+        lines.RemoveRange(legacyStart, Math.Max(0, cursor - legacyStart));
+        return string.Join(newline, lines);
+    }
+
+    private static int ExpandStartToSectionBoundary(IReadOnlyList<string> lines, int start)
+    {
+        if (start > 0 && lines[start - 1].Trim().Equals(Divider, StringComparison.Ordinal)) start--;
+        if (start > 0 && string.IsNullOrWhiteSpace(lines[start - 1])) start--;
+        return start;
     }
 
     private static string DescribeRule(string rule)
