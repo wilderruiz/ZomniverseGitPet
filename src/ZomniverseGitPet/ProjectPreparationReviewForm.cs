@@ -23,7 +23,7 @@ internal sealed class ProjectPreparationReviewForm : Form
     private readonly Label _selectionSummary = new();
     private readonly ComboBox _customKind = new();
     private readonly TextBox _customValue = new();
-    private readonly Button _removeCustomButton;
+    private Button _removeCustomButton = null!;
 
     public ProjectPreparationReviewForm(
         string folderPath,
@@ -85,10 +85,6 @@ internal sealed class ProjectPreparationReviewForm : Form
 
         WireCheckboxGrid(_suggestions);
         WireCheckboxGrid(_ruleLibrary);
-        _ruleLibrary.SelectionChanged += (_, _) =>
-        {
-            _removeCustomButton.Enabled = _ruleLibrary.CurrentRow?.Tag is GitIgnoreRuleOption { Custom: true };
-        };
 
         var detectedHeader = CreateSectionHeader(
             "DETECTED IN THIS PROJECT",
@@ -155,6 +151,10 @@ internal sealed class ProjectPreparationReviewForm : Form
         _removeCustomButton.Margin = new Padding(6, 0, 0, 0);
         _removeCustomButton.Enabled = false;
         _removeCustomButton.Click += (_, _) => RemoveSelectedCustomRule();
+        _ruleLibrary.SelectionChanged += (_, _) =>
+        {
+            _removeCustomButton.Enabled = _ruleLibrary.CurrentRow?.Tag is GitIgnoreRuleOption { Custom: true };
+        };
 
         customBar.Controls.Add(customLabel, 0, 0);
         customBar.Controls.Add(_customKind, 1, 0);
@@ -341,8 +341,9 @@ internal sealed class ProjectPreparationReviewForm : Form
             AddLibraryRow(option);
             _customValue.Clear();
             _ruleLibrary.ClearSelection();
-            _ruleLibrary.Rows[^1].Selected = true;
-            _ruleLibrary.CurrentCell = _ruleLibrary.Rows[^1].Cells[2];
+            var addedRow = _ruleLibrary.Rows[_ruleLibrary.Rows.Count - 1];
+            addedRow.Selected = true;
+            _ruleLibrary.CurrentCell = addedRow.Cells[2];
             UpdatePreview();
         }
         catch (ArgumentException ex)
