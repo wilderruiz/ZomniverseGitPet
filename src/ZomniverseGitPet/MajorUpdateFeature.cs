@@ -134,19 +134,49 @@ internal static class MajorUpdateFeature
 
     private static void MaybeAskUser(Form guardian, MajorUpdateAssessment assessment)
     {
+        if (guardian.IsDisposed || !guardian.Visible) return;
+        if (IsGuardianBusy(guardian)) return;
         if (Application.OpenForms.Cast<Form>().Any(form => form.Modal && !ReferenceEquals(form, guardian))) return;
         if (Application.OpenForms.Cast<Form>().Any(form => form is MajorUpdateNudgeForm or MajorUpdateForm)) return;
 
         var key = Path.GetFullPath(assessment.RepositoryPath) + "|" + assessment.HeadCommit;
         if (!PromptedBaselines.Add(key)) return;
 
-        var nudge = new MajorUpdateNudgeForm(assessment);
-        nudge.ReviewRequested += async (_, _) =>
+        using var nudge = new MajorUpdateNudgeForm(assessment);
+        var reviewRequested = false;
+        nudge.ReviewRequested += (_, _) =>
         {
+            reviewRequested = true;
             nudge.Close();
-            await OpenReleaseCenterAsync(guardian);
         };
-        nudge.Show(guardian);
+
+        // The advisory prompt is modal only while visible. This prevents the user from
+        // starting Push/Pull/Checkpoint underneath it, while IsGuardianBusy above keeps
+        // the advisory from interrupting an already-running operational workflow.
+        nudge.ShowDialog(guardian);
+
+        if (reviewRequested && !guardian.IsDisposed)
+            _ = OpenReleaseCenterAsync(guardian);
+    }
+
+    private static bool IsGuardianBusy(Form guardian)
+    {
+        if (!guardian.Enabled) return true;
+
+        return EnumerateDescendants(guardian)
+            .OfType<GuardianActionButton>()
+            .Any(button => button.Visible &&
+                           string.Equals(button.Text, "Cancel", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<Control> EnumerateDescendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var descendant in EnumerateDescendants(child))
+                yield return descendant;
+        }
     }
 
     private static async Task OpenReleaseCenterAsync(Form owner)
