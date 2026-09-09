@@ -29,7 +29,13 @@ internal static class GitIgnoreRuleLibrary
             "PRIVACY",
             "Environment secret files",
             "Ignore .env and environment-specific variants anywhere in the project while keeping common example/template files visible to Git.",
-            [".env", ".env.*", "!.env.example", "!.env.sample", "!.env.template", "!.env.dist"]),
+            [
+                ".env", ".env.*",
+                "!.env.example", "!.env.*.example",
+                "!.env.sample", "!.env.*.sample",
+                "!.env.template", "!.env.*.template",
+                "!.env.dist", "!.env.*.dist"
+            ]),
         new(
             "private-keys",
             "PRIVACY",
@@ -134,7 +140,7 @@ internal static class GitIgnoreRuleLibrary
                 "CUSTOM",
                 $"Name contains: {value}",
                 $"Ignore files or folders whose name contains '{value}' anywhere in the project.",
-                [$"**/*{value}*"] ,
+                [$"**/*{value}*"],
                 true,
                 true),
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
