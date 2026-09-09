@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 
 namespace ZomniverseGitPet;
@@ -48,15 +49,19 @@ internal sealed class FileComparisonPanel : Panel
 {
     private readonly Label _pathLabel = new();
     private readonly Label _baselineLabel = new();
-    private readonly Label _beforeTitle = new();
-    private readonly Label _afterTitle = new();
-    private readonly SyntaxCodeBox _before = new();
-    private readonly SyntaxCodeBox _after = new();
+    private readonly FileReviewPane _beforePane = new(isBefore: true);
+    private readonly FileReviewPane _afterPane = new(isBefore: false);
     private readonly Button _activityButton;
     private readonly Button _checkpointButton;
+    private readonly Button _technicalButton;
+    private readonly Button _openButton;
     private readonly SplitContainer _split = new();
-    private double _splitRatio = 0.5;
+
+    private FileComparisonModel? _currentModel;
+    private bool _technicalMode;
     private bool _applyingSplitLayout;
+    private double _splitRatio = 0.5;
+    private int _renderGeneration;
 
     public FileComparisonPanel()
     {
@@ -64,69 +69,7 @@ internal sealed class FileComparisonPanel : Panel
         BackColor = GuardianTheme.Console;
         Padding = Padding.Empty;
 
-        var header = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = 58,
-            BackColor = GuardianTheme.ConsoleHeader,
-            Padding = new Padding(14, 6, 12, 5)
-        };
-
-        var title = new Label
-        {
-            AutoSize = false,
-            Width = 120,
-            Height = 24,
-            Location = new Point(14, 5),
-            Text = "FILE REVIEW",
-            ForeColor = GuardianTheme.MutedInk,
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-
-        _pathLabel.AutoSize = false;
-        _pathLabel.Height = 24;
-        _pathLabel.Location = new Point(132, 5);
-        _pathLabel.ForeColor = GuardianTheme.Ink;
-        _pathLabel.Font = new Font("Cascadia Mono", 8.4f);
-        _pathLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _pathLabel.AutoEllipsis = true;
-        _pathLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-        _baselineLabel.AutoSize = false;
-        _baselineLabel.Height = 20;
-        _baselineLabel.Location = new Point(14, 32);
-        _baselineLabel.ForeColor = GuardianTheme.FaintInk;
-        _baselineLabel.Font = new Font("Segoe UI", 8.2f);
-        _baselineLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _baselineLabel.AutoEllipsis = true;
-        _baselineLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-        _activityButton = MakeHeaderButton("Activity", 92);
-        _activityButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _activityButton.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
-
-        _checkpointButton = MakeHeaderButton("Create checkpoint", 144);
-        _checkpointButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _checkpointButton.BackColor = GuardianTheme.Violet;
-        _checkpointButton.FlatAppearance.BorderColor = GuardianTheme.HotPink;
-        _checkpointButton.Visible = false;
-        _checkpointButton.Click += (_, _) => CreateCheckpointRequested?.Invoke(this, EventArgs.Empty);
-
-        header.Controls.Add(title);
-        header.Controls.Add(_pathLabel);
-        header.Controls.Add(_baselineLabel);
-        header.Controls.Add(_checkpointButton);
-        header.Controls.Add(_activityButton);
-        header.Resize += (_, _) =>
-        {
-            _activityButton.Location = new Point(header.ClientSize.Width - _activityButton.Width - 12, 11);
-            _checkpointButton.Location = new Point(_activityButton.Left - _checkpointButton.Width - 8, 11);
-            _pathLabel.Width = Math.Max(120, _checkpointButton.Visible
-                ? _checkpointButton.Left - _pathLabel.Left - 10
-                : _activityButton.Left - _pathLabel.Left - 10);
-            _baselineLabel.Width = Math.Max(120, _activityButton.Left - _baselineLabel.Left - 10);
-        };
+        var header = BuildHeader();
 
         _split.Dock = DockStyle.Fill;
         _split.Orientation = Orientation.Vertical;
@@ -144,16 +87,23 @@ internal sealed class FileComparisonPanel : Panel
             _splitRatio = Math.Clamp((double)_split.SplitterDistance / available, 0.05, 0.95);
         };
 
-        _split.Panel1.Controls.Add(BuildPane(_beforeTitle, _before, isBefore: true));
-        _split.Panel2.Controls.Add(BuildPane(_afterTitle, _after, isBefore: false));
+        _split.Panel1.Controls.Add(_beforePane);
+        _split.Panel2.Controls.Add(_afterPane);
 
         Controls.Add(_split);
         Controls.Add(header);
 
-        // SplitContainer can pass through tiny transient sizes while Guardian changes
-        // projects, visibility, DPI, or window bounds. Keep WinForms pane minimums at zero
-        // permanently and apply GitPet's preferred divider only after real layout occurs.
         HandleCreated += (_, _) => BeginInvoke(new Action(ApplySafeSplitLayout));
+
+        _activityButton = FindHeaderButton(header, "Activity");
+        _checkpointButton = FindHeaderButton(header, "Create checkpoint");
+        _technicalButton = FindHeaderButton(header, "Technical view");
+        _openButton = FindHeaderButton(header, "Open / locate");
+
+        _activityButton.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
+        _checkpointButton.Click += (_, _) => CreateCheckpointRequested?.Invoke(this, EventArgs.Empty);
+        _technicalButton.Click += (_, _) => ToggleTechnicalView();
+        _openButton.Click += (_, _) => OpenOrLocateCurrentItem();
     }
 
     public event EventHandler? ActivityRequested;
@@ -161,97 +111,523 @@ internal sealed class FileComparisonPanel : Panel
 
     public void ShowLoading(string relativePath)
     {
+        _renderGeneration++;
+        _currentModel = null;
+        _technicalMode = false;
+
         _pathLabel.Text = relativePath;
-        _baselineLabel.Text = "Loading the latest local baseline and working-tree version…";
+        _baselineLabel.Text = "Loading the saved baseline and the current working item…";
         _checkpointButton.Visible = false;
-        _beforeTitle.Text = "BEFORE  ·  LATEST LOCAL COMMIT";
-        _afterTitle.Text = "NOW  ·  WORKING TREE";
-        _before.SetMessage("Loading…");
-        _after.SetMessage("Loading…");
-        UpdateHeaderLayout();
+        _technicalButton.Visible = false;
+        _openButton.Visible = false;
+
+        _beforePane.SetTitle("BEFORE  ·  SAVED VERSION");
+        _afterPane.SetTitle("NOW  ·  CURRENT VERSION");
+        _beforePane.ShowSummary("LOADING…", "GitPet is checking the latest local checkpoint.", GuardianTheme.MutedInk);
+        _afterPane.ShowSummary("LOADING…", "GitPet is checking the current working item.", GuardianTheme.MutedInk);
     }
 
     public void ShowComparison(FileComparisonModel model)
     {
+        _currentModel = model;
+        _technicalMode = false;
+        var generation = ++_renderGeneration;
+
         _pathLabel.Text = model.RelativePath;
         _checkpointButton.Visible = !model.HasBaseline;
         _baselineLabel.Text = model.HasBaseline
-            ? $"Comparing against {model.BaselineLabel}. Changed lines are softly illuminated."
-            : "No local commit/checkpoint exists yet. Create one now to establish the baseline for future reviews.";
+            ? $"Human view · comparing the saved version against {model.BaselineLabel}. Technical text is optional."
+            : "Human view · no local checkpoint exists yet. Create one to establish a BEFORE baseline.";
 
-        _beforeTitle.Text = model.HasBaseline
-            ? "BEFORE  ·  LATEST LOCAL COMMIT / CHECKPOINT"
-            : "BEFORE  ·  NO BASELINE YET";
-        _afterTitle.Text = "NOW  ·  WORKING TREE";
+        _beforePane.SetTitle(model.HasBaseline
+            ? "BEFORE  ·  SAVED VERSION / CHECKPOINT"
+            : "BEFORE  ·  NO BASELINE YET");
+        _afterPane.SetTitle("NOW  ·  CURRENT WORKING ITEM");
 
-        if (!model.HasBaseline)
-        {
-            _before.SetMessage(
-                "NO CHECKPOINT BASELINE YET\n\n" +
-                "GitPet needs one local commit before it can show a meaningful Before view.\n\n" +
-                "Choose Create checkpoint above. That stays local and becomes the baseline for the next changes you make.");
-        }
-        else if (!model.BeforeExists)
-        {
-            _before.SetMessage(model.BeforeMessage ??
-                "NEW FILE\n\nThis file did not exist in the latest local commit/checkpoint.");
-        }
-        else
-        {
-            _before.SetDocument(model.BeforeText, model.RelativePath, model.ChangedLines.BeforeLines, isAfter: false);
-        }
+        _technicalButton.Visible = CanShowTechnical(model);
+        _technicalButton.Text = "Technical view";
 
-        if (!model.AfterExists)
-        {
-            _after.SetMessage(model.AfterMessage ??
-                "DELETED FROM WORKING TREE\n\nThe file existed in the baseline but is no longer present on disk.");
-        }
-        else
-        {
-            _after.SetDocument(model.AfterText, model.RelativePath, model.ChangedLines.AfterLines, isAfter: true);
-        }
+        var location = ResolveCurrentPath(model.RelativePath);
+        _openButton.Visible = location is { Exists: true };
 
-        UpdateHeaderLayout();
+        RenderHumanSummary(model, beforeSize: null, afterSize: location?.SizeBytes, afterIsDirectory: location?.IsDirectory == true);
+
+        _ = LoadExactBaselineSizeAsync(model, generation);
     }
 
     public void ShowProblem(string relativePath, string message)
     {
+        _renderGeneration++;
+        _currentModel = null;
+        _technicalMode = false;
+
         _pathLabel.Text = relativePath;
-        _baselineLabel.Text = "GitPet could not build this comparison.";
+        _baselineLabel.Text = "GitPet could not build this file review.";
         _checkpointButton.Visible = false;
-        _before.SetMessage("FILE REVIEW UNAVAILABLE");
-        _after.SetMessage(message);
-        UpdateHeaderLayout();
+        _technicalButton.Visible = false;
+        _openButton.Visible = false;
+
+        _beforePane.SetTitle("BEFORE");
+        _afterPane.SetTitle("NOW");
+        _beforePane.ShowSummary("REVIEW UNAVAILABLE", "Nothing was changed by GitPet.", GuardianTheme.Warning);
+        _afterPane.ShowSummary("DETAILS", message, GuardianTheme.MutedInk);
     }
 
-    private Control BuildPane(Label paneTitle, SyntaxCodeBox box, bool isBefore)
+    private Control BuildHeader()
     {
-        var panel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = GuardianTheme.Console,
-            Padding = isBefore ? new Padding(0, 0, 3, 0) : new Padding(3, 0, 0, 0)
-        };
-
-        var header = new Panel
+        var header = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 36,
-            BackColor = GuardianTheme.SurfaceSoft,
-            Padding = new Padding(12, 0, 10, 0)
+            Height = 70,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = GuardianTheme.ConsoleHeader,
+            Padding = new Padding(14, 6, 12, 5)
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+        var info = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = GuardianTheme.ConsoleHeader,
+            Margin = Padding.Empty
         };
 
-        paneTitle.Dock = DockStyle.Fill;
-        paneTitle.ForeColor = isBefore ? GuardianTheme.HotPinkSoft : GuardianTheme.Healthy;
-        paneTitle.Font = new Font("Segoe UI", 8.3f, FontStyle.Bold);
-        paneTitle.TextAlign = ContentAlignment.MiddleLeft;
-        paneTitle.AutoEllipsis = true;
-        header.Controls.Add(paneTitle);
+        var title = new Label
+        {
+            AutoSize = false,
+            Width = 112,
+            Height = 24,
+            Location = new Point(0, 0),
+            Text = "FILE REVIEW",
+            ForeColor = GuardianTheme.MutedInk,
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
 
-        box.Dock = DockStyle.Fill;
-        panel.Controls.Add(box);
-        panel.Controls.Add(header);
-        return panel;
+        _pathLabel.AutoSize = false;
+        _pathLabel.Height = 24;
+        _pathLabel.Location = new Point(116, 0);
+        _pathLabel.ForeColor = GuardianTheme.Ink;
+        _pathLabel.Font = new Font("Cascadia Mono", 8.4f);
+        _pathLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _pathLabel.AutoEllipsis = true;
+        _pathLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+        _baselineLabel.AutoSize = false;
+        _baselineLabel.Height = 28;
+        _baselineLabel.Location = new Point(0, 28);
+        _baselineLabel.ForeColor = GuardianTheme.FaintInk;
+        _baselineLabel.Font = new Font("Segoe UI", 8.2f);
+        _baselineLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _baselineLabel.AutoEllipsis = true;
+        _baselineLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+        info.Controls.Add(title);
+        info.Controls.Add(_pathLabel);
+        info.Controls.Add(_baselineLabel);
+        info.Resize += (_, _) =>
+        {
+            _pathLabel.Width = Math.Max(100, info.ClientSize.Width - _pathLabel.Left);
+            _baselineLabel.Width = Math.Max(100, info.ClientSize.Width);
+        };
+
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = GuardianTheme.ConsoleHeader,
+            Margin = new Padding(8, 8, 0, 0)
+        };
+
+        var technical = MakeHeaderButton("Technical view", 118);
+        technical.Name = "Technical view";
+        technical.Visible = false;
+
+        var open = MakeHeaderButton("Open / locate", 112);
+        open.Name = "Open / locate";
+        open.Visible = false;
+
+        var checkpoint = MakeHeaderButton("Create checkpoint", 136);
+        checkpoint.Name = "Create checkpoint";
+        checkpoint.BackColor = GuardianTheme.Violet;
+        checkpoint.FlatAppearance.BorderColor = GuardianTheme.HotPink;
+        checkpoint.Visible = false;
+
+        var activity = MakeHeaderButton("Activity", 86);
+        activity.Name = "Activity";
+
+        buttons.Controls.Add(technical);
+        buttons.Controls.Add(open);
+        buttons.Controls.Add(checkpoint);
+        buttons.Controls.Add(activity);
+
+        header.Controls.Add(info, 0, 0);
+        header.Controls.Add(buttons, 1, 0);
+        return header;
+    }
+
+    private static Button FindHeaderButton(Control root, string name)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is Button button && button.Name == name) return button;
+            var nested = FindHeaderButtonOrNull(child, name);
+            if (nested is not null) return nested;
+        }
+
+        throw new InvalidOperationException($"GitPet could not find the '{name}' File Review button.");
+    }
+
+    private static Button? FindHeaderButtonOrNull(Control root, string name)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is Button button && button.Name == name) return button;
+            var nested = FindHeaderButtonOrNull(child, name);
+            if (nested is not null) return nested;
+        }
+
+        return null;
+    }
+
+    private void RenderHumanSummary(
+        FileComparisonModel model,
+        long? beforeSize,
+        long? afterSize,
+        bool afterIsDirectory)
+    {
+        if (!model.HasBaseline)
+        {
+            _beforePane.ShowSummary(
+                "NO BASELINE YET",
+                "GitPet does not have a saved checkpoint to compare against.\r\n\r\n" +
+                "Create a checkpoint to establish the first BEFORE version.",
+                GuardianTheme.Warning);
+        }
+        else if (!model.BeforeExists)
+        {
+            _beforePane.ShowSummary(
+                "DID NOT EXIST",
+                "This item was not present in the latest local checkpoint.\r\n\r\n" +
+                "That means the current item is NEW.",
+                GuardianTheme.HotPinkSoft);
+        }
+        else
+        {
+            _beforePane.ShowSummary(
+                "SAVED VERSION",
+                "Status     Saved in the latest local checkpoint\r\n" +
+                $"Size       {FormatSize(beforeSize)}\r\n" +
+                $"Baseline   {model.BaselineLabel}",
+                GuardianTheme.HotPinkSoft);
+        }
+
+        var currentLocation = ResolveCurrentPath(model.RelativePath);
+        var currentExists = model.AfterExists || currentLocation is { Exists: true };
+
+        if (!currentExists)
+        {
+            _afterPane.ShowSummary(
+                "DELETED",
+                "This item existed in the saved version but is no longer present in the working folder.",
+                GuardianTheme.Warning);
+            return;
+        }
+
+        if (afterIsDirectory || currentLocation is { IsDirectory: true })
+        {
+            _afterPane.ShowSummary(
+                model.BeforeExists ? "FOLDER CHANGED" : "NEW FOLDER",
+                "This is a folder. GitPet tracks the changed items inside it rather than assigning one file size to the folder.\r\n\r\n" +
+                "Open / locate will show it in Windows Explorer.",
+                GuardianTheme.Healthy);
+            return;
+        }
+
+        var status = model.BeforeExists ? "MODIFIED" : "NEW FILE";
+        var detail =
+            $"Status     {(model.BeforeExists ? "Changed since the saved checkpoint" : "Added after the saved checkpoint")}\r\n" +
+            $"Size       {FormatSize(afterSize)}";
+
+        if (model.BeforeExists && beforeSize.HasValue && afterSize.HasValue)
+            detail += "\r\n" + $"Difference {FormatSizeDifference(beforeSize.Value, afterSize.Value)}";
+
+        _afterPane.ShowSummary(status, detail, GuardianTheme.Healthy);
+    }
+
+    private async Task LoadExactBaselineSizeAsync(FileComparisonModel model, int generation)
+    {
+        if (!model.HasBaseline || !model.BeforeExists) return;
+
+        var repository = TryGetRepositoryPath();
+        if (repository is null) return;
+
+        var beforeSize = await ReadGitBlobSizeAsync(repository, model.RelativePath);
+        if (generation != _renderGeneration || IsDisposed || _currentModel != model) return;
+
+        var location = ResolveCurrentPath(model.RelativePath);
+        RenderHumanSummary(
+            model,
+            beforeSize,
+            location?.SizeBytes,
+            location?.IsDirectory == true);
+    }
+
+    private static async Task<long?> ReadGitBlobSizeAsync(string repositoryPath, string relativePath)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git.exe",
+                    WorkingDirectory = repositoryPath,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.StartInfo.ArgumentList.Add("cat-file");
+            process.StartInfo.ArgumentList.Add("-s");
+            process.StartInfo.ArgumentList.Add("HEAD:" + NormalizeGitPath(relativePath));
+
+            process.Start();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+            await process.WaitForExitAsync(timeout.Token);
+            _ = await stderr;
+
+            var output = (await stdout).Trim();
+            return process.ExitCode == 0 && long.TryParse(output, out var value) ? value : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void ToggleTechnicalView()
+    {
+        var model = _currentModel;
+        if (model is null || !CanShowTechnical(model)) return;
+
+        _technicalMode = !_technicalMode;
+        _technicalButton.Text = _technicalMode ? "Human view" : "Technical view";
+
+        if (!_technicalMode)
+        {
+            var location = ResolveCurrentPath(model.RelativePath);
+            RenderHumanSummary(model, beforeSize: null, afterSize: location?.SizeBytes, afterIsDirectory: location?.IsDirectory == true);
+            _ = LoadExactBaselineSizeAsync(model, _renderGeneration);
+            _baselineLabel.Text = model.HasBaseline
+                ? $"Human view · comparing the saved version against {model.BaselineLabel}. Technical text is optional."
+                : "Human view · no local checkpoint exists yet. Create one to establish a BEFORE baseline.";
+            return;
+        }
+
+        _baselineLabel.Text =
+            "Technical text view · read-only. GitPet is showing raw text only because this item appears safe to render as text.";
+
+        if (!model.HasBaseline)
+            _beforePane.ShowTechnicalMessage("NO BASELINE YET\r\n\r\nCreate a checkpoint first.");
+        else if (!model.BeforeExists)
+            _beforePane.ShowTechnicalMessage(model.BeforeMessage ?? "NEW FILE\r\n\r\nThis item did not exist in the saved version.");
+        else if (IsReasonablyText(model.BeforeText))
+            _beforePane.ShowTechnical(model.BeforeText, model.ChangedLines.BeforeLines, isAfter: false);
+        else
+            _beforePane.ShowTechnicalMessage("TECHNICAL TEXT VIEW UNAVAILABLE\r\n\r\nThe saved version does not look like ordinary text.");
+
+        if (!model.AfterExists)
+            _afterPane.ShowTechnicalMessage(model.AfterMessage ?? "DELETED FROM WORKING TREE");
+        else if (IsReasonablyTextPreview(model.AfterText))
+            _afterPane.ShowTechnical(model.AfterText, model.ChangedLines.AfterLines, isAfter: true);
+        else
+            _afterPane.ShowTechnicalMessage(
+                "TECHNICAL TEXT VIEW UNAVAILABLE\r\n\r\n" +
+                "This item does not look like ordinary text. Use the Human view or Open / locate instead.");
+    }
+
+    private void OpenOrLocateCurrentItem()
+    {
+        var model = _currentModel;
+        if (model is null) return;
+
+        var location = ResolveCurrentPath(model.RelativePath);
+        if (location is not { Exists: true }) return;
+
+        try
+        {
+            if (location.IsDirectory)
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{location.FullPath}\"")
+                {
+                    UseShellExecute = true
+                });
+                return;
+            }
+
+            if (ShouldOnlyLocate(location.FullPath))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{location.FullPath}\"")
+                {
+                    UseShellExecute = true
+                });
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo(location.FullPath) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                FindForm(),
+                "GitPet could not open this item.\r\n\r\n" + ex.Message,
+                "Open file",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+    }
+
+    private static bool ShouldOnlyLocate(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".com", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".scr", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".msi", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".psm1", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".vbs", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".vbe", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".js", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".jse", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".wsf", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".wsh", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".reg", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool CanShowTechnical(FileComparisonModel model)
+    {
+        if (model.BeforeExists && IsReasonablyText(model.BeforeText)) return true;
+        return model.AfterExists && IsReasonablyTextPreview(model.AfterText);
+    }
+
+    private static bool IsReasonablyTextPreview(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return true;
+
+        if (text.StartsWith("BINARY FILE", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("BINARY-LIKE FILE", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("LARGE FILE PREVIEW", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return IsReasonablyText(text);
+    }
+
+    private static bool IsReasonablyText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return true;
+
+        var sampleLength = Math.Min(4096, text.Length);
+        var controls = 0;
+        for (var i = 0; i < sampleLength; i++)
+        {
+            var c = text[i];
+            if (c == '\0') return false;
+            if (char.IsControl(c) && c is not '\r' and not '\n' and not '\t')
+                controls++;
+        }
+
+        return controls <= Math.Max(2, sampleLength / 100);
+    }
+
+    private CurrentLocation? ResolveCurrentPath(string relativePath)
+    {
+        var repository = TryGetRepositoryPath();
+        if (repository is null) return null;
+
+        try
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repository));
+            var fullPath = Path.GetFullPath(
+                Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+            var requiredPrefix = root + Path.DirectorySeparatorChar;
+            if (!fullPath.Equals(root, StringComparison.OrdinalIgnoreCase) &&
+                !fullPath.StartsWith(requiredPrefix, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (File.Exists(fullPath))
+            {
+                var info = new FileInfo(fullPath);
+                return new(true, false, fullPath, info.Length);
+            }
+
+            if (Directory.Exists(fullPath))
+                return new(true, true, fullPath, null);
+
+            return new(false, false, fullPath, null);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetRepositoryPath()
+    {
+        try
+        {
+            var repository = new ConfigStore().Load().RepositoryPath;
+            return string.IsNullOrWhiteSpace(repository) || !Directory.Exists(repository)
+                ? null
+                : repository;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string NormalizeGitPath(string relativePath) =>
+        (relativePath ?? "").Replace('\\', '/').TrimStart('/');
+
+    private static string FormatSize(long? bytes)
+    {
+        if (!bytes.HasValue) return "Calculating…";
+        if (bytes.Value < 1024) return $"{bytes.Value:N0} B";
+
+        var kb = bytes.Value / 1024d;
+        if (kb < 1024) return $"{kb:N1} KB";
+
+        var mb = kb / 1024d;
+        if (mb < 1024) return $"{mb:N1} MB";
+
+        return $"{mb / 1024d:N2} GB";
+    }
+
+    private static string FormatSizeDifference(long before, long after)
+    {
+        var delta = after - before;
+        if (delta == 0) return "Same size · contents still changed";
+
+        var sign = delta > 0 ? "+" : "−";
+        var magnitude = FormatSize(Math.Abs(delta));
+        var percent = before == 0 ? null : Math.Abs(delta) * 100d / before;
+        return percent.HasValue
+            ? $"{sign}{magnitude}  ({sign}{percent.Value:N1}%)"
+            : $"{sign}{magnitude}";
     }
 
     private void ApplySafeSplitLayout()
@@ -261,10 +637,6 @@ internal sealed class FileComparisonPanel : Panel
         var available = _split.ClientSize.Width - _split.SplitterWidth;
         if (available <= 0) return;
 
-        // Do not use SplitContainer.Panel*MinSize for this visual preference. WinForms
-        // validates those values during transient parent-layout sizes before SizeChanged
-        // reaches us, which can throw. Keep the native minimums at zero and clamp only
-        // the divider we choose to set.
         var preferredMinimum = available >= 320 ? 120 : 0;
         var desired = (int)Math.Round(available * _splitRatio);
         var minimumDistance = Math.Min(preferredMinimum, available);
@@ -279,31 +651,12 @@ internal sealed class FileComparisonPanel : Panel
         }
         catch (InvalidOperationException)
         {
-            // The parent can change size again between measuring and assigning. Retry on
-            // the next message-loop turn instead of surfacing a WinForms layout exception.
             if (IsHandleCreated && !IsDisposed && !Disposing)
                 BeginInvoke(new Action(ApplySafeSplitLayout));
         }
         finally
         {
             _applyingSplitLayout = false;
-        }
-    }
-
-    private void UpdateHeaderLayout()
-    {
-        if (Controls.Count == 0) return;
-        var header = Controls.OfType<Panel>().LastOrDefault();
-        header?.PerformLayout();
-        header?.Invalidate();
-        if (header is not null)
-        {
-            _activityButton.Location = new Point(header.ClientSize.Width - _activityButton.Width - 12, 11);
-            _checkpointButton.Location = new Point(_activityButton.Left - _checkpointButton.Width - 8, 11);
-            _pathLabel.Width = Math.Max(120, _checkpointButton.Visible
-                ? _checkpointButton.Left - _pathLabel.Left - 10
-                : _activityButton.Left - _pathLabel.Left - 10);
-            _baselineLabel.Width = Math.Max(120, _activityButton.Left - _baselineLabel.Left - 10);
         }
     }
 
@@ -319,7 +672,8 @@ internal sealed class FileComparisonPanel : Panel
             ForeColor = GuardianTheme.Ink,
             Cursor = Cursors.Hand,
             Font = new Font("Segoe UI", 8.4f, FontStyle.Bold),
-            UseVisualStyleBackColor = false
+            UseVisualStyleBackColor = false,
+            Margin = new Padding(6, 0, 0, 0)
         };
         button.FlatAppearance.BorderColor = GuardianTheme.Border;
         button.FlatAppearance.BorderSize = 1;
@@ -327,160 +681,141 @@ internal sealed class FileComparisonPanel : Panel
         button.FlatAppearance.MouseDownBackColor = GuardianTheme.VioletPressed;
         return button;
     }
+
+    private sealed record CurrentLocation(bool Exists, bool IsDirectory, string FullPath, long? SizeBytes);
 }
 
-internal sealed class SyntaxCodeBox : RichTextBox
+internal sealed class FileReviewPane : Panel
 {
-    private const int MaxPreviewCharacters = 300_000;
+    private readonly Label _title = new();
+    private readonly RichTextBox _summary = new();
+    private readonly RichTextBox _technical = new();
 
-    private static readonly Color CodeInk = Color.FromArgb(232, 226, 239);
-    private static readonly Color Keyword = Color.FromArgb(116, 200, 255);
-    private static readonly Color String = Color.FromArgb(240, 154, 199);
-    private static readonly Color Number = Color.FromArgb(255, 202, 111);
-    private static readonly Color Comment = Color.FromArgb(111, 180, 104);
-    private static readonly Color Property = Color.FromArgb(194, 155, 244);
-    private static readonly Color Variable = Color.FromArgb(105, 218, 226);
     private static readonly Color BeforeChange = Color.FromArgb(53, 27, 40);
     private static readonly Color AfterChange = Color.FromArgb(25, 52, 43);
 
-    public SyntaxCodeBox()
+    public FileReviewPane(bool isBefore)
     {
-        ReadOnly = true;
-        BorderStyle = BorderStyle.None;
+        Dock = DockStyle.Fill;
         BackColor = GuardianTheme.Console;
-        ForeColor = CodeInk;
-        Font = new Font("Cascadia Mono", 9.1f);
-        WordWrap = false;
-        DetectUrls = false;
-        ScrollBars = RichTextBoxScrollBars.Both;
-        HideSelection = false;
-        TabStop = true;
-        AcceptsTab = false;
-    }
+        Padding = isBefore ? new Padding(0, 0, 3, 0) : new Padding(3, 0, 0, 0);
 
-    public void SetMessage(string message)
-    {
-        Text = message;
-        SelectAll();
-        SelectionColor = GuardianTheme.MutedInk;
-        SelectionBackColor = GuardianTheme.Console;
-        SelectionFont = new Font("Segoe UI", 9.5f);
-        Select(0, 0);
-    }
-
-    public void SetDocument(string text, string path, IReadOnlySet<int> changedLines, bool isAfter)
-    {
-        var truncated = text.Length > MaxPreviewCharacters;
-        if (truncated)
+        var header = new Panel
         {
-            text = text[..MaxPreviewCharacters] +
-                   "\r\n\r\n/* Preview truncated by GitPet after 300,000 characters. The file itself was not changed. */";
-        }
-
-        Text = NormalizeLineEndings(text);
-        SelectAll();
-        SelectionColor = CodeInk;
-        SelectionBackColor = GuardianTheme.Console;
-        SelectionFont = new Font("Cascadia Mono", 9.1f);
-
-        ApplySyntax(path);
-        ApplyChangedLineBackgrounds(changedLines, isAfter ? AfterChange : BeforeChange);
-        Select(0, 0);
-    }
-
-    private void ApplySyntax(string path)
-    {
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-
-        // Comments first; later token passes keep quoted URLs/strings readable.
-        if (extension is ".js" or ".jsx" or ".ts" or ".tsx" or ".cs" or ".java" or ".c" or ".cpp" or ".h" or ".hpp" or ".css" or ".scss" or ".php")
-        {
-            ApplyPattern(@"/\*[\s\S]*?\*/|//.*$", Comment, RegexOptions.Multiline);
-        }
-        else if (extension is ".py" or ".ps1" or ".sh" or ".yml" or ".yaml")
-        {
-            ApplyPattern(@"#.*$", Comment, RegexOptions.Multiline);
-        }
-        else if (extension is ".sql")
-        {
-            ApplyPattern(@"--.*$|/\*[\s\S]*?\*/", Comment, RegexOptions.Multiline);
-        }
-        else if (extension is ".html" or ".htm" or ".xml" or ".svg")
-        {
-            ApplyPattern(@"<!--[\s\S]*?-->", Comment, RegexOptions.Multiline);
-        }
-
-        ApplyPattern("\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`", String, RegexOptions.Multiline);
-        ApplyPattern(@"\b\d+(?:\.\d+)?\b", Number, RegexOptions.Multiline);
-
-        if (extension == ".json")
-            ApplyPattern("\"(?:\\\\.|[^\"\\\\])*\"(?=\\s*:)", Property, RegexOptions.Multiline);
-
-        var keywords = extension switch
-        {
-            ".py" => "and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield",
-            ".sql" => "SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|ALTER|DROP|TABLE|INDEX|VIEW|AS|AND|OR|NOT|NULL|PRIMARY|KEY|FOREIGN|REFERENCES|CASCADE|BEGIN|COMMIT|ROLLBACK|WITH|RETURNING",
-            ".ps1" => "function|param|if|else|elseif|foreach|for|while|switch|return|throw|try|catch|finally|class|enum|using|begin|process|end",
-            ".php" => "abstract|and|array|as|break|callable|case|catch|class|clone|const|continue|declare|default|do|echo|else|elseif|empty|enddeclare|endfor|endforeach|endif|endswitch|endwhile|extends|final|finally|fn|for|foreach|function|global|goto|if|implements|include|include_once|instanceof|insteadof|interface|isset|list|match|namespace|new|or|print|private|protected|public|readonly|require|require_once|return|static|switch|throw|trait|try|unset|use|var|while|yield",
-            ".js" or ".jsx" or ".ts" or ".tsx" => "as|async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|false|finally|for|from|function|get|if|import|in|instanceof|let|new|null|of|return|set|static|super|switch|this|throw|true|try|typeof|undefined|var|void|while|with|yield|interface|type|enum|implements|private|protected|public|readonly",
-            ".cs" => "abstract|as|async|await|base|bool|break|byte|case|catch|char|checked|class|const|continue|decimal|default|delegate|do|double|else|enum|event|explicit|extern|false|finally|fixed|float|for|foreach|from|get|global|goto|if|implicit|in|int|interface|internal|is|lock|long|namespace|new|null|object|operator|out|override|params|partial|private|protected|public|readonly|record|ref|required|return|sbyte|sealed|set|short|sizeof|stackalloc|static|string|struct|switch|this|throw|true|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|var|virtual|void|volatile|while|with|yield",
-            _ => ""
+            Dock = DockStyle.Top,
+            Height = 38,
+            BackColor = GuardianTheme.SurfaceSoft,
+            Padding = new Padding(12, 0, 10, 0)
         };
 
-        if (keywords.Length > 0)
-            ApplyPattern($@"\b(?:{keywords.Replace("|", "|")})\b", Keyword, RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        _title.Dock = DockStyle.Fill;
+        _title.ForeColor = isBefore ? GuardianTheme.HotPinkSoft : GuardianTheme.Healthy;
+        _title.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        _title.TextAlign = ContentAlignment.MiddleLeft;
+        _title.AutoEllipsis = true;
+        header.Controls.Add(_title);
 
-        if (extension == ".php")
-            ApplyPattern(@"\$[A-Za-z_][A-Za-z0-9_]*", Variable, RegexOptions.Multiline);
+        ConfigureTextBox(_summary, new Font("Segoe UI", 10));
+        _summary.WordWrap = true;
+        _summary.ScrollBars = RichTextBoxScrollBars.Vertical;
 
-        if (extension is ".html" or ".htm" or ".xml" or ".svg")
-            ApplyPattern(@"</?[A-Za-z][A-Za-z0-9:_-]*", Keyword, RegexOptions.Multiline);
+        ConfigureTextBox(_technical, new Font("Cascadia Mono", 9.1f));
+        _technical.WordWrap = false;
+        _technical.ScrollBars = RichTextBoxScrollBars.Both;
+        _technical.Visible = false;
 
-        if (extension is ".css" or ".scss")
-            ApplyPattern(@"(?<=^|[;{])\s*[A-Za-z-]+(?=\s*:)", Property, RegexOptions.Multiline);
+        Controls.Add(_summary);
+        Controls.Add(_technical);
+        Controls.Add(header);
     }
 
-    private void ApplyPattern(string pattern, Color color, RegexOptions options)
+    public void SetTitle(string value) => _title.Text = value;
+
+    public void ShowSummary(string headline, string detail, Color headlineColor)
     {
-        try
+        _technical.Visible = false;
+        _summary.Visible = true;
+        _summary.Clear();
+
+        _summary.SelectionColor = headlineColor;
+        _summary.SelectionFont = new Font("Segoe UI", 15, FontStyle.Bold);
+        _summary.AppendText(headline + "\r\n\r\n");
+
+        _summary.SelectionColor = GuardianTheme.Ink;
+        _summary.SelectionFont = new Font("Segoe UI", 10);
+        _summary.AppendText(detail);
+
+        _summary.Select(0, 0);
+    }
+
+    public void ShowTechnicalMessage(string message)
+    {
+        _summary.Visible = false;
+        _technical.Visible = true;
+        _technical.Clear();
+        _technical.SelectionColor = GuardianTheme.MutedInk;
+        _technical.SelectionFont = new Font("Segoe UI", 9.5f);
+        _technical.AppendText(message);
+        _technical.Select(0, 0);
+    }
+
+    public void ShowTechnical(string text, IReadOnlySet<int> changedLines, bool isAfter)
+    {
+        _summary.Visible = false;
+        _technical.Visible = true;
+        _technical.Text = NormalizeLineEndings(text);
+        _technical.SelectAll();
+        _technical.SelectionColor = Color.FromArgb(232, 226, 239);
+        _technical.SelectionBackColor = GuardianTheme.Console;
+        _technical.SelectionFont = new Font("Cascadia Mono", 9.1f);
+
+        ApplyChangedLineBackgrounds(_technical, changedLines, isAfter ? AfterChange : BeforeChange);
+        _technical.Select(0, 0);
+    }
+
+    private static void ConfigureTextBox(RichTextBox box, Font font)
+    {
+        box.Dock = DockStyle.Fill;
+        box.ReadOnly = true;
+        box.BorderStyle = BorderStyle.None;
+        box.BackColor = GuardianTheme.Console;
+        box.ForeColor = GuardianTheme.Ink;
+        box.Font = font;
+        box.DetectUrls = false;
+        box.HideSelection = false;
+        box.TabStop = true;
+    }
+
+    private static void ApplyChangedLineBackgrounds(
+        RichTextBox box,
+        IReadOnlySet<int> changedLines,
+        Color background)
+    {
+        if (changedLines.Count == 0 || box.TextLength == 0) return;
+
+        var lineNumber = 1;
+        var lineStart = 0;
+        for (var i = 0; i <= box.TextLength; i++)
         {
-            var regex = new Regex(pattern, options, TimeSpan.FromMilliseconds(300));
-            foreach (Match match in regex.Matches(Text))
+            var atEnd = i == box.TextLength;
+            var atLineBreak = !atEnd && box.Text[i] == '\n';
+            if (!atEnd && !atLineBreak) continue;
+
+            if (changedLines.Contains(lineNumber))
             {
-                Select(match.Index, match.Length);
-                SelectionColor = color;
+                var length = Math.Max(0, i - lineStart);
+                if (length > 0)
+                {
+                    box.Select(lineStart, length);
+                    box.SelectionBackColor = background;
+                }
             }
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            // Syntax highlighting is cosmetic. A difficult file must never block review.
-        }
-        catch (ArgumentException)
-        {
-            // Keep the raw readable text if a highlighting expression is unsupported.
-        }
-    }
 
-    private void ApplyChangedLineBackgrounds(IReadOnlySet<int> changedLines, Color color)
-    {
-        foreach (var lineNumber in changedLines.OrderBy(value => value))
-        {
-            var lineIndex = lineNumber - 1;
-            if (lineIndex < 0 || lineIndex >= Lines.Length) continue;
-
-            var start = GetFirstCharIndexFromLine(lineIndex);
-            if (start < 0) continue;
-            var next = lineIndex + 1 < Lines.Length ? GetFirstCharIndexFromLine(lineIndex + 1) : TextLength;
-            var length = Math.Max(0, next - start);
-            if (length == 0) continue;
-
-            Select(start, length);
-            SelectionBackColor = color;
+            lineNumber++;
+            lineStart = i + 1;
         }
     }
 
     private static string NormalizeLineEndings(string value) =>
-        value.Replace("\r\n", "\n", StringComparison.Ordinal)
-             .Replace("\r", "\n", StringComparison.Ordinal)
-             .Replace("\n", Environment.NewLine, StringComparison.Ordinal);
+        (value ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", Environment.NewLine);
 }
