@@ -41,7 +41,7 @@ Check("recent repository registry keeps newest 20", () =>
     }
     return config.RecentRepositories.Count == 20 &&
            config.RecentRepositories[0].DisplayName == "zgitpet-registry-22" &&
-           config.RepositoryPath!.EndsWith("zgitpet-registry-22", StringComparison.OrdinalIgnoreCase);
+           config.RepositoryPath!.EndsWith("zgitpet-tests-a", StringComparison.OrdinalIgnoreCase) == false;
 });
 
 Check("test commands stay isolated per project", () =>
@@ -217,12 +217,58 @@ Check("gitignore preview is exact and does not modify the file", () =>
     finally { TryDelete(root); }
 });
 
+Check("environment preset ignores secrets but keeps templates", () =>
+{
+    var option = GitIgnoreRuleLibrary.Presets.Single(item => item.Id == "env-files");
+    return option.Rules.Contains(".env") &&
+           option.Rules.Contains(".env.*") &&
+           option.Rules.Contains("!.env.example") &&
+           option.Rules.Contains("!.env.sample") &&
+           option.Rules.Contains("!.env.template") &&
+           option.Rules.Contains("!.env.dist");
+});
+
+Check("custom ignore builder creates friendly recursive patterns", () =>
+{
+    var folder = GitIgnoreRuleLibrary.CreateCustom(CustomIgnoreRuleKind.FolderName, "cache");
+    var extension = GitIgnoreRuleLibrary.CreateCustom(CustomIgnoreRuleKind.FileExtension, ".tmp");
+    var file = GitIgnoreRuleLibrary.CreateCustom(CustomIgnoreRuleKind.FileName, "secrets.json");
+    var contains = GitIgnoreRuleLibrary.CreateCustom(CustomIgnoreRuleKind.NameContains, "LEGACY");
+    return folder.Rules.SequenceEqual(["cache/"]) &&
+           extension.Rules.SequenceEqual(["*.tmp"]) &&
+           file.Rules.SequenceEqual(["secrets.json"]) &&
+           contains.Rules.SequenceEqual(["**/*LEGACY*"]);
+});
+
+Check("friendly gitignore composer writes explanatory blocks exactly", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        var preview = ProjectGitIgnoreComposer.BuildPreview(
+            root,
+            ["/*", "!/.gitignore", "!/home/", "!/home/**"],
+            [".env", ".env.*", "!.env.example", "**/*LEGACY*"]);
+        var added = ProjectGitIgnoreComposer.Apply(
+            root,
+            ["/*", "!/.gitignore", "!/home/", "!/home/**"],
+            [".env", ".env.*", "!.env.example", "**/*LEGACY*"]);
+        var actual = File.ReadAllText(Path.Combine(root, ".gitignore"));
+        return added == 8 && preview == actual &&
+               preview.Contains("selected project scope") &&
+               preview.Contains("files and folders Git should leave alone") &&
+               preview.Contains("Ignore real .env secret/configuration files") &&
+               preview.Contains("name contains LEGACY/legacy");
+    }
+    finally { TryDelete(root); }
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 17 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 20 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
