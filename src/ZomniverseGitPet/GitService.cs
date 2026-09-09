@@ -41,7 +41,7 @@ public sealed class GitService(AuditLog audit)
             return RepositoryStatus.Failure("Choose a Git repository to begin.");
 
         var result = await RunGitAsync(repositoryPath,
-            ["status", "--porcelain=v2", "--branch", "--untracked-files=normal"],
+            ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],
             TimeSpan.FromSeconds(20), token);
         if (!result.Success)
             return RepositoryStatus.Failure(result.Output.Length == 0 ? "Git status failed." : result.Output);
