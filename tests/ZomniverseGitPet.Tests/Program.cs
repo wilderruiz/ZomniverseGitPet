@@ -311,12 +311,38 @@ Check("reconfigure replaces previous managed scope", () =>
     finally { TryDelete(root); }
 });
 
+Check("major version suggestions advance generations without rewriting old tags", () =>
+{
+    var none = MajorUpdateCoordinator.SuggestMajorVersions([]);
+    var existing = MajorUpdateCoordinator.SuggestMajorVersions(["v1.0.0", "v2.4.1", "notes"]);
+    return none == (1, 2) && existing == (2, 3);
+});
+
+Check("github release links accept https and ssh origins", () =>
+{
+    var https = MajorUpdateCoordinator.TryGetGitHubWebUrl("https://github.com/example/project.git");
+    var ssh = MajorUpdateCoordinator.TryGetGitHubWebUrl("git@github.com:example/project.git");
+    var other = MajorUpdateCoordinator.TryGetGitHubWebUrl("https://gitlab.com/example/project.git");
+    return https == "https://github.com/example/project" &&
+           ssh == "https://github.com/example/project" &&
+           other is null;
+});
+
+Check("github legacy release draft keeps tag and target explicit", () =>
+{
+    var url = MajorUpdateCoordinator.BuildGitHubReleaseDraftUrl(
+        "https://github.com/example/project", "v1.0.0-legacy", "legacy/v1");
+    return url.StartsWith("https://github.com/example/project/releases/new?", StringComparison.Ordinal) &&
+           url.Contains("tag=v1.0.0-legacy", StringComparison.Ordinal) &&
+           url.Contains("target=legacy%2Fv1", StringComparison.Ordinal);
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 22 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 25 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
