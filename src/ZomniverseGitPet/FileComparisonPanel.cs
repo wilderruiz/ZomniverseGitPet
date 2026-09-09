@@ -55,7 +55,8 @@ internal sealed class FileComparisonPanel : Panel
     private readonly Button _activityButton;
     private readonly Button _checkpointButton;
     private readonly SplitContainer _split = new();
-    private bool _splitLayoutInitialized;
+    private double _splitRatio = 0.5;
+    private bool _applyingSplitLayout;
 
     public FileComparisonPanel()
     {
@@ -130,9 +131,18 @@ internal sealed class FileComparisonPanel : Panel
         _split.Dock = DockStyle.Fill;
         _split.Orientation = Orientation.Vertical;
         _split.SplitterWidth = 6;
+        _split.Panel1MinSize = 0;
+        _split.Panel2MinSize = 0;
         _split.BackColor = GuardianTheme.BorderSoft;
         _split.BorderStyle = BorderStyle.None;
         _split.SizeChanged += (_, _) => ApplySafeSplitLayout();
+        _split.SplitterMoved += (_, _) =>
+        {
+            if (_applyingSplitLayout) return;
+            var available = _split.ClientSize.Width - _split.SplitterWidth;
+            if (available <= 0) return;
+            _splitRatio = Math.Clamp((double)_split.SplitterDistance / available, 0.05, 0.95);
+        };
 
         _split.Panel1.Controls.Add(BuildPane(_beforeTitle, _before, isBefore: true));
         _split.Panel2.Controls.Add(BuildPane(_afterTitle, _after, isBefore: false));
@@ -140,8 +150,9 @@ internal sealed class FileComparisonPanel : Panel
         Controls.Add(_split);
         Controls.Add(header);
 
-        // SplitContainer starts life at a tiny default size before docking/layout runs.
-        // Defer its 50/50 divider and minimum pane sizes until it has real dimensions.
+        // SplitContainer can pass through tiny transient sizes while Guardian changes
+        // projects, visibility, DPI, or window bounds. Keep WinForms pane minimums at zero
+        // permanently and apply GitPet's preferred divider only after real layout occurs.
         HandleCreated += (_, _) => BeginInvoke(new Action(ApplySafeSplitLayout));
     }
 
@@ -245,23 +256,38 @@ internal sealed class FileComparisonPanel : Panel
 
     private void ApplySafeSplitLayout()
     {
-        var width = _split.ClientSize.Width;
-        var available = width - _split.SplitterWidth;
-        if (available < 2) return;
+        if (_applyingSplitLayout || _split.IsDisposed) return;
 
-        // Reset minimums first so a resize can never temporarily violate an old constraint.
-        _split.Panel1MinSize = 0;
-        _split.Panel2MinSize = 0;
+        var available = _split.ClientSize.Width - _split.SplitterWidth;
+        if (available <= 0) return;
 
-        var paneMinimum = Math.Min(180, Math.Max(0, (available - 1) / 2));
-        var desired = _splitLayoutInitialized ? _split.SplitterDistance : available / 2;
-        var maximumDistance = Math.Max(paneMinimum, available - paneMinimum);
-        var safeDistance = Math.Clamp(desired, paneMinimum, maximumDistance);
+        // Do not use SplitContainer.Panel*MinSize for this visual preference. WinForms
+        // validates those values during transient parent-layout sizes before SizeChanged
+        // reaches us, which can throw. Keep the native minimums at zero and clamp only
+        // the divider we choose to set.
+        var preferredMinimum = available >= 320 ? 120 : 0;
+        var desired = (int)Math.Round(available * _splitRatio);
+        var minimumDistance = Math.Min(preferredMinimum, available);
+        var maximumDistance = Math.Max(minimumDistance, available - preferredMinimum);
+        var safeDistance = Math.Clamp(desired, minimumDistance, maximumDistance);
 
-        _split.SplitterDistance = safeDistance;
-        _split.Panel1MinSize = paneMinimum;
-        _split.Panel2MinSize = paneMinimum;
-        _splitLayoutInitialized = true;
+        try
+        {
+            _applyingSplitLayout = true;
+            if (_split.SplitterDistance != safeDistance)
+                _split.SplitterDistance = safeDistance;
+        }
+        catch (InvalidOperationException)
+        {
+            // The parent can change size again between measuring and assigning. Retry on
+            // the next message-loop turn instead of surfacing a WinForms layout exception.
+            if (IsHandleCreated && !IsDisposed && !Disposing)
+                BeginInvoke(new Action(ApplySafeSplitLayout));
+        }
+        finally
+        {
+            _applyingSplitLayout = false;
+        }
     }
 
     private void UpdateHeaderLayout()
