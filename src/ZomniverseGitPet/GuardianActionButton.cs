@@ -105,19 +105,19 @@ internal sealed class GuardianActionButton : Button
 
             if (snapshot.ReconciliationPending)
             {
-                await GuardianSyncState.CancelReconciliationAsync(owner);
+                await GuardianReconciliation.CancelAsync(owner);
                 return;
             }
 
             if (snapshot.Diverged)
             {
-                await GuardianSyncState.BeginReconciliationAsync(owner);
+                await GuardianReconciliation.BeginAsync(owner);
                 return;
             }
         }
         else if (_syncRole == SyncRole.Save && snapshot.ReconciliationPending)
         {
-            await GuardianSyncState.SaveReconciliationAsync(owner);
+            await GuardianReconciliation.SaveAsync(owner);
             return;
         }
 
