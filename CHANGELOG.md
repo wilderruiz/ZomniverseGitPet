@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.5 - 2026-09-09
+
+- Added a Dropbox-style **project scope tree** before preparing a normal folder for Git, with files/folders selected by checkbox and expandable subfolders for narrower tracking scopes.
+- Selective preparation now translates the approved tree into root `.gitignore` allow-list rules, so unselected content stays outside the new repository instead of merely disappearing from the UI.
+- Existing nested Git repositories are detected, shown as protected/excluded in the scope picker, and explicitly ignored by the parent preparation scope rather than being silently absorbed.
+- `.gitignore` hygiene is now scope-aware: selected subfolders are inspected in their own context and nested `.gitignore` files are discovered and shown read-only during review.
+- Expanded the preparation review window vertically, giving substantially more room to the **PICK THE ITEMS**, **CURRENT IGNORE FILES**, and **AFTER** sections while keeping the window resizable.
+- The CURRENT pane now shows the project-root `.gitignore` plus nested `.gitignore` files already in effect; only the root file is proposed for modification.
+- Environment template names such as `.env.development.example`, `.env.*.sample`, `.env.*.template`, and `.env.*.dist` are filtered from privacy suggestions.
+- Added selective-scope regression coverage for deep folder inclusion, sibling exclusion, nested-repository protection, and nested `.gitignore` awareness; the lightweight suite now contains 17 checks.
+- Bumped the application version to **0.3.5**.
+
 ## 0.3.4 - 2026-09-09
 
 - Reworked the lower Guardian area into a dual-mode **File Review / Guardian Activity** workspace.
