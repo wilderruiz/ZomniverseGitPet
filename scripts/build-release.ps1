@@ -38,6 +38,13 @@ $sourceBranch = (& git -C $repositoryRoot branch --show-current).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceBranch)) {
     throw 'Release packaging requires a named Git branch.'
 }
+$sourceStatus = (& git -C $repositoryRoot status --porcelain=v1 --untracked-files=normal)
+if ($LASTEXITCODE -ne 0) {
+    throw 'Could not verify that the release source tree is clean.'
+}
+if (-not [string]::IsNullOrWhiteSpace(($sourceStatus -join "`n").Trim())) {
+    throw 'Release packaging requires a clean source tree. Save the current changes first, then build the release again.'
+}
 
 $releaseBase = Join-Path $repositoryParent 'ZomniverseGitPet_Releases'
 $releaseRoot = Join-Path $releaseBase ("packages\{0}" -f $version)
