@@ -362,6 +362,76 @@ Check("reconfigure replaces previous managed scope", () =>
     finally { TryDelete(root); }
 });
 
+/* ==========================================================================
+   PATCH: RESTORED SCOPE REGRESSION COVERAGE
+   DATE.TIME: 2026-09-10 11:04 +03:00
+   REASON:
+   Verify managed scope survives reconfiguration and lazy tree restoration.
+   ========================================================================== */
+Check("managed scope round-trips selected directories and files", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "CV", "expertise"));
+        File.WriteAllText(Path.Combine(root, "config.home.php"), "<?php");
+
+        var plan = ProjectScopePlanner.Create(
+            root,
+            [new ProjectScopeEntry("CV/expertise", true), new ProjectScopeEntry("config.home.php", false)],
+            trackEverything: false);
+        var rules = ProjectScopePlanner.BuildIgnoreRules(plan);
+        ProjectGitIgnoreComposer.Apply(root, rules, []);
+
+        var restored = ProjectGitIgnoreComposer.ReadManagedScope(root);
+        return restored is not null &&
+               restored.Count == 2 &&
+               restored.Any(entry => entry.IsDirectory && entry.RelativePath == "CV/expertise") &&
+               restored.Any(entry => !entry.IsDirectory && entry.RelativePath == "config.home.php");
+    }
+    finally { TryDelete(root); }
+});
+
+Check("restored selected directory covers unloaded descendants", () =>
+{
+    var model = new ProjectScopeSelectionModel([new ProjectScopeEntry("home", true)]);
+    return model.HasRestoredScope &&
+           model.GetState("home", true, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("home/app", true, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("home/app/file.cs", false, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("other", true, inheritedChecked: false) == ProjectScopeCheckState.Unchecked;
+});
+
+Check("restored partial scope remains available while collapsed", () =>
+{
+    var model = new ProjectScopeSelectionModel(
+        [new ProjectScopeEntry("CV/expertise", true), new ProjectScopeEntry("CV/readme.md", false)]);
+    var preserved = model.GetPreservedSelections("CV");
+
+    return model.GetState("CV", true, inheritedChecked: false) == ProjectScopeCheckState.Indeterminate &&
+           model.GetState("CV/expertise", true, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("CV/applications", true, inheritedChecked: false) == ProjectScopeCheckState.Unchecked &&
+           preserved.Count == 2;
+});
+
+Check("user subtree overrides replace restored lazy selections", () =>
+{
+    var model = new ProjectScopeSelectionModel([new ProjectScopeEntry("CV/expertise", true)]);
+
+    model.SetSubtree("CV", false);
+    var cleared = model.GetState("CV/expertise", true, inheritedChecked: false) == ProjectScopeCheckState.Unchecked;
+
+    model.SetSubtree("CV", true);
+    var selected = model.GetState("CV/applications", true, inheritedChecked: false) == ProjectScopeCheckState.Checked;
+
+    model.SetSubtree("CV/applications", false);
+    var parentPartial = model.GetState("CV", true, inheritedChecked: false) == ProjectScopeCheckState.Indeterminate;
+    var childCleared = model.GetState("CV/applications", true, inheritedChecked: true) == ProjectScopeCheckState.Unchecked;
+    var siblingStillSelected = model.GetState("CV/expertise", true, inheritedChecked: true) == ProjectScopeCheckState.Checked;
+
+    return cleared && selected && parentPartial && childCleared && siblingStillSelected;
+});
+
 Check("major version suggestions advance generations without rewriting old tags", () =>
 {
     var none = MajorUpdateCoordinator.SuggestMajorVersions([]);
@@ -393,7 +463,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 31 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 35 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
