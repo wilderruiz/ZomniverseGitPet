@@ -189,15 +189,51 @@ internal sealed class GitHubPublishingSetupForm : Form
         _status.ForeColor = GuardianTheme.Changes;
     }
 
+    /* ==========================================================================
+       PATCH: RESOLVED GITHUB CLI LOGIN
+       DATE.TIME: 2026-09-10 19:24 +03:00
+       Use installed gh.exe even before PATH refreshes.
+       ========================================================================== */
     private void LaunchGitHubLogin()
     {
-        const string command =
-            "gh auth login --hostname github.com --web --git-protocol https; " +
+        var executable = FindGitHubCliExecutable();
+        if (string.IsNullOrWhiteSpace(executable))
+        {
+            _status.Text = "GitHub CLI could not be located. Install it, then click Refresh.";
+            _status.ForeColor = GuardianTheme.Warning;
+            return;
+        }
+
+        var quotedExecutable = executable.Replace("'", "''");
+        var command =
+            "& '" + quotedExecutable + "' auth login --hostname github.com --web --git-protocol https; " +
             "Write-Host ''; Write-Host 'When sign-in finishes, close this window and click Refresh in GitPet.'";
         if (!LaunchPowerShell(command)) return;
 
         _status.Text = "GitHub sign-in opened in PowerShell. Complete the browser flow, then click Refresh.";
         _status.ForeColor = GuardianTheme.Changes;
+    }
+
+    private static string? FindGitHubCliExecutable()
+    {
+        var candidates = new List<string>();
+
+        var configured = Environment.GetEnvironmentVariable("GH_EXE");
+        if (!string.IsNullOrWhiteSpace(configured))
+            candidates.Add(configured);
+
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        if (!string.IsNullOrWhiteSpace(programFiles))
+            candidates.Add(Path.Combine(programFiles, "GitHub CLI", "gh.exe"));
+
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(local))
+        {
+            candidates.Add(Path.Combine(local, "Programs", "GitHub CLI", "gh.exe"));
+            candidates.Add(Path.Combine(local, "Microsoft", "WinGet", "Links", "gh.exe"));
+        }
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private bool LaunchPowerShell(string command)
