@@ -28,6 +28,13 @@ internal static class Program
             var audit = new AuditLog();
             var git = new GitService(audit);
 
+            /* ==========================================================================
+               PATCH: CONNECTION UI COORDINATOR
+               DATE.TIME: 2026-09-11 11:42 +03:00
+               Keep onboarding and Guardian connection state visibly synchronized.
+               ========================================================================== */
+            ConnectionUiRuntime.Initialize(config, configStore, audit);
+
             /* ========================================================================== 
                PATCH: GUIDED FIRST-RUN ONBOARDING
                DATE.TIME: 2026-09-10 21:22 +03:00
