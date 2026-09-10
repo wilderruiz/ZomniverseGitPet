@@ -58,12 +58,39 @@ function Find-InnoCompiler {
         $candidates.Add($command.Source)
     }
 
+    <#
+    PATCH: PER-USER INNO SETUP DISCOVERY
+    DATE.TIME: 2026-09-10 14:35 +03:00
+    Find Winget per-user Inno Setup installations automatically.
+    #>
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'))
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup\ISCC.exe'))
+    }
+
     if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
         $candidates.Add((Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'))
     }
 
     if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
         $candidates.Add((Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'))
+    }
+
+    $registryRoots = @(
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1',
+        'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1'
+    )
+
+    foreach ($registryRoot in $registryRoots) {
+        try {
+            $installLocation = (Get-ItemProperty -LiteralPath $registryRoot -ErrorAction Stop).InstallLocation
+            if (-not [string]::IsNullOrWhiteSpace($installLocation)) {
+                $candidates.Add((Join-Path $installLocation 'ISCC.exe'))
+            }
+        }
+        catch {
+        }
     }
 
     foreach ($candidate in $candidates | Select-Object -Unique) {
@@ -120,6 +147,7 @@ Copy-Item -LiteralPath $publishedExecutable -Destination $portableExecutable -Fo
 Write-Host ''
 Write-Host '4/4  Building Windows installer...'
 $iscc = Find-InnoCompiler
+Write-Host "Using Inno Setup compiler: $iscc"
 New-Item -ItemType Directory -Force -Path $installerDirectory | Out-Null
 
 $isccArguments = @(
