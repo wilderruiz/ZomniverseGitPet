@@ -27,6 +27,35 @@ internal static class Program
             var config = configStore.Load();
             var audit = new AuditLog();
             var git = new GitService(audit);
+
+            /* ========================================================================== 
+               PATCH: GUIDED FIRST-RUN ONBOARDING
+               DATE.TIME: 2026-09-10 21:22 +03:00
+               Let GitPet guide connection mode before Guardian starts.
+               ========================================================================== */
+            if (!config.OnboardingCompleted)
+            {
+                using var guidePet = new PetForm(
+                    showGuardian: () => { },
+                    chooseRepository: () => Task.CompletedTask,
+                    exit: Application.Exit);
+                guidePet.Show();
+                guidePet.ShowGuidance("👋 HI! I'M GITPET\nLet's set things up");
+
+                using var onboarding = new FirstRunSetupForm(
+                    config,
+                    configStore,
+                    git,
+                    audit,
+                    guidePet.ShowGuidance);
+                var result = onboarding.ShowDialog();
+
+                guidePet.AllowClose = true;
+                guidePet.Close();
+                if (result != DialogResult.OK || !config.OnboardingCompleted)
+                    return;
+            }
+
             using var syncWatcher = new GuardianRemoteWatcher(config, git);
             using var updater = new ApplicationUpdateCoordinator(audit);
             using var context = new ZomniverseGitPetContext(instanceName, config, configStore, git, audit);

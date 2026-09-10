@@ -176,6 +176,21 @@ public sealed class PetForm : Form
         _tray.Text = error.Length > 60 ? error[..60] : error;
     }
 
+    /* ========================================================================== 
+       PATCH: PET SETUP GUIDANCE
+       DATE.TIME: 2026-09-10 21:16 +03:00
+       Let GitPet coach users through onboarding steps.
+       ========================================================================== */
+    public void ShowGuidance(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || _incomingAlertActive) return;
+        if (!Visible) Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        _fox.Image = _assets.Happy;
+        _bubble.SetMessage(message.Trim());
+        LayoutPet();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)

@@ -14,13 +14,21 @@ public sealed class AppConfig
 {
     public const int RecentRepositoryLimit = 20;
 
-    public int SchemaVersion { get; set; } = 3;
+    public int SchemaVersion { get; set; } = 4;
     public string? RepositoryPath { get; set; }
     public List<RecentRepositoryEntry> RecentRepositories { get; set; } = [];
     public int PollSeconds { get; set; } = 20;
     public bool AutomaticCheckpointsEnabled { get; set; }
     public int QuietMinutes { get; set; } = 10;
     public bool RequireTestsForAutomaticCheckpoint { get; set; } = true;
+
+    /* ========================================================================== 
+       PATCH: FIRST-RUN CONNECTION MODE
+       DATE.TIME: 2026-09-10 21:05 +03:00
+       Remember GitHub or local-only onboarding choice.
+       ========================================================================== */
+    public bool OnboardingCompleted { get; set; }
+    public string ConnectionMode { get; set; } = GitPetConnectionModes.Unconfigured;
 
     // Legacy v1/v2 field. Kept only so existing config.json files can migrate
     // their test commands into the currently active project.
@@ -109,7 +117,10 @@ public sealed class AppConfig
 
     internal void Normalize()
     {
-        SchemaVersion = 3;
+        SchemaVersion = 4;
+        ConnectionMode = GitPetConnectionModes.Normalize(ConnectionMode);
+        if (!OnboardingCompleted) ConnectionMode = GitPetConnectionModes.Unconfigured;
+
         RecentRepositories ??= [];
         TestCommands ??= [];
         SuspiciousPathPatterns ??= [];

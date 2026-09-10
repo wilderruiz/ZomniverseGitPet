@@ -45,6 +45,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         {
             _guardian = new GuardianForm(_config, _configStore, _git, _audit, ChooseRepositoryAsync);
             InstallProjectSetupMenu(_guardian);
+            InstallConnectionMenu(_guardian);
             _guardian.FormClosed += (_, _) => _guardian = null;
         }
         _guardian.Show();
@@ -93,6 +94,41 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         };
         setup.Click += async (_, _) => await ReconfigureCurrentProjectAsync();
         menu.Items.Insert(0, setup);
+    }
+
+    /* ========================================================================== 
+       PATCH: USER CONNECTION SETTINGS
+       DATE.TIME: 2026-09-10 21:31 +03:00
+       Reopen GitHub or local-only setup anytime.
+       ========================================================================== */
+    private void InstallConnectionMenu(GuardianForm guardian)
+    {
+        var menu = guardian.MainMenuStrip;
+        if (menu is null || menu.Items.Cast<ToolStripItem>().Any(item => item.Name == "ConnectionMenu")) return;
+
+        var connection = new ToolStripMenuItem("Connection")
+        {
+            Name = "ConnectionMenu",
+            ToolTipText = "Connect your own GitHub account or keep GitPet in Local Git Only mode."
+        };
+        connection.Click += async (_, _) => await ShowConnectionSetupAsync();
+        menu.Items.Insert(Math.Min(1, menu.Items.Count), connection);
+    }
+
+    private async Task ShowConnectionSetupAsync()
+    {
+        if (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian))
+        {
+            MessageBox.Show(DialogOwner,
+                "Finish or cancel the current Guardian operation before changing connection settings.",
+                "Connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        _pet.ShowGuidance("🔑 CONNECTION SETTINGS\nGitHub or local Git");
+        using var setup = new FirstRunSetupForm(_config, _configStore, _git, _audit, _pet.ShowGuidance);
+        if (setup.ShowDialog(DialogOwner) == DialogResult.OK)
+            await RefreshAsync(true);
     }
 
     private static bool GuardianOperationInProgress(Control root)
@@ -157,6 +193,14 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
 
         menu.Items.Add(new ToolStripSeparator());
+
+        var clone = new ToolStripMenuItem("Clone repository to this computer…")
+        {
+            ToolTipText = "Copy a Git/GitHub repository and its version history to this PC, then add the local copy to GitPet Projects."
+        };
+        clone.Click += async (_, _) => await CloneRepositoryAsync();
+        menu.Items.Add(clone);
+
         var openFolder = new ToolStripMenuItem("Add / open project folder…")
         {
             ToolTipText = "A folder that is new to GitPet always opens Project Scope first, followed by Repository Hygiene."
@@ -218,6 +262,34 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
 
         menu.Show(Cursor.Position);
+    }
+
+    private async Task CloneRepositoryAsync()
+    {
+        using var dialog = new CloneRepositoryForm();
+        if (dialog.ShowDialog(DialogOwner) != DialogResult.OK) return;
+
+        var address = dialog.Address;
+        _pet.ShowGuidance("📥 COPYING REPOSITORY\nI'll preserve its history");
+        var result = await _git.CloneRepositoryAsync(address.CloneSource, dialog.DestinationPath, _lifetime.Token);
+        if (!result.Success)
+        {
+            _pet.ShowGuidance("⚠️ CLONE NEEDS HELP\nOpen Guardian for details");
+            MessageBox.Show(DialogOwner,
+                "GitPet could not copy that repository. No existing files were overwritten.\r\n\r\n" + result.Output,
+                "Clone repository", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var root = result.Output.Trim();
+        await _audit.WriteAsync("repository_cloned", new
+        {
+            sourceKind = address.IsGitHub ? "github" : "git",
+            repository = root
+        });
+
+        _pet.ShowGuidance("✅ REPOSITORY COPIED\nNow choose what I guard");
+        await ReconfigureRepositoryAsync(root);
     }
 
     private async Task OpenFolderAsync(bool preparationRequested)
