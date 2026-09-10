@@ -37,7 +37,9 @@ internal static class ApplicationReleaseFeature
             if (AttachedGuardians.Contains(guardian.Handle)) continue;
 
             var mainMenu = guardian.MainMenuStrip;
-            var milestones = mainMenu?.Items
+            if (mainMenu is null) continue;
+
+            var milestones = mainMenu.Items
                 .OfType<ToolStripMenuItem>()
                 .FirstOrDefault(item => item.Name == "MajorUpdateMenu");
             if (milestones is null) continue;
