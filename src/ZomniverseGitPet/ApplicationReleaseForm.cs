@@ -109,14 +109,15 @@ internal sealed class ApplicationReleaseForm : Form
             Padding = new Padding(18, 12, 18, 12),
             BackColor = GuardianTheme.Surface
         };
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
 
         var packageText = _package.Ready
             ? $"VERSION     {_package.Version}\r\n" +
               $"TAG         {_package.ReleaseTag}\r\n" +
               $"REPOSITORY  {_package.RepositorySlug}\r\n" +
               $"TARGET      {_assessment.Branch}\r\n" +
+              $"SOURCE      {_package.SourceBranch} @ {ShortCommit(_package.SourceCommit)}\r\n" +
               "ASSETS      installer · portable · manifest · checksums ✓"
             : _package.StatusMessage;
 
@@ -316,6 +317,12 @@ internal sealed class ApplicationReleaseForm : Form
     private string BuildInitialStatus()
     {
         if (!_package.Ready) return _package.StatusMessage;
+        if (!GitHubReleasePublisher.PackageMatchesSource(_package, _assessment.Branch, _assessment.HeadCommit))
+            return
+                "Publication blocked: this package was built from a different branch or commit.\r\n\r\n" +
+                $"Package: {_package.SourceBranch} @ {ShortCommit(_package.SourceCommit)}\r\n" +
+                $"Current: {_assessment.Branch} @ {ShortCommit(_assessment.HeadCommit)}\r\n\r\n" +
+                "Run scripts\\build-release.ps1 again after your final Save/Send, then reopen this window.";
         if (_assessment.WorkingTreeDirty)
             return "Publication blocked: this project still has unsaved changes. Save them first so the package and source history have a stable baseline.";
         if (_assessment.RemoteRelation != RemoteHistoryRelation.Equal)
@@ -323,8 +330,8 @@ internal sealed class ApplicationReleaseForm : Form
         if (_cli is { Authenticated: false }) return _cli.Message;
 
         return _cli is { Authenticated: true }
-            ? $"READY TO PUBLISH {_package.ReleaseTag} ✓\r\nGitPet verified the package and GitHub CLI login. Publication remains manual and requires confirmation."
-            : "Package verified. GitPet is checking GitHub CLI authentication before enabling publication.";
+            ? $"READY TO PUBLISH {_package.ReleaseTag} ✓\r\nGitPet verified the package, exact source commit, remote alignment and GitHub CLI login. Publication remains manual and requires confirmation."
+            : "Package and source provenance verified. GitPet is checking GitHub CLI authentication before enabling publication.";
     }
 
     private string BuildDefaultNotes()
@@ -338,6 +345,7 @@ internal sealed class ApplicationReleaseForm : Form
 
     private bool CanPublishIgnoringBusy() =>
         _package.Ready &&
+        GitHubReleasePublisher.PackageMatchesSource(_package, _assessment.Branch, _assessment.HeadCommit) &&
         !_assessment.WorkingTreeDirty &&
         _assessment.RemoteRelation == RemoteHistoryRelation.Equal &&
         _cli is { Authenticated: true } &&
@@ -366,6 +374,9 @@ internal sealed class ApplicationReleaseForm : Form
         if (string.IsNullOrWhiteSpace(_package.RepositorySlug)) return;
         OpenUrl("https://github.com/" + _package.RepositorySlug + "/releases");
     }
+
+    private static string ShortCommit(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "unknown" : value[..Math.Min(8, value.Length)];
 
     private static void OpenUrl(string url)
     {
@@ -416,7 +427,7 @@ internal sealed class ApplicationReleaseConfirmForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(650, 330);
+        ClientSize = new Size(650, 350);
         BackColor = GuardianTheme.Window;
         ForeColor = GuardianTheme.Ink;
         Font = new Font("Segoe UI", 9);
@@ -451,6 +462,7 @@ internal sealed class ApplicationReleaseConfirmForm : Form
             Text =
                 $"Publish {package.ReleaseTag} to {package.RepositorySlug}?\r\n\r\n" +
                 $"Target branch: {branch}\r\n" +
+                $"Source commit: {ShortCommit(package.SourceCommit)}\r\n" +
                 $"Title: {title}\r\n\r\n" +
                 "GitPet will upload exactly four verified release assets. Existing releases are never replaced, and no branch is force-pushed.",
             ForeColor = GuardianTheme.Ink,
@@ -476,6 +488,9 @@ internal sealed class ApplicationReleaseConfirmForm : Form
         AcceptButton = publish;
         CancelButton = cancel;
     }
+
+    private static string ShortCommit(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "unknown" : value[..Math.Min(8, value.Length)];
 
     private static Button MakeButton(string text, int width, Color fill, Color border)
     {
