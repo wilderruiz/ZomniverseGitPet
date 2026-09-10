@@ -58,7 +58,24 @@ public sealed class GuardianForm : Form
         _audit = audit;
         _chooseRepository = chooseRepository;
 
-        Text = "ZomniverseGitPet Guardian";
+        /* ==========================================================================
+           PATCH: DEVELOPMENT WINDOW TITLE
+           FUNCTION:
+           Detects the development executable name and displays a distinct
+           Guardian title without changing the installed release title.
+
+           DATE.TIME ADDED: 2026-09-10 20:19 +03:00
+
+           REASON:
+           Visually distinguish the development application from the signed release.
+           ========================================================================== */
+
+        var isDevelopmentBuild = Path.GetFileName(Application.ExecutablePath)
+            .StartsWith("DEV-", StringComparison.OrdinalIgnoreCase);
+
+        Text = isDevelopmentBuild
+            ? "DEV-ZGitPet Guardian"
+            : "ZomniverseGitPet Guardian";
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(920, 670);
