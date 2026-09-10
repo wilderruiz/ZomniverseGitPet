@@ -87,8 +87,65 @@ internal sealed class GitHubAccountService
         var command =
             "& '" + quotedExecutable + "' auth login --hostname github.com --web --git-protocol https; " +
             "if ($LASTEXITCODE -eq 0) { & '" + quotedExecutable + "' auth setup-git --hostname github.com }; " +
-            "Write-Host ''; Write-Host 'When sign-in finishes, close this window and return to GitPet.'";
+            "Write-Host ''; Write-Host 'GitHub sign-in finished. You can close this window.'";
         return LaunchPowerShell(command, owner, "GitHub sign-in");
+    }
+
+    /* ==========================================================================
+       PATCH: AUTOMATIC GITHUB AUTH DETECTION
+       DATE.TIME: 2026-09-11 11:24 +03:00
+       Detect completed browser sign-in without manual refresh.
+       ========================================================================== */
+    public async Task<GitHubAccountStatus> WaitForAuthenticationAsync(
+        TimeSpan timeout,
+        CancellationToken token = default)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        GitHubAccountStatus last = await GetStatusAsync(token);
+
+        while (!last.Authenticated && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), token);
+            last = await GetStatusAsync(token);
+        }
+
+        if (last.Authenticated)
+            await _audit.WriteAsync("github_authenticated", new { login = last.Login });
+
+        return last;
+    }
+
+    /* ==========================================================================
+       PATCH: GITHUB ACCOUNT DISCONNECT
+       DATE.TIME: 2026-09-11 11:24 +03:00
+       Disconnect one GitHub login without touching repositories.
+       ========================================================================== */
+    public async Task<CommandResult> SignOutAsync(string login, CancellationToken token = default)
+    {
+        var executable = FindGitHubCliExecutable();
+        if (string.IsNullOrWhiteSpace(executable))
+            return new(-1, "GitHub CLI could not be located.");
+
+        var arguments = new List<string> { "auth", "logout", "--hostname", "github.com" };
+        if (!string.IsNullOrWhiteSpace(login))
+        {
+            arguments.Add("--user");
+            arguments.Add(login.Trim());
+        }
+
+        var result = await RunProcessAsync(
+            executable,
+            arguments,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            TimeSpan.FromSeconds(30),
+            token);
+
+        await _audit.WriteAsync("github_disconnected", new
+        {
+            login = string.IsNullOrWhiteSpace(login) ? null : login,
+            success = result.Success
+        });
+        return result;
     }
 
     public async Task RecordModeAsync(string mode)
