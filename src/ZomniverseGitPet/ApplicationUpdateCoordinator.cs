@@ -117,7 +117,12 @@ internal sealed class ApplicationUpdateCoordinator : IDisposable
                     installer = installerPath
                 });
 
-                Application.Exit();
+                /*
+                PATCH: SAFE UPDATE EXIT
+                DATE.TIME: 2026-09-10 16:58 +03:00
+                Let Guardian and pet close instead of cancelling Application.Exit.
+                */
+                ExitForUpdate();
             }
             catch (Exception ex)
             {
@@ -148,6 +153,24 @@ internal sealed class ApplicationUpdateCoordinator : IDisposable
         {
             _checking = false;
         }
+    }
+
+    private static void ExitForUpdate()
+    {
+        var guardians = Application.OpenForms
+            .OfType<GuardianForm>()
+            .ToArray();
+        var pets = Application.OpenForms
+            .OfType<PetForm>()
+            .ToArray();
+
+        foreach (var guardian in guardians)
+            guardian.CloseForExit();
+
+        foreach (var pet in pets)
+            pet.AllowClose = true;
+
+        Application.Exit();
     }
 
     public void Dispose()
