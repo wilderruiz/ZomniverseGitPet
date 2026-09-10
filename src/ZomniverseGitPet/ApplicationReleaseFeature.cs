@@ -5,6 +5,7 @@ namespace ZomniverseGitPet;
 internal static class ApplicationReleaseFeature
 {
     private const string MenuItemName = "ApplicationReleasePublisherItem";
+    private const string SetupMenuItemName = "ApplicationReleaseGitHubSetupItem";
     private static readonly HashSet<IntPtr> AttachedGuardians = new();
     private static System.Windows.Forms.Timer? _timer;
     private static bool _started;
@@ -41,6 +42,14 @@ internal static class ApplicationReleaseFeature
                 .FirstOrDefault(item => item.Name == "MajorUpdateMenu");
             if (milestones is null) continue;
 
+            var setup = new ToolStripMenuItem("Set up GitHub publishing…")
+            {
+                Name = SetupMenuItemName,
+                Visible = false,
+                ToolTipText = "Install GitHub CLI if needed, sign in securely, and verify release-publishing authentication."
+            };
+            setup.Click += async (_, _) => await OpenGitHubSetupAsync(guardian);
+
             var publish = new ToolStripMenuItem("Publish ZomniverseGitPet application release…")
             {
                 Name = MenuItemName,
@@ -64,20 +73,36 @@ internal static class ApplicationReleaseFeature
                 }
             }
 
-            milestones.DropDownItems.Insert(insertionIndex, publish);
+            milestones.DropDownItems.Insert(insertionIndex, setup);
+            milestones.DropDownItems.Insert(insertionIndex + 1, publish);
             if (!existingSeparatorWillFollow)
-                milestones.DropDownItems.Insert(insertionIndex + 1, new ToolStripSeparator());
+                milestones.DropDownItems.Insert(insertionIndex + 2, new ToolStripSeparator());
 
             milestones.DropDownOpening += (_, _) =>
             {
                 var config = new ConfigStore().Load();
-                publish.Visible = GitHubReleasePublisher.LooksLikeGitPetSource(config.RepositoryPath);
+                var visible = GitHubReleasePublisher.LooksLikeGitPetSource(config.RepositoryPath);
+                setup.Visible = visible;
+                publish.Visible = visible;
             };
 
             var handle = guardian.Handle;
             AttachedGuardians.Add(handle);
             guardian.FormClosed += (_, _) => AttachedGuardians.Remove(handle);
         }
+    }
+
+    private static async Task OpenGitHubSetupAsync(Form owner)
+    {
+        var config = new ConfigStore().Load();
+        var repository = config.RepositoryPath;
+        if (!GitHubReleasePublisher.LooksLikeGitPetSource(repository)) return;
+
+        var audit = new AuditLog();
+        var publisher = new GitHubReleasePublisher(audit);
+        using var form = new GitHubPublishingSetupForm(publisher);
+        form.ShowDialog(owner);
+        await Task.CompletedTask;
     }
 
     private static async Task OpenPublisherAsync(Form owner)
