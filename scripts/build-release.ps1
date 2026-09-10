@@ -25,12 +25,15 @@ if ([string]::IsNullOrWhiteSpace($version)) {
     throw 'The project Version property is missing.'
 }
 
-$releaseRoot = Join-Path $repositoryParent ("ZomniverseGitPet_Releases\packages\{0}" -f $version)
-$publishDirectory = Join-Path $releaseRoot 'publish'
+$releaseBase = Join-Path $repositoryParent 'ZomniverseGitPet_Releases'
+$releaseRoot = Join-Path $releaseBase ("packages\{0}" -f $version)
+$stagingRoot = Join-Path $releaseBase ("staging\{0}" -f $version)
+$publishDirectory = Join-Path $stagingRoot 'publish'
 $installerDirectory = Join-Path $releaseRoot 'installer'
+$portableDirectory = Join-Path $releaseRoot 'portable'
 $publishedExecutable = Join-Path $publishDirectory 'ZomniverseGitPet.exe'
-$portableFileName = "ZomniverseGitPet-$version-win-x64.exe"
-$portableExecutable = Join-Path $releaseRoot $portableFileName
+$portableFileName = "ZomniverseGitPet-$version-win-x64-portable.exe"
+$portableExecutable = Join-Path $portableDirectory $portableFileName
 $installerFileName = "ZomniverseGitPet-Setup-$version.exe"
 $installerExecutable = Join-Path $installerDirectory $installerFileName
 
@@ -123,13 +126,23 @@ else {
     Write-Host '2/4  Regression suite skipped by request.'
 }
 
-Write-Host ''
-Write-Host '3/4  Publishing self-contained win-x64 executable...'
-if (Test-Path -LiteralPath $publishDirectory) {
-    Remove-Item -LiteralPath $publishDirectory -Recurse -Force
+<#
+PATCH: CLEAN RELEASE PACKAGE LAYOUT
+DATE.TIME: 2026-09-10 16:45 +03:00
+Keep publish intermediates outside the user-facing package.
+#>
+if (Test-Path -LiteralPath $releaseRoot) {
+    Remove-Item -LiteralPath $releaseRoot -Recurse -Force
+}
+if (Test-Path -LiteralPath $stagingRoot) {
+    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $publishDirectory | Out-Null
+New-Item -ItemType Directory -Force -Path $installerDirectory | Out-Null
+New-Item -ItemType Directory -Force -Path $portableDirectory | Out-Null
 
+Write-Host ''
+Write-Host '3/4  Publishing self-contained win-x64 executable...'
 Invoke-CheckedCommand dotnet `
     'publish' $projectPath `
     '--configuration' 'Release' `
@@ -148,7 +161,6 @@ Write-Host ''
 Write-Host '4/4  Building Windows installer...'
 $iscc = Find-InnoCompiler
 Write-Host "Using Inno Setup compiler: $iscc"
-New-Item -ItemType Directory -Force -Path $installerDirectory | Out-Null
 
 $isccArguments = @(
     "/DMyAppVersion=$version",
@@ -193,11 +205,27 @@ $checksumsPath = Join-Path $releaseRoot 'SHA256SUMS.txt'
     "$portableHash  $portableFileName"
 ) | Set-Content -LiteralPath $checksumsPath -Encoding ASCII
 
+$packageInfoPath = Join-Path $releaseRoot 'PACKAGE-INFO.txt'
+@(
+    'ZomniverseGitPet release package',
+    '',
+    'installer\  Normal Windows installation. Recommended for most users.',
+    'portable\   Runs directly without installation. Advanced/temporary use.',
+    '',
+    'Development builds are not stored in this package folder.'
+) | Set-Content -LiteralPath $packageInfoPath -Encoding UTF8
+
+if (Test-Path -LiteralPath $stagingRoot) {
+    Remove-Item -LiteralPath $stagingRoot -Recurse -Force
+}
+
 Write-Host ''
 Write-Host 'Release package is ready:'
 Write-Host "  Installer : $installerExecutable"
 Write-Host "  Portable  : $portableExecutable"
 Write-Host "  Manifest  : $manifestPath"
 Write-Host "  Checksums : $checksumsPath"
+Write-Host "  Package   : $packageInfoPath"
 Write-Host ''
+Write-Host 'Recommended public download: the Setup EXE in the installer folder.'
 Write-Host 'The installer is self-contained; end users do not need the .NET SDK or runtime.'
