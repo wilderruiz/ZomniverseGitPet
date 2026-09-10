@@ -25,6 +25,20 @@ if ([string]::IsNullOrWhiteSpace($version)) {
     throw 'The project Version property is missing.'
 }
 
+<#
+PATCH: RELEASE SOURCE PROVENANCE
+DATE.TIME: 2026-09-10 18:05 +03:00
+Record the exact branch and commit packaged for publication.
+#>
+$sourceCommit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceCommit)) {
+    throw 'Could not determine the Git commit being packaged.'
+}
+$sourceBranch = (& git -C $repositoryRoot branch --show-current).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($sourceBranch)) {
+    throw 'Release packaging requires a named Git branch.'
+}
+
 $releaseBase = Join-Path $repositoryParent 'ZomniverseGitPet_Releases'
 $releaseRoot = Join-Path $releaseBase ("packages\{0}" -f $version)
 $stagingRoot = Join-Path $releaseBase ("staging\{0}" -f $version)
@@ -111,6 +125,7 @@ End users will NOT need Inno Setup or the .NET SDK.
 }
 
 Write-Host "Building ZomniverseGitPet $version release package..."
+Write-Host "Source: $sourceBranch @ $sourceCommit"
 Write-Host ''
 
 if (-not $SkipTests) {
@@ -184,6 +199,8 @@ $manifest = [ordered]@{
     channel = 'stable'
     releaseTag = "v$version"
     releasePage = "https://github.com/wilderruiz/ZomniverseGitPet/releases/tag/v$version"
+    sourceBranch = $sourceBranch
+    sourceCommit = $sourceCommit
     installer = [ordered]@{
         fileName = $installerFileName
         sha256 = $installerHash
@@ -208,6 +225,10 @@ $checksumsPath = Join-Path $releaseRoot 'SHA256SUMS.txt'
 $packageInfoPath = Join-Path $releaseRoot 'PACKAGE-INFO.txt'
 @(
     'ZomniverseGitPet release package',
+    '',
+    "Version: $version",
+    "Source branch: $sourceBranch",
+    "Source commit: $sourceCommit",
     '',
     'installer\  Normal Windows installation. Recommended for most users.',
     'portable\   Runs directly without installation. Advanced/temporary use.',
