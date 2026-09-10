@@ -64,6 +64,14 @@ internal static class Program
             }
 
             using var syncWatcher = new GuardianRemoteWatcher(config, git);
+
+            /* ==========================================================================
+               PATCH: LIVE GUARDIAN WORKBOARD
+               DATE.TIME: 2026-09-11 12:51 +03:00
+               Surface Save, Get, Send, Reconcile projections continuously.
+               ========================================================================== */
+            GuardianWorkboardRuntime.Initialize(config, git, audit);
+
             using var updater = new ApplicationUpdateCoordinator(audit);
             using var context = new ZomniverseGitPetContext(instanceName, config, configStore, git, audit);
 
