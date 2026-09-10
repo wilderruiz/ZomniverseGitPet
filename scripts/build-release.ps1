@@ -58,12 +58,11 @@ function Find-InnoCompiler {
         $candidates.Add($command.Source)
     }
 
-    /* ==========================================================================
-       PATCH: PER-USER INNO SETUP DISCOVERY
-       DATE.TIME: 2026-09-10 14:35 +03:00
-       REASON:
-       Find Winget per-user Inno Setup installations automatically.
-       ========================================================================== */
+    <#
+    PATCH: PER-USER INNO SETUP DISCOVERY
+    DATE.TIME: 2026-09-10 14:35 +03:00
+    Find Winget per-user Inno Setup installations automatically.
+    #>
     if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
         $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'))
         $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup\ISCC.exe'))
