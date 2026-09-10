@@ -28,7 +28,16 @@ internal static class Program
             var audit = new AuditLog();
             var git = new GitService(audit);
             using var syncWatcher = new GuardianRemoteWatcher(config, git);
+            using var updater = new ApplicationUpdateCoordinator(audit);
             using var context = new ZomniverseGitPetContext(instanceName, config, configStore, git, audit);
+
+            /*
+            PATCH: INSTALLED RELEASE UPDATE WATCHER
+            DATE: 2026-09-10
+            Check installed builds for verified GitHub releases.
+            */
+            updater.Start();
+
             Application.Run(context);
         }
         catch (Exception ex)
