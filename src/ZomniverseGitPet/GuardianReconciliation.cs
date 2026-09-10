@@ -275,13 +275,29 @@ internal static class GuardianReconciliation
 
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
 
-        MessageBox.Show(owner,
+        /* ==========================================================================
+           PATCH: THEMED RECONCILIATION READY NOTICE
+           FUNCTION:
+           Displays the reconciliation-ready notification through the Guardian-themed
+           dialog with one acknowledgement button.
+
+           DATE.TIME ADDED: 2026-09-10 22:58 +03:00
+
+           REASON:
+           Match the reconciliation completion notice with the Guardian interface without changing workflow behavior.
+           ========================================================================== */
+
+        using var readyNotice = new GuardianConfirmDialog(
+            "Review, then Save",
+            "RECONCILIATION READY ✓",
             "Reconciliation is ready for review.\r\n\r\n" +
             "Review the changed files, then press Save.\r\n" +
             "Nothing has been sent online.",
-            "Review, then Save",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+            confirmText: "OK",
+            cancelText: "",
+            showCancel: false);
+
+        readyNotice.ShowDialog(owner);
     }
 
     private static async Task AbortAfterCancelledAsync(string repositoryPath, Form? owner)
