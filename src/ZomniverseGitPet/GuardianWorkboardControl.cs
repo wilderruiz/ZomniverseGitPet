@@ -108,6 +108,7 @@ internal sealed class GuardianWorkboardControl : UserControl
         private readonly Color _normalAccent;
         private readonly Color _normalFill;
         private readonly Panel _header;
+        private readonly Font _commitFont = new("Cascadia Mono", 8.25f);
         private bool _attention;
 
         public WorkboardSection(
@@ -193,7 +194,7 @@ internal sealed class GuardianWorkboardControl : UserControl
                     if (row.IsCommit)
                     {
                         gridRow.DefaultCellStyle.BackColor = Color.FromArgb(31, 28, 38);
-                        gridRow.DefaultCellStyle.Font = new Font("Cascadia Mono", 8.25f);
+                        gridRow.DefaultCellStyle.Font = _commitFont;
                     }
                 }
             }
@@ -221,6 +222,12 @@ internal sealed class GuardianWorkboardControl : UserControl
         {
             _attention = attention;
             ApplyTone();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _commitFont.Dispose();
+            base.Dispose(disposing);
         }
 
         private void ApplyTone()

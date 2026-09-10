@@ -100,9 +100,9 @@ internal sealed class GuardianWorkboardService(GitService git)
             ? status.Behind
             : SameBranch(remoteState.Branch, branch) ? remoteState.Behind : 0;
 
-        var divergence = ahead > 0 && behind > 0;
-        var reconciliationPending = remoteState.ReconciliationPending ||
-            status.Files.Any(file => file.Status.Contains('U'));
+        var divergence = !localOnly && ahead > 0 && behind > 0;
+        var reconciliationPending = status.Files.Any(file => file.Status.Contains('U')) ||
+            (!localOnly && remoteState.ReconciliationPending);
 
         IReadOnlyList<GuardianWorkboardRow> getRows = [];
         IReadOnlyList<GuardianWorkboardRow> sendRows = [];
