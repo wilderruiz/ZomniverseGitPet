@@ -43,16 +43,31 @@ internal static class GuardianReconciliation
             return;
         }
 
-        var answer = MessageBox.Show(owner,
+        /* ==========================================================================
+           PATCH: THEMED RECONCILIATION CONFIRMATION
+           FUNCTION:
+           Displays the existing reconciliation warning through the Guardian-themed
+           confirmation dialog while preserving its Yes-or-No result contract.
+
+           DATE.TIME ADDED: 2026-09-10 22:56 +03:00
+
+           REASON:
+           Match reconciliation confirmation styling with the Guardian interface without changing Git behavior.
+           ========================================================================== */
+
+        using var confirmation = new GuardianConfirmDialog(
+            "Reconcile local and online?",
+            "RECONCILE LOCAL + ONLINE",
             "Both copies contain saved work.\r\n\r\n" +
             $"Local saved updates: {snapshot.Ahead}\r\n" +
             $"Online updates: {snapshot.Behind}\r\n\r\n" +
             "GitPet will combine them on this PC and stop before creating the reconciliation save.\r\n" +
             "Nothing will be sent online.\r\n\r\n" +
             "If the same file was changed differently in both places, GitPet will ask which complete file version to keep.",
-            "Reconcile local and online?",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
+            confirmText: "Reconcile",
+            cancelText: "Not now");
+
+        var answer = confirmation.ShowDialog(owner);
         if (answer != DialogResult.Yes) return;
 
         SuspendAutomaticSaving(owner);
