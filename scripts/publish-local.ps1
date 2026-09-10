@@ -7,9 +7,15 @@ $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $projectPath = Join-Path $repositoryRoot 'src\ZomniverseGitPet\ZomniverseGitPet.csproj'
 $publishDirectory = Join-Path $repositoryRoot 'src\ZomniverseGitPet\bin\Release\net8.0-windows\win-x64\publish'
 $repositoryParent = Split-Path -Parent $repositoryRoot
-$releaseDirectory = Join-Path $repositoryParent 'ZomniverseGitPet_Releases\current'
+<#
+PATCH: DISTINCT DEVELOPMENT BUILD IDENTITY
+DATE.TIME: 2026-09-10 19:10 +03:00
+Keep development builds unmistakable from installed releases.
+#>
+
+$releaseDirectory = Join-Path $repositoryParent 'ZomniverseGitPet_Releases\DEV-current'
 $publishedExecutable = Join-Path $publishDirectory 'ZomniverseGitPet.exe'
-$releaseExecutable = Join-Path $releaseDirectory 'ZomniverseGitPet.exe'
+$releaseExecutable = Join-Path $releaseDirectory 'DEV-ZomniverseGitPet.exe'
 
 if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
     throw "ZomniverseGitPet project was not found at: $projectPath"
