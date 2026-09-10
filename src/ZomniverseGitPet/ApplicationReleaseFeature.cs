@@ -50,6 +50,7 @@ internal static class ApplicationReleaseFeature
             publish.Click += async (_, _) => await OpenPublisherAsync(guardian);
 
             var insertionIndex = milestones.DropDownItems.Count;
+            var existingSeparatorWillFollow = false;
             var policy = milestones.DropDownItems
                 .OfType<ToolStripMenuItem>()
                 .FirstOrDefault(item => !item.Enabled && item.Text.Contains("never force-pushes", StringComparison.OrdinalIgnoreCase));
@@ -57,11 +58,16 @@ internal static class ApplicationReleaseFeature
             {
                 insertionIndex = milestones.DropDownItems.IndexOf(policy);
                 if (insertionIndex > 0 && milestones.DropDownItems[insertionIndex - 1] is ToolStripSeparator)
+                {
                     insertionIndex--;
+                    existingSeparatorWillFollow = true;
+                }
             }
 
             milestones.DropDownItems.Insert(insertionIndex, publish);
-            milestones.DropDownItems.Insert(insertionIndex + 1, new ToolStripSeparator());
+            if (!existingSeparatorWillFollow)
+                milestones.DropDownItems.Insert(insertionIndex + 1, new ToolStripSeparator());
+
             milestones.DropDownOpening += (_, _) =>
             {
                 var config = new ConfigStore().Load();
