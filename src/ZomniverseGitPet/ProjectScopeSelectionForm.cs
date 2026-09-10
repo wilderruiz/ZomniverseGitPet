@@ -19,7 +19,6 @@ internal sealed class ProjectScopeSelectionForm : Form
     private readonly TreeView _tree = new();
     private readonly Label _summary = new();
     private readonly Button _continueButton;
-    private bool _updatingChecks;
 
     public ProjectScopeSelectionForm(
         string rootPath,
@@ -240,21 +239,12 @@ internal sealed class ProjectScopeSelectionForm : Form
         var value = GetScopeNodeState(node) != ProjectScopeCheckState.Checked;
         _selectionModel.SetSubtree(info.RelativePath, value);
 
-        _updatingChecks = true;
-        try
-        {
-            SetScopeNodeState(
-                node,
-                value ? ProjectScopeCheckState.Checked : ProjectScopeCheckState.Unchecked);
+        SetScopeNodeState(
+            node,
+            value ? ProjectScopeCheckState.Checked : ProjectScopeCheckState.Unchecked);
 
-            SetLoadedDescendants(node, value);
-            UpdateAncestorStates(node.Parent);
-        }
-        finally
-        {
-            _updatingChecks = false;
-        }
-
+        SetLoadedDescendants(node, value);
+        UpdateAncestorStates(node.Parent);
         UpdateSummary();
     }
 
@@ -446,21 +436,16 @@ internal sealed class ProjectScopeSelectionForm : Form
 
     private void SetAllRootChecks(bool value)
     {
-        _updatingChecks = true;
-        try
+        foreach (TreeNode node in _tree.Nodes)
         {
-            foreach (TreeNode node in _tree.Nodes)
-            {
-                if (node.Tag is not ScopeNodeInfo info || info.Locked) continue;
+            if (node.Tag is not ScopeNodeInfo info || info.Locked) continue;
 
-                _selectionModel.SetSubtree(info.RelativePath, value);
-                SetScopeNodeState(
-                    node,
-                    value ? ProjectScopeCheckState.Checked : ProjectScopeCheckState.Unchecked);
-                SetLoadedDescendants(node, value);
-            }
+            _selectionModel.SetSubtree(info.RelativePath, value);
+            SetScopeNodeState(
+                node,
+                value ? ProjectScopeCheckState.Checked : ProjectScopeCheckState.Unchecked);
+            SetLoadedDescendants(node, value);
         }
-        finally { _updatingChecks = false; }
 
         UpdateSummary();
     }
