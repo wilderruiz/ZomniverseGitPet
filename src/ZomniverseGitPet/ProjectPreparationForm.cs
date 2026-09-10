@@ -51,7 +51,18 @@ internal sealed class ProjectPreparationForm : Form
             ProjectScopePlan plan;
             if (_chooseScope)
             {
-                using var scope = new ProjectScopeSelectionForm(_folderPath);
+                /* ==========================================================================
+                PATCH: REOPEN PREVIOUS PROJECT SCOPE
+                DATE.TIME: 2026-09-10 09:52 +03:00
+                REASON: Initialize reconfiguration from the existing 
+                managed scope instead of selecting everything.
+                ========================================================================== */
+
+                var existingScope = _initializeGit
+                    ? null
+                    : ProjectGitIgnoreComposer.ReadManagedScope(_folderPath);
+
+                using var scope = new ProjectScopeSelectionForm(_folderPath, existingScope);
                 if (scope.ShowDialog(Owner) != DialogResult.OK)
                 {
                     Finish(DialogResult.Cancel);

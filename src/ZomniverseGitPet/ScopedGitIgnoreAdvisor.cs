@@ -244,7 +244,61 @@ internal static class ProjectGitIgnoreComposer
         File.WriteAllText(path, updated);
         return true;
     }
+    /* ==========================================================================
+    PATCH: RESTORE MANAGED PROJECT SCOPE
+    DATE.TIME: 2026-09-10 09:52 +03:00
+    REASON (20 words max):
+    Recover the previous selection from ZomniverseGitPet's managed .gitignore block.
+    ========================================================================== */
 
+    public static IReadOnlyList<ProjectScopeEntry>? ReadManagedScope(string root)
+    {
+        var current = GitIgnoreAdvisor.ReadCurrentContent(root);
+        var lines = current.Replace("\r\n", "\n").Split('\n');
+
+        var start = Array.FindIndex(
+            lines,
+            line => line.Trim().Equals(ScopeBegin, StringComparison.OrdinalIgnoreCase));
+
+        if (start < 0)
+            return null;
+
+        var end = Array.FindIndex(
+            lines,
+            start + 1,
+            line => line.Trim().Equals(ScopeEnd, StringComparison.OrdinalIgnoreCase));
+
+        if (end < 0)
+            return null;
+
+        var rules = lines
+            .Skip(start + 1)
+            .Take(end - start - 1)
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("!/", StringComparison.Ordinal))
+            .ToArray();
+
+        var selectedDirectories = rules
+            .Where(rule => rule.EndsWith("/**", StringComparison.Ordinal))
+            .Select(rule => rule[2..^3].Trim('/'))
+            .Where(path => path.Length > 0)
+            .Select(path => new ProjectScopeEntry(path, IsDirectory: true));
+
+        var selectedFiles = rules
+            .Where(rule =>
+                !rule.EndsWith("/", StringComparison.Ordinal) &&
+                !rule.EndsWith("/**", StringComparison.Ordinal) &&
+                !rule.Equals("!/.gitignore", StringComparison.OrdinalIgnoreCase))
+            .Select(rule => rule[2..].Trim('/'))
+            .Where(path => path.Length > 0)
+            .Select(path => new ProjectScopeEntry(path, IsDirectory: false));
+
+        return selectedDirectories
+            .Concat(selectedFiles)
+            .DistinctBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
     public static void SplitCombinedRules(
         IEnumerable<string> rules,
         out IReadOnlyList<string> scopeRules,

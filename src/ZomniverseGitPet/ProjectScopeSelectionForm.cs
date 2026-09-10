@@ -2,15 +2,38 @@ namespace ZomniverseGitPet;
 
 internal sealed class ProjectScopeSelectionForm : Form
 {
+    /* ==========================================================================
+       PATCH: THREE-STATE PROJECT TREE
+       FUNCTION:
+       Adds saved scope entries and three possible selection states to the
+       project-scope tree.
+
+       DATE.TIME ADDED: 2026-09-10 10:05 +03:00
+
+       REASON:
+       Support restored selections and partially selected parent folders.
+       ========================================================================== */
+
     private readonly string _rootPath;
+    private readonly IReadOnlyList<ProjectScopeEntry>? _initialEntries;
     private readonly TreeView _tree = new();
     private readonly Label _summary = new();
     private readonly Button _continueButton;
     private bool _updatingChecks;
 
-    public ProjectScopeSelectionForm(string rootPath)
+    private enum ScopeCheckState
+    {
+        Unchecked = 0,
+        Checked = 1,
+        Indeterminate = 2
+    }
+
+    public ProjectScopeSelectionForm(
+        string rootPath,
+        IReadOnlyList<ProjectScopeEntry>? initialEntries = null)
     {
         _rootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
+        _initialEntries = initialEntries;
 
         Text = "Choose project contents";
         Icon = AppIconProvider.Icon;
@@ -147,10 +170,23 @@ internal sealed class ProjectScopeSelectionForm : Form
         }
     }
 
+    /* ==========================================================================
+       PATCH: RENDER THREE-STATE SCOPE CHECKBOXES
+       FUNCTION:
+       Configures custom checked, unchecked, and indeterminate images and
+       handles mouse and keyboard selection changes.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Render partial parent selections instead of displaying an empty native checkbox.
+       ========================================================================== */
+
     private void ConfigureTree()
     {
         _tree.Dock = DockStyle.Fill;
-        _tree.CheckBoxes = true;
+        _tree.CheckBoxes = false;
+        _tree.StateImageList = CreateScopeStateImages();
         _tree.ShowNodeToolTips = true;
         _tree.HideSelection = false;
         _tree.FullRowSelect = true;
@@ -165,35 +201,196 @@ internal sealed class ProjectScopeSelectionForm : Form
         {
             if (e.Node is TreeNode node) EnsureChildrenLoaded(node);
         };
-        _tree.BeforeCheck += (_, e) =>
-        {
-            if (e.Node is not TreeNode node) return;
-            if (e.Action != TreeViewAction.Unknown && node.Tag is ScopeNodeInfo { Locked: true })
-                e.Cancel = true;
-        };
-        _tree.AfterCheck += (_, e) =>
-        {
-            if (_updatingChecks || e.Node is not TreeNode node) return;
-            if (node.Tag is ScopeNodeInfo { Locked: true })
-            {
-                SetNodeChecked(node, false, propagateLoadedChildren: false);
-                return;
-            }
 
-            _updatingChecks = true;
-            try
-            {
-                foreach (TreeNode child in node.Nodes)
-                {
-                    if (child.Tag is LazyMarker) continue;
-                    if (child.Tag is ScopeNodeInfo { Locked: true }) continue;
-                    child.Checked = node.Checked;
-                    SetLoadedDescendants(child, node.Checked);
-                }
-            }
-            finally { _updatingChecks = false; }
-            UpdateSummary();
+        _tree.NodeMouseClick += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            if (e.Node.Tag is not ScopeNodeInfo { Locked: false }) return;
+            if (_tree.StateImageList is null) return;
+
+            var imageSize = _tree.StateImageList.ImageSize;
+            var stateImageBounds = new Rectangle(
+                e.Node.Bounds.Left - imageSize.Width - 4,
+                e.Node.Bounds.Top + ((_tree.ItemHeight - imageSize.Height) / 2),
+                imageSize.Width + 4,
+                imageSize.Height);
+
+            if (!stateImageBounds.Contains(e.Location)) return;
+
+            ToggleScopeNode(e.Node);
         };
+
+        _tree.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Space || _tree.SelectedNode is null) return;
+            if (_tree.SelectedNode.Tag is not ScopeNodeInfo { Locked: false }) return;
+
+            ToggleScopeNode(_tree.SelectedNode);
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        };
+    }
+
+    /* ==========================================================================
+       HELPER: ToggleScopeNode
+       FUNCTION:
+       Toggles a selectable node, propagates its new state downward, and
+       recalculates every parent state.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Keep parent and child states synchronized after mouse or keyboard input.
+       ========================================================================== */
+
+    private void ToggleScopeNode(TreeNode node)
+    {
+        var value = GetScopeNodeState(node) != ScopeCheckState.Checked;
+
+        _updatingChecks = true;
+        try
+        {
+            SetScopeNodeState(
+                node,
+                value ? ScopeCheckState.Checked : ScopeCheckState.Unchecked);
+
+            SetLoadedDescendants(node, value);
+            UpdateAncestorStates(node.Parent);
+        }
+        finally
+        {
+            _updatingChecks = false;
+        }
+
+        UpdateSummary();
+    }
+
+    /* ==========================================================================
+       HELPER: GetScopeNodeState
+       FUNCTION:
+       Reads and validates a tree node’s custom three-state checkbox value.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Convert the displayed state-image index into a safe selection state.
+       ========================================================================== */
+
+    private static ScopeCheckState GetScopeNodeState(TreeNode node)
+    {
+        return Enum.IsDefined(typeof(ScopeCheckState), node.StateImageIndex)
+            ? (ScopeCheckState)node.StateImageIndex
+            : node.Checked
+                ? ScopeCheckState.Checked
+                : ScopeCheckState.Unchecked;
+    }
+
+    /* ==========================================================================
+       HELPER: SetScopeNodeState
+       FUNCTION:
+       Updates both the custom state image and the logical checked value
+       used when building the scope plan.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Keep visual and saved selection states consistent.
+       ========================================================================== */
+
+    private static void SetScopeNodeState(
+        TreeNode node,
+        ScopeCheckState state)
+    {
+        node.StateImageIndex = (int)state;
+        node.Checked = state == ScopeCheckState.Checked;
+    }
+
+    /* ==========================================================================
+       HELPER: CreateScopeStateImages
+       FUNCTION:
+       Creates the image collection used for unchecked, checked, and
+       partially selected project-scope nodes.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Supply the missing visual image for indeterminate parent folders.
+       ========================================================================== */
+
+    private static ImageList CreateScopeStateImages()
+    {
+        var images = new ImageList
+        {
+            ColorDepth = ColorDepth.Depth32Bit,
+            ImageSize = new Size(18, 18),
+            TransparentColor = Color.Transparent
+        };
+
+        images.Images.Add(CreateScopeStateImage(ScopeCheckState.Unchecked));
+        images.Images.Add(CreateScopeStateImage(ScopeCheckState.Checked));
+        images.Images.Add(CreateScopeStateImage(ScopeCheckState.Indeterminate));
+
+        return images;
+    }
+
+    /* ==========================================================================
+       HELPER: CreateScopeStateImage
+       FUNCTION:
+       Draws one themed checkbox image for the requested project-scope
+       selection state.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Draw a clear checkmark or minus symbol for each checkbox state.
+       ========================================================================== */
+
+    private static Bitmap CreateScopeStateImage(ScopeCheckState state)
+    {
+        var bitmap = new Bitmap(18, 18);
+
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.Clear(Color.Transparent);
+        graphics.SmoothingMode =
+            System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+        var box = new Rectangle(1, 1, 15, 15);
+        var fillColor = state == ScopeCheckState.Unchecked
+            ? GuardianTheme.Console
+            : Color.FromArgb(32, 118, 196);
+
+        using var fill = new SolidBrush(fillColor);
+        using var border = new Pen(
+            state == ScopeCheckState.Unchecked
+                ? GuardianTheme.Border
+                : Color.FromArgb(72, 148, 230),
+            1.4f);
+
+        graphics.FillRectangle(fill, box);
+        graphics.DrawRectangle(border, box);
+
+        using var symbol = new Pen(Color.White, 2.2f)
+        {
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round
+        };
+
+        if (state == ScopeCheckState.Checked)
+        {
+            graphics.DrawLines(
+                symbol,
+                [
+                    new PointF(4.2f, 8.8f),
+                    new PointF(7.1f, 11.5f),
+                    new PointF(13.2f, 5.2f)
+                ]);
+        }
+        else if (state == ScopeCheckState.Indeterminate)
+        {
+            graphics.DrawLine(symbol, 4.5f, 8.5f, 12.5f, 8.5f);
+        }
+
+        return bitmap;
     }
 
     private void LoadRootEntries()
@@ -211,6 +408,18 @@ internal sealed class ProjectScopeSelectionForm : Form
         finally { _tree.EndUpdate(); }
     }
 
+    /* ==========================================================================
+       PATCH: INITIAL THREE-STATE NODE DISPLAY
+       FUNCTION:
+       Creates a project-scope node and assigns its restored checked,
+       unchecked, or partially selected state.
+
+       DATE.TIME ADDED: 2026-09-10 10:05 +03:00
+
+       REASON:
+       Restore saved node selections and identify partially selected folders.
+       ========================================================================== */
+
     private TreeNode CreateNode(string fullPath, bool inheritedChecked)
     {
         var isDirectory = Directory.Exists(fullPath);
@@ -220,10 +429,15 @@ internal sealed class ProjectScopeSelectionForm : Form
         var prefix = isDirectory ? "▸  " : "·  ";
         var suffix = nestedRepository ? "    [existing Git repository — excluded]" : "";
 
+        var initialState = GetInitialState(relative, isDirectory, inheritedChecked);
+
         var node = new TreeNode(prefix + name + suffix)
         {
             Tag = new ScopeNodeInfo(fullPath, relative, isDirectory, nestedRepository),
-            Checked = inheritedChecked && !nestedRepository,
+            Checked = initialState == ScopeCheckState.Checked && !nestedRepository,
+            StateImageIndex = nestedRepository
+                ? (int)ScopeCheckState.Unchecked
+                : (int)initialState,
             ForeColor = nestedRepository ? GuardianTheme.FaintInk : GuardianTheme.Ink,
             ToolTipText = nestedRepository
                 ? "This folder already has its own Git metadata. GitPet protects it from being absorbed into the new parent repository."
@@ -234,6 +448,50 @@ internal sealed class ProjectScopeSelectionForm : Form
             node.Nodes.Add(new TreeNode("Loading…") { Tag = LazyMarker.Instance });
 
         return node;
+    }
+    /* ==========================================================================
+       HELPER: GetInitialState
+       FUNCTION:
+       Compares a filesystem node with the saved project scope and returns
+       its initial checked, unchecked, or indeterminate state.
+
+       DATE.TIME ADDED: 2026-09-10 10:05 +03:00
+
+       REASON:
+       Reconstruct each node’s previous selection when reopening project scope.
+       ========================================================================== */
+
+    private ScopeCheckState GetInitialState(
+        string relativePath,
+        bool isDirectory,
+        bool inheritedChecked)
+    {
+        if (_initialEntries is null)
+        {
+            return inheritedChecked
+                ? ScopeCheckState.Checked
+                : ScopeCheckState.Unchecked;
+        }
+
+        var normalized = relativePath.Replace('\\', '/').Trim('/');
+
+        var exactSelection = _initialEntries.Any(entry =>
+            entry.IsDirectory == isDirectory &&
+            entry.RelativePath.Equals(
+                normalized,
+                StringComparison.OrdinalIgnoreCase));
+
+        if (exactSelection)
+            return ScopeCheckState.Checked;
+
+        var containsSelectedDescendant = isDirectory && _initialEntries.Any(entry =>
+            entry.RelativePath.StartsWith(
+                normalized + "/",
+                StringComparison.OrdinalIgnoreCase));
+
+        return containsSelectedDescendant
+            ? ScopeCheckState.Indeterminate
+            : ScopeCheckState.Unchecked;
     }
 
     private void EnsureChildrenLoaded(TreeNode node)
@@ -271,6 +529,18 @@ internal sealed class ProjectScopeSelectionForm : Form
         }
     }
 
+    /* ==========================================================================
+       PATCH: CORRECT SELECT-ALL STATE UPDATE
+       FUNCTION:
+       Applies the requested checked state to every selectable root node and
+       refreshes the summary after propagation completes.
+
+       DATE.TIME ADDED: 2026-09-10 10:05 +03:00
+
+       REASON:
+       Remove an invalid reference to the loop-local node variable.
+       ========================================================================== */
+
     private void SetAllRootChecks(bool value)
     {
         _updatingChecks = true;
@@ -280,19 +550,40 @@ internal sealed class ProjectScopeSelectionForm : Form
             {
                 if (node.Tag is ScopeNodeInfo { Locked: true }) continue;
                 node.Checked = value;
+                node.StateImageIndex = value
+                    ? (int)ScopeCheckState.Checked
+                    : (int)ScopeCheckState.Unchecked;
                 SetLoadedDescendants(node, value);
             }
         }
         finally { _updatingChecks = false; }
+
         UpdateSummary();
     }
 
+    /* ==========================================================================
+       PATCH: SYNCHRONIZE DESCENDANT VISUAL STATES
+       FUNCTION:
+       Applies the selected logical and visual checkbox state to every loaded
+       selectable descendant.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Keep descendant checkboxes consistent when a parent selection changes.
+       ========================================================================== */
+
     private static void SetLoadedDescendants(TreeNode node, bool value)
     {
+        var state = value
+            ? ScopeCheckState.Checked
+            : ScopeCheckState.Unchecked;
+
         foreach (TreeNode child in node.Nodes)
         {
             if (child.Tag is LazyMarker || child.Tag is ScopeNodeInfo { Locked: true }) continue;
-            child.Checked = value;
+
+            SetScopeNodeState(child, state);
             SetLoadedDescendants(child, value);
         }
     }
@@ -309,6 +600,49 @@ internal sealed class ProjectScopeSelectionForm : Form
         UpdateSummary();
     }
 
+    /* ==========================================================================
+       HELPER: UpdateAncestorStates
+       FUNCTION:
+       Walks upward from a changed node and recalculates each parent’s
+       checked, unchecked, or indeterminate state.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Display a minus whenever a folder contains mixed child selections.
+       ========================================================================== */
+
+    private void UpdateAncestorStates(TreeNode? parent)
+    {
+        while (parent is not null)
+        {
+            var children = parent.Nodes
+                .Cast<TreeNode>()
+                .Where(child =>
+                    child.Tag is not LazyMarker &&
+                    child.Tag is not ScopeNodeInfo { Locked: true })
+                .ToArray();
+
+            if (children.Length > 0)
+            {
+                var states = children
+                    .Select(GetScopeNodeState)
+                    .ToArray();
+
+                var state = states.All(
+                    childState => childState == ScopeCheckState.Checked)
+                        ? ScopeCheckState.Checked
+                        : states.All(
+                            childState => childState == ScopeCheckState.Unchecked)
+                            ? ScopeCheckState.Unchecked
+                            : ScopeCheckState.Indeterminate;
+
+                SetScopeNodeState(parent, state);
+            }
+
+            parent = parent.Parent;
+        }
+    }
     private void UpdateSummary()
     {
         var entries = BuildSelectedEntries();
