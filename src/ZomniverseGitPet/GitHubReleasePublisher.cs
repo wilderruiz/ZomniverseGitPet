@@ -15,6 +15,8 @@ internal sealed record ApplicationReleasePackage(
     string PortablePath,
     string ManifestPath,
     string ChecksumsPath,
+    string SourceBranch,
+    string SourceCommit,
     string StatusMessage)
 {
     public IReadOnlyList<string> AssetPaths =>
@@ -96,6 +98,8 @@ internal sealed class GitHubReleasePublisher
                 "The prepared release package is incomplete. Run scripts\\build-release.ps1 first. Missing: " + string.Join(", ", missing),
                 version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath);
 
+        var sourceBranch = string.Empty;
+        var sourceCommit = string.Empty;
         try
         {
             using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
@@ -103,6 +107,8 @@ internal sealed class GitHubReleasePublisher
             var manifestVersion = ReadString(root, "version");
             var manifestTag = ReadString(root, "releaseTag");
             var channel = ReadString(root, "channel");
+            sourceBranch = ReadString(root, "sourceBranch");
+            sourceCommit = ReadString(root, "sourceCommit");
 
             if (!string.Equals(manifestVersion, version, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(manifestTag, releaseTag, StringComparison.OrdinalIgnoreCase) ||
@@ -110,7 +116,16 @@ internal sealed class GitHubReleasePublisher
             {
                 return Failure(repositoryPath, repositorySlug,
                     "release-manifest.json does not describe this stable application version. Rebuild the package before publishing.",
-                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath);
+                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath,
+                    sourceBranch, sourceCommit);
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceBranch) || !IsSourceCommit(sourceCommit))
+            {
+                return Failure(repositoryPath, repositorySlug,
+                    "The release manifest has no trustworthy source branch/commit provenance. Rebuild the package with the current release builder.",
+                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath,
+                    sourceBranch, sourceCommit);
             }
 
             if (!root.TryGetProperty("installer", out var installer) ||
@@ -118,7 +133,8 @@ internal sealed class GitHubReleasePublisher
             {
                 return Failure(repositoryPath, repositorySlug,
                     "release-manifest.json is missing installer or portable metadata.",
-                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath);
+                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath,
+                    sourceBranch, sourceCommit);
             }
 
             var installerFile = ReadString(installer, "fileName");
@@ -131,7 +147,8 @@ internal sealed class GitHubReleasePublisher
             {
                 return Failure(repositoryPath, repositorySlug,
                     "The manifest filenames do not match the prepared package. Rebuild the release package.",
-                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath);
+                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath,
+                    sourceBranch, sourceCommit);
             }
 
             if (!ApplicationUpdateService.VerifySha256(installerPath, installerHash) ||
@@ -139,14 +156,16 @@ internal sealed class GitHubReleasePublisher
             {
                 return Failure(repositoryPath, repositorySlug,
                     "A prepared release asset no longer matches its published SHA-256 value. GitPet refuses to publish it. Rebuild the package.",
-                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath);
+                    version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath,
+                    sourceBranch, sourceCommit);
             }
         }
         catch (Exception ex)
         {
             return Failure(repositoryPath, repositorySlug,
                 "GitPet could not validate the prepared release package. " + ex.Message,
-                version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath);
+                version, releaseTag, packageRoot, installerPath, portablePath, manifestPath, checksumsPath,
+                sourceBranch, sourceCommit);
         }
 
         return new ApplicationReleasePackage(
@@ -160,7 +179,9 @@ internal sealed class GitHubReleasePublisher
             portablePath,
             manifestPath,
             checksumsPath,
-            "Release package verified: installer, portable build, manifest and SHA-256 metadata are ready.");
+            sourceBranch,
+            sourceCommit,
+            "Release package verified: installer, portable build, manifest, source provenance and SHA-256 metadata are ready.");
     }
 
     public async Task<GitHubCliStatus> GetGitHubCliStatusAsync(CancellationToken token = default)
@@ -261,6 +282,8 @@ internal sealed class GitHubReleasePublisher
                 repository = package.RepositoryPath,
                 repositorySlug = package.RepositorySlug,
                 package.ReleaseTag,
+                package.SourceBranch,
+                package.SourceCommit,
                 branch = targetBranch,
                 success = publish.Success,
                 publish.ExitCode
@@ -281,6 +304,7 @@ internal sealed class GitHubReleasePublisher
             return new(true, false,
                 $"GitHub Release {package.ReleaseTag} published successfully ✓\r\n\r\n" +
                 "Uploaded the installer, portable build, release manifest and SHA-256 checksums.\r\n" +
+                $"Published source: {package.SourceBranch} @ {ShortCommit(package.SourceCommit)}\r\n" +
                 "No existing release was replaced and no branch was force-pushed.",
                 string.IsNullOrWhiteSpace(releaseUrl) ? null : releaseUrl);
         }
@@ -316,8 +340,22 @@ internal sealed class GitHubReleasePublisher
         }
     }
 
+    internal static bool PackageMatchesSource(
+        ApplicationReleasePackage package,
+        string branch,
+        string headCommit) =>
+        package.Ready &&
+        string.Equals(package.SourceBranch, branch, StringComparison.Ordinal) &&
+        string.Equals(package.SourceCommit, headCommit, StringComparison.OrdinalIgnoreCase);
+
     private static string ReadString(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var property) ? property.GetString()?.Trim() ?? string.Empty : string.Empty;
+
+    private static bool IsSourceCommit(string value) =>
+        (value.Length == 40 || value.Length == 64) && value.All(Uri.IsHexDigit);
+
+    private static string ShortCommit(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "unknown" : value[..Math.Min(8, value.Length)];
 
     private static ApplicationReleasePackage Failure(
         string repositoryPath,
@@ -329,9 +367,11 @@ internal sealed class GitHubReleasePublisher
         string installerPath = "",
         string portablePath = "",
         string manifestPath = "",
-        string checksumsPath = "") =>
+        string checksumsPath = "",
+        string sourceBranch = "",
+        string sourceCommit = "") =>
         new(false, repositoryPath, repositorySlug, version, releaseTag, packageRoot,
-            installerPath, portablePath, manifestPath, checksumsPath, message);
+            installerPath, portablePath, manifestPath, checksumsPath, sourceBranch, sourceCommit, message);
 
     private static string FindGitHubCliExecutable()
     {
