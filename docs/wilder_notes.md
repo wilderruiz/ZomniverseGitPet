@@ -8,6 +8,13 @@
 cd "I:\Dropbox\WORK_LAPTOP\Programming\ZomniverseGitPet"
 ````
 
+# When there is a build/test involved then run
+
+dotnet build ZomniverseGitPet.sln -c Release
+
+dotnet run --project tests\ZomniverseGitPet.Tests\ZomniverseGitPet.Tests.csproj -c Release
+
+
 3. Publish the latest local code:
 
 publish-local.ps1 is your fast development loop. It rebuilds the current app as a self-contained single EXE and replaces the copy you run from:
