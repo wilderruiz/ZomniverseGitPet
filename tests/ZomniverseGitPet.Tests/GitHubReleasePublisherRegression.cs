@@ -22,6 +22,8 @@ internal static class GitHubReleasePublisherRegression
         var parent = Path.Combine(Path.GetTempPath(), "zgitpet-release-publisher-" + Guid.NewGuid().ToString("N"));
         var repository = Path.Combine(parent, "ZomniverseGitPet");
         const string version = "9.8.7";
+        const string sourceBranch = "feature/release-test";
+        const string sourceCommit = "0123456789abcdef0123456789abcdef01234567";
         var projectDirectory = Path.Combine(repository, "src", "ZomniverseGitPet");
         var packageRoot = Path.Combine(parent, "ZomniverseGitPet_Releases", "packages", version);
         var installerDirectory = Path.Combine(packageRoot, "installer");
@@ -52,6 +54,8 @@ internal static class GitHubReleasePublisherRegression
                 version,
                 channel = "stable",
                 releaseTag = "v" + version,
+                sourceBranch,
+                sourceCommit,
                 installer = new { fileName = installerName, sha256 = installerHash },
                 portable = new { fileName = portableName, sha256 = portableHash }
             };
@@ -67,8 +71,14 @@ internal static class GitHubReleasePublisherRegression
                 repository,
                 "https://github.com/wilderruiz/ZomniverseGitPet.git");
             if (!package.Ready || package.Version != version || package.ReleaseTag != "v" + version ||
-                package.AssetPaths.Count != 4)
+                package.AssetPaths.Count != 4 || package.SourceBranch != sourceBranch || package.SourceCommit != sourceCommit)
                 throw new InvalidOperationException("Release publisher regression: a complete verified package should be publishable.");
+
+            if (!GitHubReleasePublisher.PackageMatchesSource(package, sourceBranch, sourceCommit))
+                throw new InvalidOperationException("Release publisher regression: matching source provenance should be accepted.");
+
+            if (GitHubReleasePublisher.PackageMatchesSource(package, sourceBranch, new string('f', 40)))
+                throw new InvalidOperationException("Release publisher regression: stale source commits must be rejected.");
 
             File.AppendAllText(portablePath, "tampered");
             var tampered = publisher.InspectPreparedPackage(
@@ -83,7 +93,7 @@ internal static class GitHubReleasePublisherRegression
             catch { }
         }
 
-        Console.WriteLine("GitHub release publisher regression passed (origin + package integrity rules).");
+        Console.WriteLine("GitHub release publisher regression passed (origin + package + provenance rules).");
     }
 
     private static string Sha256(string path)
