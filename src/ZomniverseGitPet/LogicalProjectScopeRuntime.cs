@@ -99,6 +99,44 @@ internal static class LogicalProjectScopeRuntime
         return false;
     }
 
+    /* ==========================================================================
+       PATCH: LEGACY SCOPE MIGRATION
+       DATE.TIME: 2026-09-11 14:16 +03:00
+       Preserve old root scope before removing managed ignore rules.
+       ========================================================================== */
+    public static void MigrateLegacyScope(string repositoryRoot, IReadOnlyList<ProjectScopeEntry>? legacyScope)
+    {
+        if (_config is null || legacyScope is null || legacyScope.Count == 0) return;
+
+        var converted = legacyScope
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.RelativePath))
+            .Select(entry => new ProjectScopeConfigEntry
+            {
+                RelativePath = NormalizeRelative(entry.RelativePath),
+                IsDirectory = entry.IsDirectory
+            })
+            .Where(entry => entry.RelativePath.Length > 0)
+            .DistinctBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (converted.Count == 0) return;
+
+        foreach (var project in _config.RecentRepositories.Where(project =>
+                     PathEquals(project.RepositoryRoot, repositoryRoot) &&
+                     PathEquals(project.Path, repositoryRoot) &&
+                     project.TrackEverything &&
+                     (project.ScopeEntries?.Count ?? 0) == 0))
+        {
+            project.TrackEverything = false;
+            project.ScopeEntries = converted
+                .Select(entry => new ProjectScopeConfigEntry
+                {
+                    RelativePath = entry.RelativePath,
+                    IsDirectory = entry.IsDirectory
+                })
+                .ToList();
+        }
+    }
+
     public static string? TryGetRelativePath(string repositoryRoot, string projectPath)
     {
         try
