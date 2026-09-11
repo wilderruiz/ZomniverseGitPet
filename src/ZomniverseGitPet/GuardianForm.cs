@@ -100,7 +100,18 @@ public sealed class GuardianForm : Form
             BackColor = GuardianTheme.Surface
         };
 
-        var projects = MakeActionButton("Projects ▾", GuardianActionKind.Standard, 112, async () => await _chooseRepository());
+        /* ==========================================================================
+           PATCH: WIDER PROJECTS MENU BUTTON
+           FUNCTION:
+           Gives the Projects toolbar button enough horizontal space for its
+           complete label and dropdown indicator.
+
+           DATE.TIME ADDED: 2026-09-11 12:39 +03:00
+
+           REASON:
+           Prevent the Projects button label and dropdown indicator from being truncated.
+           ========================================================================== */
+        var projects = MakeActionButton("Projects ▾", GuardianActionKind.Standard, 140, async () => await _chooseRepository());
         var refresh = MakeActionButton("Refresh", GuardianActionKind.Standard, 92, RefreshAsync);
         var diff = MakeActionButton("Review", GuardianActionKind.Standard, 82, ShowDiffAsync);
         var tests = MakeActionButton("Tests", GuardianActionKind.Standard, 82, RunTestsAsync);
