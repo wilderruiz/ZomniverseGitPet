@@ -90,6 +90,13 @@ internal static class Program
                ========================================================================== */
             GuardianWorkboardRuntime.Initialize(config, git, audit);
 
+            /* ==========================================================================
+               PATCH: PROJECT-ONLY SEND ROUTER
+               DATE.TIME: 2026-09-11 20:29 +03:00
+               Keep logical-project publishing separate from parent Git history.
+               ========================================================================== */
+            StandaloneProjectPublishingUiRuntime.Initialize(config, git, audit);
+
             startupSplash.SetStage("Starting GitPet");
             using var updater = new ApplicationUpdateCoordinator(audit);
             using var context = new ZomniverseGitPetContext(instanceName, config, configStore, git, audit);
