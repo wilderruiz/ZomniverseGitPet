@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ZomniverseGitPet</RootNamespace>
     <AssemblyName>ZomniverseGitPet</AssemblyName>
-    <Version>0.4.3</Version>
+    <Version>0.4.4</Version>
     <Authors>Wilder Ruiz</Authors>
     <Description>A lightweight desktop Git guardian for Windows.</Description>
     <ApplicationIcon>Assets\App\ZomniverseGitPet.ico</ApplicationIcon>
