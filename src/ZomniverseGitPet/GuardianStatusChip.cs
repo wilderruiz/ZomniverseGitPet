@@ -1,5 +1,3 @@
-using System.Drawing.Drawing2D;
-
 namespace ZomniverseGitPet;
 
 internal enum GuardianChipTone
@@ -40,30 +38,24 @@ internal sealed class GuardianStatusChip : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.Clear(Parent?.BackColor ?? GuardianTheme.Surface);
 
-        var bounds = new RectangleF(1, 1, Width - 2, Height - 2);
-        using var path = GuardianTheme.RoundedRectangle(bounds, bounds.Height / 2f);
-        var (accent, fill) = Tone switch
+        var accent = Tone switch
         {
-            GuardianChipTone.Healthy => (GuardianTheme.Healthy, GuardianTheme.HealthyFill),
-            GuardianChipTone.Changes => (GuardianTheme.Changes, GuardianTheme.ChangesFill),
-            GuardianChipTone.Warning => (GuardianTheme.Warning, GuardianTheme.WarningFill),
-            _ => (GuardianTheme.Info, GuardianTheme.InfoFill)
+            GuardianChipTone.Healthy => GuardianTheme.Healthy,
+            GuardianChipTone.Changes => GuardianTheme.Changes,
+            GuardianChipTone.Warning => GuardianTheme.Warning,
+            _ => GuardianTheme.Info
         };
-
-        using var fillBrush = new SolidBrush(fill);
-        using var border = new Pen(Color.FromArgb(150, accent), 1.2f);
-        e.Graphics.FillPath(fillBrush, path);
-        e.Graphics.DrawPath(border, path);
 
         TextRenderer.DrawText(
             e.Graphics,
             Text,
             Font,
-            Rectangle.Round(bounds),
+            ClientRectangle,
             accent,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            TextFormatFlags.Left |
+            TextFormatFlags.VerticalCenter |
+            TextFormatFlags.WordBreak);
     }
 }

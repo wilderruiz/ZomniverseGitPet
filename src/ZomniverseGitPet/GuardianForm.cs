@@ -11,6 +11,7 @@ public sealed class GuardianForm : Form
     private readonly Label _projectTitle = new();
     private readonly Label _onlineLabel = new();
     private readonly Label _commitLabel = new();
+    private readonly Label _watchingLabel = new();
     private readonly GuardianStatusChip _healthChip = new();
     private readonly GuardianStatusChip _branchChip = new();
     private readonly GuardianStatusChip _changesChip = new();
@@ -220,63 +221,214 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Top,
-            /*
-            PATCH: HEADER SYNC SUMMARY HEIGHT
-            DATE: 2026-09-09
-            Give commit summary enough room for two lines.
-            */
-            Height = 158,
-            Padding = new Padding(20, 13, 20, 10),
+            Height = 260,
+            Padding = new Padding(18, 16, 18, 18),
             BackColor = GuardianTheme.SurfaceRaised
         };
 
-        _projectTitle.Dock = DockStyle.Top;
-        _projectTitle.Height = 28;
+        var repositoryCard = new OnboardingSurfacePanel
+        {
+            Dock = DockStyle.Fill,
+            FillColor = GuardianTheme.Surface,
+            BackColor = GuardianTheme.Surface,
+            BorderColor = GuardianTheme.Border,
+            CornerRadius = 12,
+            Padding = new Padding(24, 20, 24, 20)
+        };
+
+        var repositoryLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            BackColor = GuardianTheme.Surface
+        };
+        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380));
+
+        var summary = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Margin = new Padding(0, 0, 28, 0),
+            BackColor = GuardianTheme.Surface
+        };
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+
+        _projectTitle.Dock = DockStyle.Fill;
         _projectTitle.Text = "ZOMNIVERSE GITPET";
         _projectTitle.ForeColor = Color.White;
-        _projectTitle.Font = new Font("Segoe UI", 11.5f, FontStyle.Bold);
+        _projectTitle.Font = new Font("Segoe UI", 13.5f, FontStyle.Bold);
         _projectTitle.TextAlign = ContentAlignment.MiddleLeft;
         _projectTitle.AutoEllipsis = true;
 
-        _onlineLabel.AutoSize = false;
-        _onlineLabel.Width = 180;
-        _onlineLabel.Height = 26;
-        _onlineLabel.Text = "● GUARDIAN ONLINE";
-        _onlineLabel.ForeColor = GuardianTheme.Healthy;
-        _onlineLabel.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-        _onlineLabel.TextAlign = ContentAlignment.MiddleRight;
-        _onlineLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _onlineLabel.Location = new Point(panel.Width - 200, 13);
-        panel.Resize += (_, _) => _onlineLabel.Left = panel.ClientSize.Width - _onlineLabel.Width - 20;
-
-        var chips = new FlowLayoutPanel
+        var overview = new Label
         {
-            Dock = DockStyle.Top,
-            Height = 42,
-            Padding = new Padding(0, 6, 0, 4),
-            WrapContents = false,
-            BackColor = GuardianTheme.SurfaceRaised
+            Dock = DockStyle.Fill,
+            Text = "Repository overview and most recent checkpoint",
+            ForeColor = GuardianTheme.MutedInk,
+            Font = new Font("Segoe UI", 9.5f),
+            TextAlign = ContentAlignment.TopLeft
         };
 
-        _healthChip.Width = 124;
-        _branchChip.Width = 150;
-        _changesChip.Width = 150;
-        _healthChip.Margin = new Padding(0, 0, 8, 0);
-        _branchChip.Margin = new Padding(0, 0, 8, 0);
-        _changesChip.Margin = new Padding(0);
-        chips.Controls.AddRange([_healthChip, _branchChip, _changesChip]);
+        var commitArea = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 8, 0, 0),
+            Padding = new Padding(0, 12, 0, 0),
+            BackColor = GuardianTheme.Surface
+        };
+        commitArea.Paint += (_, e) =>
+        {
+            using var separator = new Pen(GuardianTheme.BorderSoft);
+            e.Graphics.DrawLine(separator, 0, 0, commitArea.ClientSize.Width, 0);
+        };
 
         _commitLabel.Dock = DockStyle.Fill;
         _commitLabel.ForeColor = GuardianTheme.MutedInk;
         _commitLabel.Font = new Font("Cascadia Mono", 8.5f);
         _commitLabel.TextAlign = ContentAlignment.MiddleLeft;
         _commitLabel.AutoEllipsis = true;
-        _commitLabel.Padding = new Padding(1, 2, 0, 0);
+        commitArea.Controls.Add(_commitLabel);
 
-        panel.Controls.Add(_commitLabel);
-        panel.Controls.Add(chips);
-        panel.Controls.Add(_onlineLabel);
-        panel.Controls.Add(_projectTitle);
+        _watchingLabel.Dock = DockStyle.Fill;
+        _watchingLabel.Text = "Watching this repository";
+        _watchingLabel.ForeColor = GuardianTheme.HotPinkSoft;
+        _watchingLabel.Font = new Font("Segoe UI", 9);
+        _watchingLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        summary.Controls.Add(_projectTitle, 0, 0);
+        summary.Controls.Add(overview, 0, 1);
+        summary.Controls.Add(commitArea, 0, 2);
+        summary.Controls.Add(_watchingLabel, 0, 3);
+
+        /* ==========================================================================
+           PATCH: SUBTLE STATUS CARD STRUCTURE
+           FUNCTION:
+           Removes the bright full-cell grid and softens the rounded status
+           card outline to match the approved mockup.
+
+           DATE.TIME ADDED: 2026-09-11 13:57 +03:00
+
+           REASON:
+           Replace harsh system grid borders with a quieter GitPet status presentation.
+           ========================================================================== */
+        var statusCard = new OnboardingSurfacePanel
+        {
+            Dock = DockStyle.Fill,
+            FillColor = GuardianTheme.SurfaceRaised,
+            BackColor = GuardianTheme.SurfaceRaised,
+            BorderColor = Color.FromArgb(145, GuardianTheme.BorderSoft),
+            CornerRadius = 10,
+            Padding = new Padding(14)
+        };
+        var statusGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            BackColor = GuardianTheme.SurfaceRaised,
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.None
+        };
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+
+        _onlineLabel.Dock = DockStyle.Fill;
+        _onlineLabel.Text = "● ACTIVE";
+        _onlineLabel.ForeColor = GuardianTheme.Healthy;
+        _onlineLabel.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        _onlineLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        var statusCaptions = new[] { "GUARDIAN", "HEALTH", "BRANCH", "WORKING TREE" };
+        Control[] statusValues = [_onlineLabel, _healthChip, _branchChip, _changesChip];
+        for (var index = 0; index < statusValues.Length; index++)
+        {
+            var value = statusValues[index];
+            value.Dock = DockStyle.Fill;
+            value.Margin = Padding.Empty;
+
+            var statusCell = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = new Padding(14, 10, 10, 8),
+                BackColor = GuardianTheme.SurfaceRaised
+            };
+            statusCell.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+            statusCell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            statusCell.Controls.Add(new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = statusCaptions[index],
+                ForeColor = GuardianTheme.FaintInk,
+                Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            }, 0, 0);
+            statusCell.Controls.Add(value, 0, 1);
+            statusGrid.Controls.Add(statusCell, index % 2, index / 2);
+        }
+
+        statusCard.Controls.Add(statusGrid);
+
+        /* ==========================================================================
+           PATCH: MUTED STATUS CARD DIVIDERS
+           FUNCTION:
+           Adds short translucent center dividers while leaving clear spacing
+           around the rounded status card edges.
+
+           DATE.TIME ADDED: 2026-09-11 13:57 +03:00
+
+           REASON:
+           Match the mockup without restoring bright borders around every status cell.
+           ========================================================================== */
+        var verticalStatusDivider = new Panel
+        {
+            BackColor = Color.FromArgb(80, GuardianTheme.Border),
+            Enabled = false
+        };
+        var horizontalStatusDivider = new Panel
+        {
+            BackColor = Color.FromArgb(80, GuardianTheme.Border),
+            Enabled = false
+        };
+
+        statusCard.Controls.Add(verticalStatusDivider);
+        statusCard.Controls.Add(horizontalStatusDivider);
+
+        statusCard.Layout += (_, _) =>
+        {
+            var contentBounds = statusGrid.Bounds;
+
+            verticalStatusDivider.Bounds = new Rectangle(
+                contentBounds.Left + (contentBounds.Width / 2),
+                contentBounds.Top + 18,
+                1,
+                Math.Max(1, contentBounds.Height - 36));
+
+            horizontalStatusDivider.Bounds = new Rectangle(
+                contentBounds.Left + 18,
+                contentBounds.Top + (contentBounds.Height / 2),
+                Math.Max(1, contentBounds.Width - 36),
+                1);
+
+            verticalStatusDivider.BringToFront();
+            horizontalStatusDivider.BringToFront();
+        };
+
+        repositoryLayout.Controls.Add(summary, 0, 0);
+        repositoryLayout.Controls.Add(statusCard, 1, 0);
+        repositoryCard.Controls.Add(repositoryLayout);
+        panel.Controls.Add(repositoryCard);
 
         _toolTips.SetToolTip(_projectTitle,
             "Active project. Closing Guardian with X only hides this window; the fox keeps running.\n" +
@@ -668,17 +820,18 @@ public sealed class GuardianForm : Form
         {
             _healthChip.Text = "● ATTENTION";
             _healthChip.Tone = GuardianChipTone.Warning;
-            _branchChip.Text = "BRANCH  ?";
+            _branchChip.Text = "?";
             _branchChip.Tone = GuardianChipTone.Neutral;
             _changesChip.Text = "STATUS UNKNOWN";
             _changesChip.Tone = GuardianChipTone.Warning;
             _commitLabel.Text = "LATEST  unavailable";
+            _watchingLabel.Text = "Repository needs attention";
             return;
         }
 
         _healthChip.Text = "● HEALTHY";
         _healthChip.Tone = GuardianChipTone.Healthy;
-        _branchChip.Text = $"BRANCH  {status.Branch}";
+        _branchChip.Text = status.Branch;
         _branchChip.Tone = GuardianChipTone.Neutral;
         _changesChip.Text = status.Files.Count == 0
             ? "CLEAN  ✓"
@@ -689,6 +842,7 @@ public sealed class GuardianForm : Form
         _commitLabel.Text =
             $"LATEST  {FormatCommitPreview(commit)}\r\n" +
             FriendlyGitState.FormatSyncSummary(status);
+        _watchingLabel.Text = "Watching this repository";
     }
 
     private void SetNoProjectHeader()
@@ -696,11 +850,12 @@ public sealed class GuardianForm : Form
         _projectTitle.Text = "ZOMNIVERSE GITPET  /  NO PROJECT";
         _healthChip.Text = "● WAITING";
         _healthChip.Tone = GuardianChipTone.Neutral;
-        _branchChip.Text = "BRANCH  —";
+        _branchChip.Text = "—";
         _branchChip.Tone = GuardianChipTone.Neutral;
         _changesChip.Text = "OPEN PROJECTS";
         _changesChip.Tone = GuardianChipTone.Neutral;
         _commitLabel.Text = "LATEST  Choose or prepare a project to begin.";
+        _watchingLabel.Text = "Choose a project to begin";
         _emptyState.Visible = true;
         _emptyState.Text =
             "READY WHEN YOU ARE\n\nOpen Projects to choose an existing repository\nor safely prepare a normal folder for Git.";
@@ -716,6 +871,7 @@ public sealed class GuardianForm : Form
         _changesChip.Text = "CHECK GUARDIAN";
         _changesChip.Tone = GuardianChipTone.Warning;
         _commitLabel.Text = "LATEST  Repository refresh problem";
+        _watchingLabel.Text = "Repository needs attention";
         ShowActivityPanel();
         _output.Text = message;
         SetActivityState("● ATTENTION", GuardianTheme.Warning);
