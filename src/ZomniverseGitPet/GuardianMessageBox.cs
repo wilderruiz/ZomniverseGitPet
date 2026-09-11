@@ -85,6 +85,22 @@ internal static class MessageBox
             return owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
         }
 
+        if (caption.Equals("Project setup", StringComparison.OrdinalIgnoreCase) &&
+            buttons == MessageBoxButtons.OK &&
+            icon == MessageBoxIcon.Information)
+        {
+            using var dialog = new GuardianConfirmDialog(
+                "Project setup",
+                "PROJECT SAVED  ✓",
+                text,
+                "OK",
+                "",
+                showCancel: false,
+                dialogSize: new Size(820, 560));
+
+            return owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+        }
+
         return owner is null
             ? System.Windows.Forms.MessageBox.Show(text, caption, buttons, icon)
             : System.Windows.Forms.MessageBox.Show(owner, text, caption, buttons, icon);

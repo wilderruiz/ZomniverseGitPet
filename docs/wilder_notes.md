@@ -79,3 +79,15 @@ I:\Dropbox\WORK_LAPTOP\Programming\ZomniverseGitPet_Releases\current\ZomniverseG
 ```
 
 5. Reproduce the exact screen/action changed and verify it visually.
+
+# Small updates
+
+powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
+
+# Recommended before publishing publicly
+
+Recommended before publishing publicly:
+
+dotnet build ZomniverseGitPet.sln -c Release
+dotnet run --project tests\ZomniverseGitPet.Tests\ZomniverseGitPet.Tests.csproj -c Release
+powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1

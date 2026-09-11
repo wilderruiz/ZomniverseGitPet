@@ -18,7 +18,8 @@ internal sealed class GuardianConfirmDialog : Form
         */
         string confirmText = "Yes",
         string cancelText = "No",
-        bool showCancel = true)
+        bool showCancel = true,
+        Size? dialogSize = null)
     {
         Text = title;
         StartPosition = FormStartPosition.CenterParent;
@@ -26,7 +27,7 @@ internal sealed class GuardianConfirmDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        Size = new Size(720, 430);
+        Size = dialogSize ?? new Size(720, 430);
 
         BackColor = GuardianTheme.Window;
         ForeColor = GuardianTheme.Ink;

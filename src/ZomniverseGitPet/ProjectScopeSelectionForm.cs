@@ -15,9 +15,23 @@ internal sealed class ProjectScopeSelectionForm : Form
        ========================================================================== */
 
     private readonly string _rootPath;
+    private readonly string _projectPath;
     private readonly ProjectScopeSelectionModel _selectionModel;
+    private string _projectName;
+    /* ==========================================================================
+       PATCH: RESIZABLE PROJECT SCOPE AREAS
+       FUNCTION:
+       Provides a draggable horizontal divider between the folder tree and
+       advanced allow-list editor.
+
+       DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+       REASON:
+       Let users resize the folder tree and advanced editor independently.
+       ========================================================================== */
     private readonly TreeView _tree = new();
     private readonly Label _summary = new();
+    private readonly SplitContainer _scopeSplit = new();
     private readonly Panel _advancedPanel = new();
     private readonly TextBox _allowListText = new();
     private readonly Label _allowListStatus = new();
@@ -26,9 +40,17 @@ internal sealed class ProjectScopeSelectionForm : Form
 
     public ProjectScopeSelectionForm(
         string rootPath,
-        IReadOnlyList<ProjectScopeEntry>? initialEntries = null)
+        IReadOnlyList<ProjectScopeEntry>? initialEntries = null,
+        string? projectPath = null,
+        string? projectName = null)
     {
         _rootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
+        _projectPath = string.IsNullOrWhiteSpace(projectPath)
+            ? _rootPath
+            : Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectPath));
+        _projectName = string.IsNullOrWhiteSpace(projectName)
+            ? Path.GetFileName(_projectPath)
+            : projectName.Trim();
         _selectionModel = new ProjectScopeSelectionModel(initialEntries);
 
         Text = "Choose project contents";
@@ -113,9 +135,17 @@ internal sealed class ProjectScopeSelectionForm : Form
         _advancedButton = MakeButton("Advanced allow list ▾", primary: false, 168);
         _advancedButton.Click += (_, _) => ToggleAdvancedPanel();
         treeTools.Controls.Add(_advancedButton);
+
+        var renameButton = MakeButton($"Name: {_projectName}", primary: false, 220);
+        renameButton.Click += (_, _) =>
+        {
+            ChooseProjectName();
+            renameButton.Text = $"Name: {_projectName}";
+        };
+        treeTools.Controls.Add(renameButton);
         treeTools.Controls.Add(new Label
         {
-            Width = 610,
+            Width = 370,
             Height = 36,
             Margin = new Padding(10, 0, 0, 0),
             Text = "Paste exact file/folder paths and GitPet will map them onto this tree.",
@@ -124,10 +154,46 @@ internal sealed class ProjectScopeSelectionForm : Form
             AutoEllipsis = true
         });
 
+        /* ==========================================================================
+           PATCH: DRAGGABLE SCOPE EDITOR LAYOUT
+           FUNCTION:
+           Places the folder tree and advanced editor into vertically resizable
+           panes while keeping the Advanced control above them.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Allow manual vertical resizing after opening the advanced editor.
+           ========================================================================== */
         ConfigureAdvancedPanel();
-        treeHost.Controls.Add(_tree);
+
+        /* ==========================================================================
+           PATCH: SAFE SPLIT CONTAINER INITIALIZATION
+           FUNCTION:
+           Uses construction-safe pane minimums before WinForms assigns the
+           split container its final displayed dimensions.
+
+           DATE.TIME ADDED: 2026-09-11 15:05 +03:00
+
+           REASON:
+           Prevent invalid SplitterDistance validation while the split container still has its temporary size.
+           ========================================================================== */
+        _scopeSplit.Dock = DockStyle.Fill;
+        _scopeSplit.Orientation = Orientation.Horizontal;
+        _scopeSplit.FixedPanel = FixedPanel.None;
+        _scopeSplit.IsSplitterFixed = false;
+        _scopeSplit.SplitterWidth = 8;
+        _scopeSplit.Panel1MinSize = 25;
+        _scopeSplit.Panel2MinSize = 25;
+        _scopeSplit.BackColor = GuardianTheme.BorderSoft;
+        _scopeSplit.Panel1.BackColor = GuardianTheme.Window;
+        _scopeSplit.Panel2.BackColor = GuardianTheme.SurfaceSoft;
+        _scopeSplit.Panel1.Controls.Add(_tree);
+        _scopeSplit.Panel2.Controls.Add(_advancedPanel);
+        _scopeSplit.Panel2Collapsed = true;
+
+        treeHost.Controls.Add(_scopeSplit);
         treeHost.Controls.Add(treeTools);
-        treeHost.Controls.Add(_advancedPanel);
 
         var footer = new Panel
         {
@@ -197,6 +263,25 @@ internal sealed class ProjectScopeSelectionForm : Form
         }
     }
 
+    public string ProjectName => _projectName;
+
+    private void ChooseProjectName()
+    {
+        using var dialog = new ProjectRegistrationForm(
+            _projectPath,
+            _rootPath,
+            _projectName,
+            renameOnly: true);
+
+        if (dialog.ShowDialog(this) != DialogResult.OK ||
+            dialog.SelectedAction != ProjectRegistrationAction.Rename)
+            return;
+
+        _projectName = dialog.ProjectName;
+        _allowListStatus.ForeColor = GuardianTheme.HotPinkSoft;
+        _allowListStatus.Text = $"Project name: {_projectName}. The folder and Git repository names are unchanged.";
+    }
+
     /* ==========================================================================
        PATCH: ADVANCED ALLOW-LIST TREE IMPORT
        DATE.TIME: 2026-09-11 14:38 +03:00
@@ -205,9 +290,19 @@ internal sealed class ProjectScopeSelectionForm : Form
        ========================================================================== */
     private void ConfigureAdvancedPanel()
     {
-        _advancedPanel.Dock = DockStyle.Bottom;
-        _advancedPanel.Height = 278;
-        _advancedPanel.Visible = false;
+        /* ==========================================================================
+           PATCH: EXPANDABLE ADVANCED EDITOR
+           FUNCTION:
+           Makes the advanced allow-list panel fill the lower resizable pane
+           instead of enforcing a fixed height.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Give the advanced text editor all space assigned by the draggable divider.
+           ========================================================================== */
+        _advancedPanel.Dock = DockStyle.Fill;
+        _advancedPanel.MinimumSize = new Size(0, 180);
         _advancedPanel.Padding = new Padding(12);
         _advancedPanel.BackColor = GuardianTheme.SurfaceSoft;
 
@@ -240,10 +335,22 @@ internal sealed class ProjectScopeSelectionForm : Form
         _allowListText.AcceptsTab = false;
         _allowListText.WordWrap = false;
         _allowListText.ScrollBars = ScrollBars.Both;
+        /* ==========================================================================
+           PATCH: DARK ADVANCED EDITOR SCROLLBARS
+           FUNCTION:
+           Applies Windows' native dark Explorer theme to both scrollbars
+           used by the advanced allow-list editor.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Make the advanced editor scrollbars blend with GitPet's dark console surface.
+           ========================================================================== */
         _allowListText.BorderStyle = BorderStyle.FixedSingle;
         _allowListText.BackColor = GuardianTheme.Console;
         _allowListText.ForeColor = GuardianTheme.Ink;
         _allowListText.Font = new Font("Cascadia Mono", 9.5f);
+        _allowListText.HandleCreated += (_, _) => ApplyDarkScrollbarTheme(_allowListText);
         layout.Controls.Add(_allowListText, 0, 1);
 
         _allowListStatus.Dock = DockStyle.Fill;
@@ -286,15 +393,72 @@ internal sealed class ProjectScopeSelectionForm : Form
         _advancedPanel.Controls.Add(layout);
     }
 
+    /* ==========================================================================
+       PATCH: SAFE RESIZABLE ADVANCED PANEL TOGGLE
+       FUNCTION:
+       Calculates a valid initial divider position from the split container's
+       actual displayed height.
+
+       DATE.TIME ADDED: 2026-09-11 15:05 +03:00
+
+       REASON:
+       Prevent invalid splitter positions while preserving a large resizable advanced editor.
+       ========================================================================== */
     private void ToggleAdvancedPanel(bool? forceVisible = null)
     {
-        var visible = forceVisible ?? !_advancedPanel.Visible;
-        _advancedPanel.Visible = visible;
+        var visible = forceVisible ?? _scopeSplit.Panel2Collapsed;
+
+        if (visible)
+        {
+            _scopeSplit.Panel2Collapsed = false;
+
+            var availableHeight = _scopeSplit.ClientSize.Height;
+            var usableHeight = availableHeight - _scopeSplit.SplitterWidth;
+
+            if (usableHeight >
+                _scopeSplit.Panel1MinSize +
+                _scopeSplit.Panel2MinSize)
+            {
+                var preferredTreeHeight = Math.Clamp(
+                    availableHeight / 2,
+                    80,
+                    240);
+
+                var maximumAdvancedHeight = Math.Max(
+                    _scopeSplit.Panel2MinSize,
+                    usableHeight - preferredTreeHeight);
+
+                var advancedHeight = Math.Min(
+                    360,
+                    maximumAdvancedHeight);
+
+                var requestedDistance =
+                    usableHeight -
+                    advancedHeight;
+
+                var maximumDistance =
+                    availableHeight -
+                    _scopeSplit.Panel2MinSize -
+                    _scopeSplit.SplitterWidth;
+
+                _scopeSplit.SplitterDistance = Math.Clamp(
+                    requestedDistance,
+                    _scopeSplit.Panel1MinSize,
+                    maximumDistance);
+            }
+        }
+        else
+        {
+            _scopeSplit.Panel2Collapsed = true;
+        }
+
         _advancedButton.Text = visible ? "Advanced allow list ▴" : "Advanced allow list ▾";
+
         if (visible)
         {
             _allowListText.Focus();
             _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+
             if (string.IsNullOrWhiteSpace(_allowListText.Text))
                 _allowListStatus.Text = "Paste exact paths, then Apply to tree. Nothing is changed until you apply.";
         }
@@ -416,6 +580,45 @@ internal sealed class ProjectScopeSelectionForm : Form
     }
 
     /* ==========================================================================
+       HELPER: SetWindowTheme
+       FUNCTION:
+       Imports the Windows theme API used to request native dark styling
+       for controls and their scrollbars.
+
+       DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+       REASON:
+       Access Windows-supported dark scrollbar rendering without replacing native controls.
+       ========================================================================== */
+    [System.Runtime.InteropServices.DllImport(
+        "uxtheme.dll",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int SetWindowTheme(
+        IntPtr windowHandle,
+        string? subApplicationName,
+        string? subIdentifierList);
+
+    /* ==========================================================================
+       HELPER: ApplyDarkScrollbarTheme
+       FUNCTION:
+       Requests the native dark Explorer theme after a scrollable control
+       creates its Windows handle.
+
+       DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+       REASON:
+       Make native scrollbars better match GitPet's dark interface.
+       ========================================================================== */
+    private static void ApplyDarkScrollbarTheme(Control control)
+    {
+        if (!OperatingSystem.IsWindows() || !control.IsHandleCreated) return;
+
+        _ = SetWindowTheme(
+            control.Handle,
+            "DarkMode_Explorer",
+            null);
+    }
+    /* ==========================================================================
        PATCH: RENDER THREE-STATE SCOPE CHECKBOXES
        FUNCTION:
        Configures custom checked, unchecked, and indeterminate images and
@@ -441,6 +644,19 @@ internal sealed class ProjectScopeSelectionForm : Form
         _tree.Font = new Font("Segoe UI", 10);
         _tree.ItemHeight = 28;
         _tree.LineColor = GuardianTheme.Border;
+
+        /* ==========================================================================
+           PATCH: DARK FOLDER TREE SCROLLBAR
+           FUNCTION:
+           Applies Windows' native dark Explorer theme when the project folder
+           tree creates its window handle.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Make the folder tree scrollbar blend with the dark project-selection interface.
+           ========================================================================== */
+        _tree.HandleCreated += (_, _) => ApplyDarkScrollbarTheme(_tree);
 
         _tree.BeforeExpand += (_, e) =>
         {

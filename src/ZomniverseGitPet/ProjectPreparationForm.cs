@@ -11,6 +11,8 @@ internal sealed class ProjectPreparationForm : Form
     private readonly bool _initializeGit;
     private readonly bool _chooseScope;
     private readonly IReadOnlyList<ProjectScopeEntry>? _initialScope;
+    private readonly string _projectPath;
+    private string _projectName;
     private IReadOnlyList<string> _acceptedRules = [];
     private bool _wizardStarted;
 
@@ -19,9 +21,17 @@ internal sealed class ProjectPreparationForm : Form
         IReadOnlyList<GitIgnoreSuggestion> suggestions,
         bool initializeGit,
         bool chooseScope = false,
-        IReadOnlyList<ProjectScopeEntry>? initialScope = null)
+        IReadOnlyList<ProjectScopeEntry>? initialScope = null,
+        string? projectPath = null,
+        string? projectName = null)
     {
         _folderPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folderPath));
+        _projectPath = string.IsNullOrWhiteSpace(projectPath)
+            ? _folderPath
+            : Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectPath));
+        _projectName = string.IsNullOrWhiteSpace(projectName)
+            ? Path.GetFileName(_projectPath)
+            : projectName.Trim();
         _initializeGit = initializeGit;
         _chooseScope = initializeGit || chooseScope;
         _initialScope = initialScope;
@@ -36,6 +46,7 @@ internal sealed class ProjectPreparationForm : Form
 
     public IReadOnlyList<string> AcceptedRules => _acceptedRules;
     public ProjectScopePlan? ScopePlan { get; private set; }
+    public string ProjectName => _projectName;
 
     public bool ReplacesTrackingScope => _chooseScope && !_initializeGit;
 
@@ -65,13 +76,18 @@ internal sealed class ProjectPreparationForm : Form
                    ========================================================================== */
                 var existingScope = _initialScope ?? legacyScope;
 
-                using var scope = new ProjectScopeSelectionForm(_folderPath, existingScope);
+                using var scope = new ProjectScopeSelectionForm(
+                    _folderPath,
+                    existingScope,
+                    _projectPath,
+                    _projectName);
                 if (scope.ShowDialog(Owner) != DialogResult.OK)
                 {
                     Finish(DialogResult.Cancel);
                     return;
                 }
                 plan = scope.ScopePlan;
+                _projectName = scope.ProjectName;
             }
             else
             {

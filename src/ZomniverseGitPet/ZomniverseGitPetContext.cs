@@ -443,7 +443,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         var entry = _config.RememberProject(
             root,
             root,
-            GetFolderName(root),
+            preparation.ProjectName,
             plan.TrackEverything,
             plan.Entries);
         _configStore.Save(_config);
@@ -512,7 +512,9 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             suggestions,
             initializeGit: false,
             chooseScope: true,
-            initialScope: restored);
+            initialScope: restored,
+            projectPath: normalizedProject,
+            projectName: displayName);
         if (preparation.ShowDialog(DialogOwner) != DialogResult.OK) return;
 
         try
@@ -529,7 +531,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             var entry = _config.RememberProject(
                 normalizedProject,
                 root,
-                displayName,
+                preparation.ProjectName,
                 plan.TrackEverything,
                 plan.Entries,
                 projectId);
