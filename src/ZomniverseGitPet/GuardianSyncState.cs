@@ -94,6 +94,48 @@ internal static class GuardianSyncState
                 return;
             }
 
+            /* ==========================================================================
+               PATCH: LOGICAL PROJECT REMOTE BOUNDARY
+               DATE.TIME: 2026-09-11 20:24 +03:00
+               Never treat the parent repository remote as project publishing.
+               ========================================================================== */
+            if (StandaloneProjectPublishing.IsLogicalProject(config, repositoryPath))
+            {
+                var link = StandaloneProjectPublishing.GetLink(config);
+                if (link is null)
+                {
+                    Publish(new GuardianSyncSnapshot(
+                        true,
+                        status.Branch,
+                        status.Files.Count,
+                        0,
+                        0,
+                        false,
+                        false,
+                        false,
+                        false));
+                    return;
+                }
+
+                var pending = await StandaloneProjectPublishing.HasPendingPublishAsync(
+                    config,
+                    git,
+                    repositoryPath,
+                    token);
+
+                Publish(new GuardianSyncSnapshot(
+                    true,
+                    status.Branch,
+                    status.Files.Count,
+                    pending ? 1 : 0,
+                    0,
+                    true,
+                    true,
+                    !string.IsNullOrWhiteSpace(link.LastPublishedFingerprint),
+                    false));
+                return;
+            }
+
             var mergeHead = await git.RunGitAsync(
                 repositoryPath,
                 ["rev-parse", "--verify", "-q", "MERGE_HEAD"],
@@ -222,29 +264,45 @@ internal static class GuardianSyncState
         if (config is null || git is null || string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
 
         var repositoryPath = config.RepositoryPath;
-        var existing = await git.RunGitAsync(
-            repositoryPath,
-            ["remote", "get-url", "origin"],
-            TimeSpan.FromSeconds(8));
-        if (existing.Success && !string.IsNullOrWhiteSpace(existing.Output))
+        var standalone = StandaloneProjectPublishing.IsLogicalProject(config, repositoryPath);
+        if (standalone)
         {
-            await RefreshAsync(true);
-            if (owner is GuardianForm existingGuardian) await existingGuardian.RefreshAsync();
-            return;
+            var existingLink = StandaloneProjectPublishing.GetLink(config);
+            if (existingLink is not null)
+            {
+                await RefreshAsync(true);
+                if (owner is GuardianForm existingGuardian) await existingGuardian.RefreshAsync();
+                return;
+            }
+        }
+        else
+        {
+            var existing = await git.RunGitAsync(
+                repositoryPath,
+                ["remote", "get-url", "origin"],
+                TimeSpan.FromSeconds(8));
+            if (existing.Success && !string.IsNullOrWhiteSpace(existing.Output))
+            {
+                await RefreshAsync(true);
+                if (owner is GuardianForm existingGuardian) await existingGuardian.RefreshAsync();
+                return;
+            }
         }
 
         var github = new GitHubAccountService(new AuditLog());
         var account = await github.GetStatusAsync();
-        CommandResult result;
+        var projectName = LogicalProjectScopeRuntime.DisplayName;
+        var projectPath = LogicalProjectScopeRuntime.GetWorkingDirectory(repositoryPath);
+        string remoteUrl;
 
         if (account.Authenticated && !string.IsNullOrWhiteSpace(account.Login))
         {
-            var projectName = LogicalProjectScopeRuntime.DisplayName;
-            var projectPath = LogicalProjectScopeRuntime.GetWorkingDirectory(repositoryPath);
             var pet = Application.OpenForms
                 .OfType<PetForm>()
                 .FirstOrDefault(form => form.Visible && !form.IsDisposed);
-            pet?.BeginGuidanceHold("🏠 ONLINE HOME\nLet's connect this project");
+            pet?.BeginGuidanceHold(standalone
+                ? "📦 PROJECT-ONLY HOME\nOnly this scope will publish"
+                : "🏠 ONLINE HOME\nLet's connect this project");
 
             try
             {
@@ -252,48 +310,95 @@ internal static class GuardianSyncState
                     projectName,
                     projectPath,
                     account,
-                    github);
+                    github,
+                    standalonePublishing: standalone);
                 if (wizard.ShowDialog(owner) != DialogResult.OK || string.IsNullOrWhiteSpace(wizard.RemoteUrl))
                     return;
-
-                result = await git.AddOriginRemoteAsync(repositoryPath, wizard.RemoteUrl);
-                if (!result.Success)
-                {
-                    using var problem = new GuardianConfirmDialog(
-                        "Connect project",
-                        "CONNECTION NEEDS ATTENTION",
-                        result.Output,
-                        "OK",
-                        showCancel: false);
-                    problem.ShowDialog(owner);
-                    return;
-                }
-
-                using var connected = new GuardianConfirmDialog(
-                    "Connect project",
-                    "PROJECT CONNECTED  ✓",
-                    $"{projectName} now has an online repository:\r\n{wizard.RemoteUrl}\r\n\r\n" +
-                    "Nothing was downloaded or sent automatically.\r\n" +
-                    "Get ↓ and Send ↑ remain under your control.",
-                    "OK",
-                    showCancel: false);
-                connected.ShowDialog(owner);
-                pet?.ShowGuidance("✓ ONLINE HOME READY\nNothing sent yet");
+                remoteUrl = wizard.RemoteUrl;
             }
             finally
             {
                 pet?.EndGuidanceHold();
             }
         }
+        else if (standalone)
+        {
+            using var setup = new RemoteSetupForm(projectName);
+            if (setup.ShowDialog(owner) != DialogResult.OK || string.IsNullOrWhiteSpace(setup.RemoteUrl)) return;
+            remoteUrl = setup.RemoteUrl;
+        }
         else
         {
-            // Preserve support for non-GitHub remotes and users who intentionally skip GitHub authentication.
-            result = await git.GetOriginUrlAsync(repositoryPath);
+            var result = await git.GetOriginUrlAsync(repositoryPath);
             if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return;
+            await RefreshAsync(true);
+            if (owner is GuardianForm guardian) await guardian.RefreshAsync();
+            return;
+        }
+
+        if (standalone)
+        {
+            StandaloneProjectPublishing.SetLink(config, remoteUrl);
+
+            // Migrate the connection created by older GitPet builds only when it points
+            // to this exact logical-project destination. The parent repository must not
+            // retain the same origin or a later whole-repository push could leak siblings.
+            var legacyOrigin = await git.RunGitAsync(
+                repositoryPath,
+                ["remote", "get-url", "origin"],
+                TimeSpan.FromSeconds(8));
+            var removedLegacyOrigin = false;
+            if (legacyOrigin.Success &&
+                StandaloneProjectPublishing.RemoteEquals(legacyOrigin.Output, remoteUrl))
+            {
+                var removed = await git.RunGitAsync(
+                    repositoryPath,
+                    ["remote", "remove", "origin"],
+                    TimeSpan.FromSeconds(12));
+                removedLegacyOrigin = removed.Success;
+            }
+
+            using var connected = new GuardianConfirmDialog(
+                "Connect project",
+                "PROJECT-ONLY HOME READY  ✓",
+                $"{projectName} will publish only its selected GitPet scope to:\r\n{remoteUrl}\r\n\r\n" +
+                "The larger parent repository will not be sent.\r\n" +
+                "Nothing was downloaded or published automatically." +
+                (removedLegacyOrigin
+                    ? "\r\n\r\nGitPet also removed the old matching origin from the shared parent repository."
+                    : ""),
+                "OK",
+                showCancel: false);
+            connected.ShowDialog(owner);
+        }
+        else
+        {
+            var result = await git.AddOriginRemoteAsync(repositoryPath, remoteUrl);
+            if (!result.Success)
+            {
+                using var problem = new GuardianConfirmDialog(
+                    "Connect project",
+                    "CONNECTION NEEDS ATTENTION",
+                    result.Output,
+                    "OK",
+                    showCancel: false);
+                problem.ShowDialog(owner);
+                return;
+            }
+
+            using var connected = new GuardianConfirmDialog(
+                "Connect project",
+                "PROJECT CONNECTED  ✓",
+                $"{projectName} now has an online repository:\r\n{remoteUrl}\r\n\r\n" +
+                "Nothing was downloaded or sent automatically.\r\n" +
+                "Get ↓ and Send ↑ remain under your control.",
+                "OK",
+                showCancel: false);
+            connected.ShowDialog(owner);
         }
 
         await RefreshAsync(true);
-        if (owner is GuardianForm guardian) await guardian.RefreshAsync();
+        if (owner is GuardianForm refreshedGuardian) await refreshedGuardian.RefreshAsync();
     }
 
     internal static void PublishReconciliationPending(RepositoryStatus status)
