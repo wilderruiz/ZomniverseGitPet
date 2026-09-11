@@ -113,7 +113,18 @@ public sealed class GuardianForm : Form
            ========================================================================== */
         var projects = MakeActionButton("Projects ▾", GuardianActionKind.Standard, 140, async () => await _chooseRepository());
         var refresh = MakeActionButton("Refresh", GuardianActionKind.Standard, 92, RefreshAsync);
-        var diff = MakeActionButton("Review", GuardianActionKind.Standard, 82, ShowDiffAsync);
+        /* ==========================================================================
+           PATCH: WIDER REVIEW BUTTON
+           FUNCTION:
+           Gives the Review toolbar button enough horizontal space to display
+           its complete label without ellipsis.
+
+           DATE.TIME ADDED: 2026-09-11 12:42 +03:00
+
+           REASON:
+           Prevent the Review toolbar button label from being truncated.
+           ========================================================================== */
+        var diff = MakeActionButton("Review", GuardianActionKind.Standard, 112, ShowDiffAsync);
         var tests = MakeActionButton("Tests", GuardianActionKind.Standard, 82, RunTestsAsync);
         var checkpoint = MakeActionButton("Save", GuardianActionKind.Primary, 92, CreateCheckpointAsync);
         var pull = MakeActionButton("Get ↓", GuardianActionKind.Pull, 92, PullFromOriginAsync);
