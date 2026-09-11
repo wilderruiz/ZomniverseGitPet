@@ -81,6 +81,18 @@ internal sealed class ProjectPreparationForm : Form
                     existingScope,
                     _projectPath,
                     _projectName);
+
+                /* ==========================================================================
+                   PATCH: PERSISTENT ALLOW-LIST PROJECT CONTRACT
+                   DATE.TIME: 2026-09-11 21:17 +03:00
+                   Restore project lists and expose Send boundary comparison.
+                   ========================================================================== */
+                ProjectAllowListUiBridge.Attach(
+                    scope,
+                    _folderPath,
+                    _projectPath,
+                    _projectName);
+
                 if (scope.ShowDialog(Owner) != DialogResult.OK)
                 {
                     Finish(DialogResult.Cancel);

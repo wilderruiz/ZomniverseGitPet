@@ -52,7 +52,37 @@ internal static class ProjectScopeAllowListRegression
             Require(rejected.Issues.Any(issue => issue.Message.Contains(".git", StringComparison.OrdinalIgnoreCase)), ".git issue missing");
             Require(rejected.Issues.Any(issue => issue.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)), "missing-path issue missing");
 
-            Console.WriteLine("Project scope allow-list regression passed.");
+            /* ==========================================================================
+               PATCH: ALLOW-LIST PERSISTENCE AND BOUNDARY REGRESSION
+               DATE.TIME: 2026-09-11 21:20 +03:00
+               Verify project list restore and exact Send set comparison.
+               ========================================================================== */
+            var storePath = Path.Combine(basePath, "project-allow-lists.json");
+            var store = new ProjectAllowListStore(storePath);
+            var rawList = "# ZAR-like project contract\nCV/Profile.pdf\nhome/assets/\n";
+
+            store.Save(null, root, root, "Allow list test", rawList);
+            var restored = store.Load(null, root, root, "Allow list test");
+            Require(restored.Contains("CV/Profile.pdf", StringComparison.Ordinal), "saved allow-list file should restore");
+            Require(restored.Contains("home/assets/", StringComparison.Ordinal), "saved allow-list folder should restore");
+
+            store.Save("project-123", root, root, "Allow list test", restored);
+            var restoredById = store.Load("project-123", root, root, "Allow list test");
+            Require(restoredById == restored, "allow-list store should migrate to and restore by project id");
+
+            var exact = ProjectPublishBoundary.CompareSets(
+                ["CV/Profile.pdf", "home/assets/logo.png"],
+                ["home/assets/logo.png", "CV/Profile.pdf"]);
+            Require(exact.ExactMatch && exact.Matched.Count == 2, "same file sets in different order should match exactly");
+
+            var mismatch = ProjectPublishBoundary.CompareSets(
+                ["CV/Profile.pdf", "home/assets/logo.png"],
+                ["CV/Profile.pdf", "unexpected/never-send.txt"]);
+            Require(!mismatch.ExactMatch, "different file sets must not report an exact match");
+            Require(mismatch.AllowListOnly.SequenceEqual(["home/assets/logo.png"], StringComparer.OrdinalIgnoreCase), "allow-list-only file missing");
+            Require(mismatch.SendOnly.SequenceEqual(["unexpected/never-send.txt"], StringComparer.OrdinalIgnoreCase), "send-only file missing");
+
+            Console.WriteLine("Project scope allow-list regression passed (resolve + persistence + Send boundary)." );
         }
         finally
         {

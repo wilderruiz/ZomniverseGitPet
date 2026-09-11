@@ -169,6 +169,46 @@ internal static class StandaloneProjectPublishingUiRuntime
             return;
         }
 
+        /* ==========================================================================
+           PATCH: AUTOMATIC ALLOW-LIST SEND FIREWALL
+           DATE.TIME: 2026-09-11 21:18 +03:00
+           Block standalone Send when its saved allow-list contract mismatches.
+           ========================================================================== */
+        var allowList = new ProjectAllowListStore().Load(
+            project.Id,
+            project.RepositoryRoot,
+            project.Path,
+            project.DisplayName);
+        if (!string.IsNullOrWhiteSpace(allowList))
+        {
+            var boundary = await ProjectPublishBoundary.CompareAsync(
+                config,
+                git,
+                config.RepositoryPath,
+                allowList);
+            if (!boundary.ExactMatch)
+            {
+                using var review = new ProjectPublishBoundaryDialog(boundary, publishingGate: true);
+                review.ShowDialog(guardian);
+
+                var blockedPet = Application.OpenForms
+                    .OfType<PetForm>()
+                    .FirstOrDefault(form => form.Visible && !form.IsDisposed);
+                blockedPet?.ShowGuidance("🛡 SEND BLOCKED\nProject boundary mismatch");
+                await audit.WriteAsync("standalone_project_publish_boundary_blocked", new
+                {
+                    projectId = project.Id,
+                    project = project.DisplayName,
+                    matched = boundary.Matched.Count,
+                    allowListOnly = boundary.AllowListOnly.Count,
+                    sendOnly = boundary.SendOnly.Count,
+                    issues = boundary.Issues.Count,
+                    boundary.FailureMessage
+                });
+                return;
+            }
+        }
+
         using var confirmation = new GuardianConfirmDialog(
             "Send project",
             "SEND PROJECT SCOPE ONLY",
