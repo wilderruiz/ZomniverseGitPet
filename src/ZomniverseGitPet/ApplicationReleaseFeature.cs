@@ -64,7 +64,9 @@ internal static class ApplicationReleaseFeature
             var existingSeparatorWillFollow = false;
             var policy = milestones.DropDownItems
                 .OfType<ToolStripMenuItem>()
-                .FirstOrDefault(item => !item.Enabled && item.Text.Contains("never force-pushes", StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(item =>
+                    !item.Enabled &&
+                    item.Text?.Contains("never force-pushes", StringComparison.OrdinalIgnoreCase) == true);
             if (policy is not null)
             {
                 insertionIndex = milestones.DropDownItems.IndexOf(policy);
