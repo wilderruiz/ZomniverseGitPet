@@ -2,10 +2,22 @@ using System.Text.Json;
 
 namespace ZomniverseGitPet;
 
+public sealed class ProjectScopeConfigEntry
+{
+    public string RelativePath { get; set; } = "";
+    public bool IsDirectory { get; set; }
+}
+
 public sealed class RecentRepositoryEntry
 {
+    // "RecentRepositoryEntry" is retained for config compatibility, but one entry now
+    // represents a GitPet project. Multiple entries may share the same Git repository.
+    public string Id { get; set; } = "";
     public string Path { get; set; } = "";
+    public string RepositoryRoot { get; set; } = "";
     public string DisplayName { get; set; } = "";
+    public bool TrackEverything { get; set; } = true;
+    public List<ProjectScopeConfigEntry> ScopeEntries { get; set; } = [];
     public DateTimeOffset LastOpenedUtc { get; set; } = DateTimeOffset.UtcNow;
     public List<string> TestCommands { get; set; } = [];
 }
@@ -14,8 +26,12 @@ public sealed class AppConfig
 {
     public const int RecentRepositoryLimit = 20;
 
-    public int SchemaVersion { get; set; } = 4;
+    public int SchemaVersion { get; set; } = 5;
+
+    // RepositoryPath remains the authoritative Git working root for compatibility with
+    // existing Git operations. ActiveProjectId identifies the logical GitPet project.
     public string? RepositoryPath { get; set; }
+    public string? ActiveProjectId { get; set; }
     public List<RecentRepositoryEntry> RecentRepositories { get; set; } = [];
     public int PollSeconds { get; set; } = 20;
     public bool AutomaticCheckpointsEnabled { get; set; }
@@ -40,84 +56,198 @@ public sealed class AppConfig
         "credentials", @"secrets?\.", "password", "token"
     ];
 
+    public RecentRepositoryEntry? GetActiveProject()
+    {
+        if (!string.IsNullOrWhiteSpace(ActiveProjectId))
+        {
+            var byId = RecentRepositories.FirstOrDefault(item =>
+                string.Equals(item.Id, ActiveProjectId, StringComparison.OrdinalIgnoreCase));
+            if (byId is not null) return byId;
+        }
+
+        if (string.IsNullOrWhiteSpace(RepositoryPath)) return null;
+        var repository = NormalizePath(RepositoryPath);
+        return RecentRepositories
+            .OrderByDescending(item => item.LastOpenedUtc)
+            .FirstOrDefault(item =>
+                string.Equals(NormalizePath(item.RepositoryRoot), repository, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public RecentRepositoryEntry? FindProject(string id) =>
+        string.IsNullOrWhiteSpace(id)
+            ? null
+            : RecentRepositories.FirstOrDefault(item =>
+                string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+
+    public RecentRepositoryEntry? FindProjectByPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        var normalized = NormalizePath(path);
+        return RecentRepositories
+            .OrderByDescending(item => item.LastOpenedUtc)
+            .FirstOrDefault(item =>
+                string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
     public void RememberRepository(string path, DateTimeOffset? openedAt = null)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         var normalized = NormalizePath(path);
-        RepositoryPath = normalized;
+        var existing = RecentRepositories.FirstOrDefault(item =>
+            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(NormalizePath(item.RepositoryRoot), normalized, StringComparison.OrdinalIgnoreCase));
 
-        var previous = RecentRepositories.FirstOrDefault(item =>
-            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
-        var testCommands = NormalizeCommands(previous?.TestCommands);
+        RememberProject(
+            normalized,
+            normalized,
+            existing?.DisplayName ?? GetDisplayName(normalized),
+            trackEverything: true,
+            scopeEntries: [],
+            existing?.Id,
+            openedAt);
+    }
 
-        RecentRepositories.RemoveAll(item =>
-            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
-        RecentRepositories.Insert(0, new RecentRepositoryEntry
+    internal RecentRepositoryEntry RememberProject(
+        string projectPath,
+        string repositoryRoot,
+        string? displayName,
+        bool trackEverything,
+        IEnumerable<ProjectScopeEntry>? scopeEntries,
+        string? projectId = null,
+        DateTimeOffset? openedAt = null)
+    {
+        var normalizedProject = NormalizePath(projectPath);
+        var normalizedRepository = NormalizePath(repositoryRoot);
+        var existing = !string.IsNullOrWhiteSpace(projectId)
+            ? FindProject(projectId)
+            : null;
+
+        var id = existing?.Id;
+        if (string.IsNullOrWhiteSpace(id)) id = Guid.NewGuid().ToString("N");
+        var tests = NormalizeCommands(existing?.TestCommands);
+
+        if (existing is not null) RecentRepositories.Remove(existing);
+
+        var entry = new RecentRepositoryEntry
         {
-            Path = normalized,
-            DisplayName = GetDisplayName(normalized),
+            Id = id,
+            Path = normalizedProject,
+            RepositoryRoot = normalizedRepository,
+            DisplayName = NormalizeDisplayName(displayName, normalizedProject),
+            TrackEverything = trackEverything,
+            ScopeEntries = NormalizeScopeEntries(scopeEntries),
             LastOpenedUtc = openedAt ?? DateTimeOffset.UtcNow,
-            TestCommands = testCommands
-        });
+            TestCommands = tests
+        };
+
+        RecentRepositories.Insert(0, entry);
+        ActiveProjectId = entry.Id;
+        RepositoryPath = entry.RepositoryRoot;
 
         if (RecentRepositories.Count > RecentRepositoryLimit)
             RecentRepositories.RemoveRange(RecentRepositoryLimit, RecentRepositories.Count - RecentRepositoryLimit);
+        return entry;
+    }
+
+    public bool ActivateProject(string id, DateTimeOffset? openedAt = null)
+    {
+        var entry = FindProject(id);
+        if (entry is null) return false;
+
+        entry.LastOpenedUtc = openedAt ?? DateTimeOffset.UtcNow;
+        ActiveProjectId = entry.Id;
+        RepositoryPath = entry.RepositoryRoot;
+        RecentRepositories.Remove(entry);
+        RecentRepositories.Insert(0, entry);
+        return true;
+    }
+
+    public bool RenameProject(string id, string displayName)
+    {
+        var entry = FindProject(id);
+        if (entry is null || string.IsNullOrWhiteSpace(displayName)) return false;
+        entry.DisplayName = displayName.Trim();
+        return true;
+    }
+
+    public bool ForgetProject(string id)
+    {
+        var entry = FindProject(id);
+        if (entry is null) return false;
+        var wasActive = string.Equals(entry.Id, ActiveProjectId, StringComparison.OrdinalIgnoreCase);
+        RecentRepositories.Remove(entry);
+
+        if (wasActive)
+        {
+            ActiveProjectId = null;
+            RepositoryPath = null;
+        }
+        return true;
     }
 
     public bool ForgetRepository(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         var normalized = NormalizePath(path);
-        var removed = RecentRepositories.RemoveAll(item =>
-            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase)) > 0;
+        var matches = RecentRepositories
+            .Where(item => string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matches.Length == 0)
+        {
+            matches = RecentRepositories
+                .Where(item => string.Equals(NormalizePath(item.RepositoryRoot), normalized, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+        if (matches.Length == 0) return false;
 
-        if (!string.IsNullOrWhiteSpace(RepositoryPath) &&
-            string.Equals(NormalizePath(RepositoryPath), normalized, StringComparison.OrdinalIgnoreCase))
+        var activeRemoved = matches.Any(item =>
+            string.Equals(item.Id, ActiveProjectId, StringComparison.OrdinalIgnoreCase));
+        foreach (var entry in matches) RecentRepositories.Remove(entry);
+        if (activeRemoved)
+        {
+            ActiveProjectId = null;
             RepositoryPath = null;
-
-        return removed;
+        }
+        return true;
     }
 
     public IReadOnlyList<string> GetTestCommandsForRepository(string? path = null)
     {
-        var value = string.IsNullOrWhiteSpace(path) ? RepositoryPath : path;
-        if (string.IsNullOrWhiteSpace(value)) return Array.Empty<string>();
-        var normalized = NormalizePath(value);
-        var entry = RecentRepositories.FirstOrDefault(item =>
-            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
+        var entry = ResolveProjectForPath(path);
         return entry is null ? Array.Empty<string>() : NormalizeCommands(entry.TestCommands);
     }
 
     public void SetTestCommandsForRepository(string path, IEnumerable<string> commands)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        var normalized = NormalizePath(path);
-        var entry = RecentRepositories.FirstOrDefault(item =>
-            string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
+        var entry = ResolveProjectForPath(path);
         if (entry is null)
         {
-            entry = new RecentRepositoryEntry
-            {
-                Path = normalized,
-                DisplayName = GetDisplayName(normalized),
-                LastOpenedUtc = DateTimeOffset.UtcNow
-            };
-            RecentRepositories.Insert(0, entry);
+            RememberRepository(path);
+            entry = GetActiveProject();
         }
-
-        entry.TestCommands = NormalizeCommands(commands);
+        if (entry is not null) entry.TestCommands = NormalizeCommands(commands);
     }
 
     public void ForgetUnavailableRepositories()
     {
-        var activeWasUnavailable = !string.IsNullOrWhiteSpace(RepositoryPath) && !Directory.Exists(RepositoryPath);
-        RecentRepositories.RemoveAll(item => string.IsNullOrWhiteSpace(item.Path) || !Directory.Exists(item.Path));
-        if (activeWasUnavailable) RepositoryPath = null;
+        var activeId = ActiveProjectId;
+        RecentRepositories.RemoveAll(item =>
+            string.IsNullOrWhiteSpace(item.Path) ||
+            string.IsNullOrWhiteSpace(item.RepositoryRoot) ||
+            !Directory.Exists(item.Path) ||
+            !Directory.Exists(item.RepositoryRoot));
+
+        if (!string.IsNullOrWhiteSpace(activeId) && FindProject(activeId) is null)
+        {
+            ActiveProjectId = null;
+            RepositoryPath = null;
+        }
     }
 
     internal void Normalize()
     {
-        SchemaVersion = 4;
+        SchemaVersion = 5;
         ConnectionMode = GitPetConnectionModes.Normalize(ConnectionMode);
         if (!OnboardingCompleted) ConnectionMode = GitPetConnectionModes.Unconfigured;
 
@@ -130,12 +260,22 @@ public sealed class AppConfig
                      .Where(item => item is not null && !string.IsNullOrWhiteSpace(item.Path))
                      .OrderByDescending(item => item.LastOpenedUtc))
         {
-            var path = NormalizePath(item.Path);
-            if (normalized.Any(existing => string.Equals(existing.Path, path, StringComparison.OrdinalIgnoreCase))) continue;
+            var projectPath = NormalizePath(item.Path);
+            var repositoryRoot = string.IsNullOrWhiteSpace(item.RepositoryRoot)
+                ? projectPath
+                : NormalizePath(item.RepositoryRoot);
+            var id = string.IsNullOrWhiteSpace(item.Id) ? Guid.NewGuid().ToString("N") : item.Id.Trim();
+            if (normalized.Any(existing => string.Equals(existing.Id, id, StringComparison.OrdinalIgnoreCase)))
+                id = Guid.NewGuid().ToString("N");
+
             normalized.Add(new RecentRepositoryEntry
             {
-                Path = path,
-                DisplayName = string.IsNullOrWhiteSpace(item.DisplayName) ? GetDisplayName(path) : item.DisplayName,
+                Id = id,
+                Path = projectPath,
+                RepositoryRoot = repositoryRoot,
+                DisplayName = NormalizeDisplayName(item.DisplayName, projectPath),
+                TrackEverything = item.TrackEverything || (item.ScopeEntries?.Count ?? 0) == 0 && PathEquals(projectPath, repositoryRoot),
+                ScopeEntries = NormalizeScopeConfigEntries(item.ScopeEntries),
                 LastOpenedUtc = item.LastOpenedUtc,
                 TestCommands = NormalizeCommands(item.TestCommands)
             });
@@ -143,33 +283,85 @@ public sealed class AppConfig
         }
         RecentRepositories = normalized;
 
-        if (!string.IsNullOrWhiteSpace(RepositoryPath))
+        if (!string.IsNullOrWhiteSpace(ActiveProjectId) && FindProject(ActiveProjectId) is null)
+            ActiveProjectId = null;
+
+        if (string.IsNullOrWhiteSpace(ActiveProjectId) && !string.IsNullOrWhiteSpace(RepositoryPath))
         {
-            var active = NormalizePath(RepositoryPath);
-            RepositoryPath = active;
+            var repository = NormalizePath(RepositoryPath);
             var existing = RecentRepositories.FirstOrDefault(item =>
-                string.Equals(item.Path, active, StringComparison.OrdinalIgnoreCase));
-            if (Directory.Exists(active) && existing is null)
+                string.Equals(NormalizePath(item.RepositoryRoot), repository, StringComparison.OrdinalIgnoreCase));
+            if (existing is null && Directory.Exists(repository))
             {
                 existing = new RecentRepositoryEntry
                 {
-                    Path = active,
-                    DisplayName = GetDisplayName(active),
+                    Id = Guid.NewGuid().ToString("N"),
+                    Path = repository,
+                    RepositoryRoot = repository,
+                    DisplayName = GetDisplayName(repository),
+                    TrackEverything = true,
                     LastOpenedUtc = DateTimeOffset.UtcNow
                 };
                 RecentRepositories.Insert(0, existing);
                 if (RecentRepositories.Count > RecentRepositoryLimit)
                     RecentRepositories.RemoveRange(RecentRepositoryLimit, RecentRepositories.Count - RecentRepositoryLimit);
             }
+            ActiveProjectId = existing?.Id;
+        }
 
-            // Migrate the old global test list into the active project once.
-            if (existing is not null && (existing.TestCommands?.Count ?? 0) == 0 && TestCommands.Count > 0)
+        var active = GetActiveProject();
+        if (active is not null)
+        {
+            RepositoryPath = active.RepositoryRoot;
+            if ((active.TestCommands?.Count ?? 0) == 0 && TestCommands.Count > 0)
             {
-                existing.TestCommands = NormalizeCommands(TestCommands);
+                active.TestCommands = NormalizeCommands(TestCommands);
                 TestCommands.Clear();
             }
         }
+        else if (string.IsNullOrWhiteSpace(ActiveProjectId))
+        {
+            RepositoryPath = null;
+        }
     }
+
+    private RecentRepositoryEntry? ResolveProjectForPath(string? path)
+    {
+        var active = GetActiveProject();
+        if (string.IsNullOrWhiteSpace(path)) return active;
+
+        var normalized = NormalizePath(path);
+        if (active is not null &&
+            (PathEquals(active.Path, normalized) || PathEquals(active.RepositoryRoot, normalized)))
+            return active;
+
+        return RecentRepositories.FirstOrDefault(item =>
+            PathEquals(item.Path, normalized) || PathEquals(item.RepositoryRoot, normalized));
+    }
+
+    private static List<ProjectScopeConfigEntry> NormalizeScopeEntries(IEnumerable<ProjectScopeEntry>? entries) =>
+        (entries ?? Array.Empty<ProjectScopeEntry>())
+            .Where(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.RelativePath))
+            .Select(entry => new ProjectScopeConfigEntry
+            {
+                RelativePath = NormalizeRelativePath(entry.RelativePath),
+                IsDirectory = entry.IsDirectory
+            })
+            .Where(entry => entry.RelativePath.Length > 0)
+            .DistinctBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static List<ProjectScopeConfigEntry> NormalizeScopeConfigEntries(IEnumerable<ProjectScopeConfigEntry>? entries) =>
+        (entries ?? Array.Empty<ProjectScopeConfigEntry>())
+            .Where(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.RelativePath))
+            .Select(entry => new ProjectScopeConfigEntry
+            {
+                RelativePath = NormalizeRelativePath(entry.RelativePath),
+                IsDirectory = entry.IsDirectory
+            })
+            .Where(entry => entry.RelativePath.Length > 0)
+            .DistinctBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static List<string> NormalizeCommands(IEnumerable<string>? commands) =>
         (commands ?? Array.Empty<string>())
@@ -179,11 +371,20 @@ public sealed class AppConfig
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    private static string NormalizeDisplayName(string? value, string path) =>
+        string.IsNullOrWhiteSpace(value) ? GetDisplayName(path) : value.Trim();
+
+    private static string NormalizeRelativePath(string path) =>
+        path.Replace('\\', '/').Trim().TrimStart('/').TrimEnd('/');
+
     private static string NormalizePath(string path)
     {
         try { return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)); }
         catch { return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
     }
+
+    private static bool PathEquals(string left, string right) =>
+        string.Equals(NormalizePath(left), NormalizePath(right), StringComparison.OrdinalIgnoreCase);
 
     private static string GetDisplayName(string path)
     {
