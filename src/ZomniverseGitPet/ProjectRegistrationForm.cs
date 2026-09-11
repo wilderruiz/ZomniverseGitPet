@@ -16,7 +16,6 @@ internal enum ProjectRegistrationAction
 internal sealed class ProjectRegistrationForm : Form
 {
     private readonly TextBox _name = new();
-    private readonly bool _renameOnly;
 
     public ProjectRegistrationForm(
         string selectedPath,
@@ -24,7 +23,6 @@ internal sealed class ProjectRegistrationForm : Form
         string suggestedName,
         bool renameOnly = false)
     {
-        _renameOnly = renameOnly;
         Text = renameOnly ? "Rename GitPet project" : "Add project inside repository";
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterParent;
