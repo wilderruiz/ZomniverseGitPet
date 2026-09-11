@@ -244,8 +244,19 @@ public sealed class GuardianForm : Form
             Margin = Padding.Empty,
             BackColor = GuardianTheme.Surface
         };
+        /* ==========================================================================
+           PATCH: WIDEN COMPLETE REPOSITORY STATUS CARD
+           FUNCTION:
+           Increases the complete status-card width while allowing the repository
+           summary and its separator line to use the remaining space.
+
+           DATE.TIME ADDED: 2026-09-11 23:32 +03:00
+
+           REASON:
+           The complete branch name requires more card width without compressing another status column.
+           ========================================================================== */
         repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380));
+        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 600));
 
         var summary = new TableLayoutPanel
         {
@@ -337,18 +348,18 @@ public sealed class GuardianForm : Form
             CellBorderStyle = TableLayoutPanelCellBorderStyle.None
         };
         /* ==========================================================================
-           PATCH: WIDEN STATUS CARD BRANCH COLUMN
+           PATCH: BALANCE WIDENED STATUS CARD COLUMNS
            FUNCTION:
-           Allocates more status-card width to the Guardian and Branch column so
-           longer branch names can display without horizontal clipping.
+           Divides the newly widened status card equally so both Branch and Working
+           Tree receive sufficient horizontal space.
 
-           DATE.TIME ADDED: 2026-09-11 23:27 +03:00
+           DATE.TIME ADDED: 2026-09-11 23:32 +03:00
 
            REASON:
-           Equal status columns leave insufficient width for longer branch names.
+           Unequal columns transfer branch space from Working Tree instead of widening the card.
            ========================================================================== */
-        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
-        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
