@@ -26,6 +26,8 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         _git = git;
         _audit = audit;
         _projectInspector = new ProjectInspector(git);
+        LogicalProjectScopeRuntime.Initialize(_config);
+
         _pet = new PetForm(ShowGuardian, ChooseRepositoryAsync, ExitApplication);
         MainForm = _pet;
         _pet.Show();
@@ -73,13 +75,14 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_config.RepositoryPath) || !Directory.Exists(_config.RepositoryPath))
+        var active = _config.GetActiveProject();
+        if (active is null || !Directory.Exists(active.RepositoryRoot))
         {
             ShowProjectsMenu();
             return;
         }
 
-        await ReconfigureRepositoryAsync(_config.RepositoryPath);
+        await ReconfigureRepositoryAsync(active.RepositoryRoot);
     }
 
     private void InstallProjectSetupMenu(GuardianForm guardian)
@@ -96,11 +99,6 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         menu.Items.Insert(0, setup);
     }
 
-    /* ========================================================================== 
-       PATCH: USER CONNECTION SETTINGS
-       DATE.TIME: 2026-09-10 21:31 +03:00
-       Reopen GitHub or local-only setup anytime.
-       ========================================================================== */
     private void InstallConnectionMenu(GuardianForm guardian)
     {
         var menu = guardian.MainMenuStrip;
@@ -155,17 +153,6 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     private void ShowProjectsMenu()
     {
         _projectsMenu?.Dispose();
-        /* ==========================================================================
-           PATCH: THEMED PROJECTS CONTEXT MENU
-           FUNCTION:
-           Applies GitPet's dark surfaces, typography, spacing, and shared
-           interactive menu renderer to the Projects dropdown.
-
-           DATE.TIME ADDED: 2026-09-11 12:50 +03:00
-
-           REASON:
-           Make the Projects dropdown visually consistent with the Guardian interface.
-           ========================================================================== */
         var menu = new ContextMenuStrip
         {
             ShowImageMargin = false,
@@ -194,17 +181,22 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         {
             foreach (var recent in recents)
             {
-                var available = Directory.Exists(recent.Path);
-                var active = PathEquals(recent.Path, _config.RepositoryPath);
+                var available = Directory.Exists(recent.Path) && Directory.Exists(recent.RepositoryRoot);
+                var active = string.Equals(recent.Id, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase);
                 var label = active ? $"● {recent.DisplayName}" : recent.DisplayName;
                 if (!available) label += "  (unavailable)";
+                var shared = _config.RecentRepositories.Count(other =>
+                    PathEquals(other.RepositoryRoot, recent.RepositoryRoot)) > 1;
                 var item = new ToolStripMenuItem(label)
                 {
                     Enabled = available,
-                    ToolTipText = recent.Path,
+                    ToolTipText = shared
+                        ? $"Project: {recent.Path}\nShared Git repository: {recent.RepositoryRoot}"
+                        : recent.Path,
                     Font = active ? new Font(menu.Font, FontStyle.Bold) : menu.Font
                 };
-                item.Click += async (_, _) => await ActivateRegisteredRepositoryAsync(recent.Path);
+                var projectId = recent.Id;
+                item.Click += async (_, _) => await ActivateRegisteredProjectAsync(projectId);
                 menu.Items.Add(item);
             }
         }
@@ -220,7 +212,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
         var openFolder = new ToolStripMenuItem("Add / open project folder…")
         {
-            ToolTipText = "A folder that is new to GitPet always opens Project Scope first, followed by Repository Hygiene."
+            ToolTipText = "A folder may become its own GitPet project even when several projects share one Git repository."
         };
         openFolder.Click += async (_, _) => await OpenFolderAsync(false);
         menu.Items.Add(openFolder);
@@ -232,17 +224,18 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         prepareFolder.Click += async (_, _) => await OpenFolderAsync(true);
         menu.Items.Add(prepareFolder);
 
-        if (!string.IsNullOrWhiteSpace(_config.RepositoryPath) && Directory.Exists(_config.RepositoryPath))
+        var activeProject = _config.GetActiveProject();
+        if (activeProject is not null && Directory.Exists(activeProject.RepositoryRoot))
         {
             var reconfigure = new ToolStripMenuItem("Reconfigure current project scope…")
             {
-                ToolTipText = "Reopen the folder tree, then review reusable/custom .gitignore rules for this existing repository."
+                ToolTipText = "Change only this GitPet project's local scope. Sibling projects in the same repository are not hidden or rewritten."
             };
-            reconfigure.Click += async (_, _) => await ReconfigureRepositoryAsync(_config.RepositoryPath!);
+            reconfigure.Click += async (_, _) => await ReconfigureRepositoryAsync(activeProject.RepositoryRoot);
             menu.Items.Add(reconfigure);
 
             var hygiene = new ToolStripMenuItem("Review .gitignore suggestions only…");
-            hygiene.Click += async (_, _) => await ReviewGitIgnoreSuggestionsAsync(_config.RepositoryPath!, true);
+            hygiene.Click += async (_, _) => await ReviewGitIgnoreSuggestionsAsync(activeProject.RepositoryRoot, true);
             menu.Items.Add(hygiene);
         }
 
@@ -252,26 +245,37 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             var manage = new ToolStripMenuItem("Manage recent projects");
             foreach (var recent in recents)
             {
-                var active = PathEquals(recent.Path, _config.RepositoryPath);
-                var label = active ? $"Remove {recent.DisplayName}  (current)…" : $"Remove {recent.DisplayName}…";
-                var remove = new ToolStripMenuItem(label)
+                var projectId = recent.Id;
+                var projectMenu = new ToolStripMenuItem(recent.DisplayName);
+
+                var rename = new ToolStripMenuItem("Rename project…")
+                {
+                    ToolTipText = "Change only GitPet's display name. The folder and Git repository are not renamed."
+                };
+                rename.Click += async (_, _) => await RenameProjectAsync(projectId);
+                projectMenu.DropDownItems.Add(rename);
+
+                var active = string.Equals(recent.Id, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase);
+                var remove = new ToolStripMenuItem(active ? "Forget current project…" : "Forget project…")
                 {
                     ToolTipText = "Forget only this GitPet registration. The folder, .git repository, files, commits, remotes, and GitHub repository are untouched."
                 };
-                remove.Click += async (_, _) => await ForgetRecentRepositoryAsync(recent.Path);
-                manage.DropDownItems.Add(remove);
+                remove.Click += async (_, _) => await ForgetRecentProjectAsync(projectId);
+                projectMenu.DropDownItems.Add(remove);
+                manage.DropDownItems.Add(projectMenu);
             }
 
-            if (_config.RecentRepositories.Any(item => !Directory.Exists(item.Path)))
+            if (_config.RecentRepositories.Any(item => !Directory.Exists(item.Path) || !Directory.Exists(item.RepositoryRoot)))
             {
                 manage.DropDownItems.Add(new ToolStripSeparator());
                 var forgetMissing = new ToolStripMenuItem("Forget all unavailable projects");
                 forgetMissing.Click += async (_, _) =>
                 {
-                    var activeWasUnavailable = !string.IsNullOrWhiteSpace(_config.RepositoryPath) && !Directory.Exists(_config.RepositoryPath);
+                    var activeBefore = _config.ActiveProjectId;
                     _config.ForgetUnavailableRepositories();
                     _configStore.Save(_config);
-                    if (activeWasUnavailable) await RefreshAsync(true);
+                    if (!string.Equals(activeBefore, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase))
+                        await RefreshAsync(true);
                 };
                 manage.DropDownItems.Add(forgetMissing);
             }
@@ -306,7 +310,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         });
 
         _pet.ShowGuidance("✅ REPOSITORY COPIED\nNow choose what I guard");
-        await ReconfigureRepositoryAsync(root);
+        await ConfigureProjectAsync(root, root, GetFolderName(root), null, null);
     }
 
     private async Task OpenFolderAsync(bool preparationRequested)
@@ -315,10 +319,10 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         {
             Description = preparationRequested
                 ? "Choose a folder to prepare or reconfigure. GitPet will show Project Scope first, then Repository Hygiene."
-                : "Choose a project folder. If it is new to GitPet, Project Scope and Repository Hygiene will open before the Guardian.",
+                : "Choose a project folder. A folder inside a larger repository can still be its own GitPet project.",
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true,
-            InitialDirectory = _config.RepositoryPath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            InitialDirectory = _config.GetActiveProject()?.Path ?? _config.RepositoryPath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
         };
         if (dialog.ShowDialog(DialogOwner) != DialogResult.OK) return;
 
@@ -333,29 +337,57 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             case ProjectSuitability.Ready:
             {
                 var root = inspection.RepositoryRoot!;
-                var alreadyRegistered = IsRecentRepository(root);
-
-                // Opening a folder for the first time in GitPet is onboarding, even when Git already exists.
-                // The canonical onboarding flow is always Scope -> Hygiene -> Guardian.
-                if (preparationRequested || !alreadyRegistered)
-                    await ReconfigureRepositoryAsync(root);
+                var existing = _config.FindProjectByPath(inspection.SelectedPath);
+                if (!preparationRequested && existing is not null)
+                    await ActivateRegisteredProjectAsync(existing.Id);
                 else
-                    await ActivateRepositoryAsync(root);
+                    await ConfigureProjectAsync(
+                        root,
+                        inspection.SelectedPath,
+                        existing?.DisplayName ?? GetFolderName(inspection.SelectedPath),
+                        existing?.Id,
+                        GetConfiguredScope(existing));
                 break;
             }
             case ProjectSuitability.NestedRepository:
             {
-                var answer = MessageBox.Show(DialogOwner,
-                    inspection.Message + "\r\n\r\nUse the existing repository root instead?\r\n\r\n" +
-                    "ZomniverseGitPet will not create a nested repository automatically.",
-                    "Existing parent repository found", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-                if (answer == DialogResult.Yes && !string.IsNullOrWhiteSpace(inspection.RepositoryRoot))
+                if (string.IsNullOrWhiteSpace(inspection.RepositoryRoot)) break;
+                var root = inspection.RepositoryRoot;
+                var selected = inspection.SelectedPath;
+                var existing = _config.FindProjectByPath(selected);
+                if (!preparationRequested && existing is not null)
                 {
-                    var root = inspection.RepositoryRoot;
-                    if (preparationRequested || !IsRecentRepository(root))
-                        await ReconfigureRepositoryAsync(root);
-                    else
-                        await ActivateRepositoryAsync(root);
+                    await ActivateRegisteredProjectAsync(existing.Id);
+                    break;
+                }
+
+                using var registration = new ProjectRegistrationForm(
+                    selected,
+                    root,
+                    existing?.DisplayName ?? GetFolderName(selected));
+                if (registration.ShowDialog(DialogOwner) != DialogResult.OK) break;
+
+                if (registration.SelectedAction == ProjectRegistrationAction.UseWholeRepository)
+                {
+                    var rootProject = _config.FindProjectByPath(root);
+                    await ConfigureProjectAsync(
+                        root,
+                        root,
+                        rootProject?.DisplayName ?? GetFolderName(root),
+                        rootProject?.Id,
+                        GetConfiguredScope(rootProject));
+                    break;
+                }
+
+                if (registration.SelectedAction == ProjectRegistrationAction.AddProject)
+                {
+                    var initialScope = GetConfiguredScope(existing) ?? BuildDefaultNestedScope(root, selected);
+                    await ConfigureProjectAsync(
+                        root,
+                        selected,
+                        registration.ProjectName,
+                        existing?.Id,
+                        initialScope);
                 }
                 break;
             }
@@ -407,18 +439,58 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 ".gitignore update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
-        await _audit.WriteAsync("repository_initialized", new { repository = root, branch = "main", gitignoreRulesAdded = addedRules });
-        await ActivateRepositoryAsync(root);
+        var plan = preparation.ScopePlan ?? ProjectScopePlanner.Create(root, [], trackEverything: true);
+        var entry = _config.RememberProject(
+            root,
+            root,
+            GetFolderName(root),
+            plan.TrackEverything,
+            plan.Entries);
+        _configStore.Save(_config);
+        ResetProjectState();
+
+        await _audit.WriteAsync("repository_initialized", new
+        {
+            repository = root,
+            projectId = entry.Id,
+            branch = "main",
+            gitignoreRulesAdded = addedRules,
+            scopeEntries = plan.Entries.Count
+        });
+        await RefreshAsync(true);
 
         MessageBox.Show(DialogOwner,
-            $"Project ready ✓\r\n\r\nLocal repository: {root}\r\n.gitignore rules added: {addedRules}\r\n\r\n" +
+            $"Project ready ✓\r\n\r\nGitPet project: {entry.DisplayName}\r\nLocal repository: {root}\r\n.gitignore rules added: {addedRules}\r\n\r\n" +
             "No remote was created. No files were staged or committed. Nothing was pushed.",
             "Project prepared", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private async Task ReconfigureRepositoryAsync(string repositoryPath)
     {
-        if (!Directory.Exists(repositoryPath)) return;
+        var active = _config.GetActiveProject();
+        var root = repositoryPath;
+        var projectPath = active is not null && PathEquals(active.RepositoryRoot, repositoryPath)
+            ? active.Path
+            : repositoryPath;
+        var displayName = active is not null && PathEquals(active.RepositoryRoot, repositoryPath)
+            ? active.DisplayName
+            : GetFolderName(projectPath);
+        var projectId = active is not null && PathEquals(active.RepositoryRoot, repositoryPath)
+            ? active.Id
+            : null;
+        var initialScope = GetConfiguredScope(active);
+
+        await ConfigureProjectAsync(root, projectPath, displayName, projectId, initialScope);
+    }
+
+    private async Task ConfigureProjectAsync(
+        string repositoryPath,
+        string projectPath,
+        string displayName,
+        string? projectId,
+        IReadOnlyList<ProjectScopeEntry>? initialScope)
+    {
+        if (!Directory.Exists(repositoryPath) || !Directory.Exists(projectPath)) return;
         var rootResult = await _git.GetRepositoryRootAsync(repositoryPath, _lifetime.Token);
         if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
         {
@@ -429,37 +501,67 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
 
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootResult.Output.Trim()));
+        var normalizedProject = Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectPath));
+        var restored = initialScope ?? ProjectGitIgnoreComposer.ReadManagedScope(root);
+        if (restored is null && !PathEquals(root, normalizedProject))
+            restored = BuildDefaultNestedScope(root, normalizedProject);
+
         var suggestions = GitIgnoreAdvisor.Suggest(root);
-        using var preparation = new ProjectPreparationForm(root, suggestions, initializeGit: false, chooseScope: true);
+        using var preparation = new ProjectPreparationForm(
+            root,
+            suggestions,
+            initializeGit: false,
+            chooseScope: true,
+            initialScope: restored);
         if (preparation.ShowDialog(DialogOwner) != DialogResult.OK) return;
 
         try
         {
             ProjectGitIgnoreComposer.SplitCombinedRules(
                 preparation.AcceptedRules,
-                out var scopeRules,
+                out _,
                 out var suggestionRules);
-            var changed = ProjectGitIgnoreComposer.ApplyReplacingScope(root, scopeRules, suggestionRules);
 
-            await _audit.WriteAsync("repository_scope_reviewed", new
+            // Any old GitPet managed scope is migrated out of .gitignore. Scope now belongs
+            // to the logical project registration, so sibling projects remain visible to Git.
+            var gitignoreChanged = ProjectGitIgnoreComposer.ApplyReplacingScope(root, [], suggestionRules);
+            var plan = preparation.ScopePlan ?? ProjectScopePlanner.Create(root, [], trackEverything: true);
+            var entry = _config.RememberProject(
+                normalizedProject,
+                root,
+                displayName,
+                plan.TrackEverything,
+                plan.Entries,
+                projectId);
+            _configStore.Save(_config);
+            ResetProjectState();
+
+            await _audit.WriteAsync("logical_project_configured", new
             {
+                projectId = entry.Id,
+                project = entry.DisplayName,
+                projectPath = entry.Path,
                 repository = root,
-                gitignoreChanged = changed,
-                scopeRules,
+                gitignoreChanged,
+                trackEverything = entry.TrackEverything,
+                scopeEntries = entry.ScopeEntries.Select(scope => scope.RelativePath).ToArray(),
                 suggestionRules
             });
-            await ActivateRepositoryAsync(root);
+            await RefreshAsync(true);
 
+            var sharedCount = _config.RecentRepositories.Count(item => PathEquals(item.RepositoryRoot, root));
             MessageBox.Show(DialogOwner,
-                "Project setup saved ✓\r\n\r\n" +
-                $"Repository: {root}\r\nRoot .gitignore changed: {(changed ? "yes" : "no")}\r\n\r\n" +
-                "GitPet did not run git init again. No files were staged or committed, no remote was changed, and nothing was pushed.",
+                "GitPet project saved ✓\r\n\r\n" +
+                $"Project name: {entry.DisplayName}\r\nProject folder: {entry.Path}\r\nShared repository: {root}\r\n" +
+                $"GitPet projects using this repository: {sharedCount}\r\nRoot .gitignore changed: {(gitignoreChanged ? "yes" : "no")}\r\n\r\n" +
+                "Save is limited to this project's scope. Get, Send and Reconcile still use the shared repository history. " +
+                "No commit, pull, push, or nested repository was created by project setup.",
                 "Project setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
             MessageBox.Show(DialogOwner,
-                "GitPet could not apply the approved project scope/.gitignore rules. No commit, pull, or push was attempted.\r\n\r\n" + ex.Message,
+                "GitPet could not apply the approved project registration/.gitignore changes. No commit, pull, or push was attempted.\r\n\r\n" + ex.Message,
                 "Project setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
@@ -497,39 +599,94 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
     }
 
-    private async Task ForgetRecentRepositoryAsync(string path)
+    private async Task RenameProjectAsync(string projectId)
     {
-        var recent = _config.RecentRepositories.FirstOrDefault(item => PathEquals(item.Path, path));
+        var project = _config.FindProject(projectId);
+        if (project is null) return;
+
+        using var dialog = new ProjectRegistrationForm(
+            project.Path,
+            project.RepositoryRoot,
+            project.DisplayName,
+            renameOnly: true);
+        if (dialog.ShowDialog(DialogOwner) != DialogResult.OK ||
+            dialog.SelectedAction != ProjectRegistrationAction.Rename) return;
+
+        if (!_config.RenameProject(projectId, dialog.ProjectName)) return;
+        _configStore.Save(_config);
+        await _audit.WriteAsync("logical_project_renamed", new
+        {
+            projectId,
+            project = dialog.ProjectName,
+            repository = project.RepositoryRoot
+        });
+        await RefreshAsync(true);
+    }
+
+    private async Task ForgetRecentProjectAsync(string projectId)
+    {
+        var recent = _config.FindProject(projectId);
         if (recent is null) return;
-        var wasActive = PathEquals(path, _config.RepositoryPath);
+        var wasActive = string.Equals(projectId, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase);
 
         var answer = MessageBox.Show(DialogOwner,
             $"Forget '{recent.DisplayName}' from GitPet?\r\n\r\n" +
-            "This removes only GitPet's recent-project registration and its saved local test-command profile.\r\n\r\n" +
+            "This removes only this GitPet project registration, its local scope, and its saved local test-command profile.\r\n\r\n" +
             "It does NOT delete the folder, remove .git, change .gitignore, erase commits, remove remotes, or delete anything from GitHub. " +
-            "You can select this same folder again immediately.",
+            "Other GitPet projects that share the same repository are untouched.",
             "Forget recent project", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (answer != DialogResult.Yes) return;
 
-        if (!_config.ForgetRepository(path)) return;
+        if (!_config.ForgetProject(projectId)) return;
         _configStore.Save(_config);
-        _statusFingerprint = "";
-        _lastAutomaticFingerprint = "";
-        _lastChangeAt = DateTimeOffset.UtcNow;
-        await _audit.WriteAsync("repository_forgotten", new { repository = path, wasActive });
+        ResetProjectState();
+        await _audit.WriteAsync("logical_project_forgotten", new
+        {
+            projectId,
+            project = recent.DisplayName,
+            repository = recent.RepositoryRoot,
+            wasActive
+        });
 
-        if (wasActive)
-            await RefreshAsync(true);
+        if (wasActive) await RefreshAsync(true);
     }
 
-    private async Task ActivateRegisteredRepositoryAsync(string path)
+    private async Task ActivateRegisteredProjectAsync(string projectId)
     {
-        if (!Directory.Exists(path)) return;
-        var inspection = await _projectInspector.InspectAsync(path, _lifetime.Token);
-        if (inspection.Suitability == ProjectSuitability.Ready && !string.IsNullOrWhiteSpace(inspection.RepositoryRoot))
-            await ActivateRepositoryAsync(inspection.RepositoryRoot);
-        else
-            await HandleInspectionAsync(inspection, false);
+        var project = _config.FindProject(projectId);
+        if (project is null || !Directory.Exists(project.Path) || !Directory.Exists(project.RepositoryRoot)) return;
+
+        var rootResult = await _git.GetRepositoryRootAsync(project.Path, _lifetime.Token);
+        if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
+        {
+            MessageBox.Show(DialogOwner,
+                "That project is no longer inside a readable Git repository.\r\n\r\n" + rootResult.Output,
+                "Open project", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var actualRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootResult.Output.Trim()));
+        if (!PathEquals(actualRoot, project.RepositoryRoot))
+        {
+            MessageBox.Show(DialogOwner,
+                "This project's Git repository root changed since it was registered.\r\n\r\n" +
+                $"Saved root: {project.RepositoryRoot}\r\nCurrent root: {actualRoot}\r\n\r\n" +
+                "Forget and add the project again so GitPet can rebuild its scope safely.",
+                "Project root changed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        _config.ActivateProject(projectId);
+        _configStore.Save(_config);
+        ResetProjectState();
+        await _audit.WriteAsync("logical_project_selected", new
+        {
+            projectId,
+            project = project.DisplayName,
+            projectPath = project.Path,
+            repository = project.RepositoryRoot
+        });
+        await RefreshAsync(true);
     }
 
     private async Task ActivateRepositoryAsync(string path)
@@ -543,12 +700,22 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
 
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootResult.Output.Trim()));
-        _config.RememberRepository(root);
+        var existing = _config.FindProjectByPath(path) ?? _config.FindProjectByPath(root);
+        if (existing is not null)
+        {
+            await ActivateRegisteredProjectAsync(existing.Id);
+            return;
+        }
+
+        var entry = _config.RememberProject(root, root, GetFolderName(root), true, []);
         _configStore.Save(_config);
-        _statusFingerprint = "";
-        _lastAutomaticFingerprint = "";
-        _lastChangeAt = DateTimeOffset.UtcNow;
-        await _audit.WriteAsync("repository_selected", new { repository = root });
+        ResetProjectState();
+        await _audit.WriteAsync("logical_project_selected", new
+        {
+            projectId = entry.Id,
+            project = entry.DisplayName,
+            repository = root
+        });
         await RefreshAsync(true);
     }
 
@@ -657,8 +824,37 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private IWin32Window DialogOwner => _guardian is { Visible: true, IsDisposed: false } ? _guardian : _pet;
 
-    private bool IsRecentRepository(string path) =>
-        _config.RecentRepositories.Any(item => PathEquals(item.Path, path));
+    private static IReadOnlyList<ProjectScopeEntry>? GetConfiguredScope(RecentRepositoryEntry? project)
+    {
+        if (project is null || project.TrackEverything) return null;
+        var entries = (project.ScopeEntries ?? [])
+            .Where(item => !string.IsNullOrWhiteSpace(item.RelativePath))
+            .Select(item => new ProjectScopeEntry(item.RelativePath, item.IsDirectory))
+            .ToArray();
+        return entries.Length == 0 ? null : entries;
+    }
+
+    private static IReadOnlyList<ProjectScopeEntry> BuildDefaultNestedScope(string repositoryRoot, string projectPath)
+    {
+        var relative = LogicalProjectScopeRuntime.TryGetRelativePath(repositoryRoot, projectPath);
+        return string.IsNullOrWhiteSpace(relative)
+            ? []
+            : [new ProjectScopeEntry(relative, IsDirectory: true)];
+    }
+
+    private void ResetProjectState()
+    {
+        _statusFingerprint = "";
+        _lastAutomaticFingerprint = "";
+        _lastChangeAt = DateTimeOffset.UtcNow;
+    }
+
+    private static string GetFolderName(string path)
+    {
+        var normalized = Path.TrimEndingDirectorySeparator(path);
+        var name = Path.GetFileName(normalized);
+        return string.IsNullOrWhiteSpace(name) ? normalized : name;
+    }
 
     private static bool PathEquals(string? left, string? right)
     {
