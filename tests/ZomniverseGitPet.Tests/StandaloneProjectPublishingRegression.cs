@@ -45,14 +45,31 @@ internal static class StandaloneProjectPublishingRegression
                 pathspecs.Contains("unrelated"))
                 throw new InvalidOperationException("Publishing pathspecs escaped the logical project scope.");
 
-            var files = StandaloneProjectPublishing
-                .GetTrackedScopeFilesAsync(config, service, root)
-                .GetAwaiter().GetResult();
+            var firstSnapshot = StandaloneProjectPublishing
+                .BuildSnapshotAsync(config, service, root)
+                .GetAwaiter().GetResult()
+                ?? throw new InvalidOperationException("Standalone snapshot was not created.");
+            var files = firstSnapshot.Files;
             if (!files.Contains("selected/keep.txt") ||
                 !files.Contains("selected/second.txt") ||
                 !files.Contains("root-selected.txt") ||
                 files.Contains("unrelated/never-send.txt"))
                 throw new InvalidOperationException("Standalone snapshot included an unrelated parent file.");
+
+            /* ==========================================================================
+               PATCH: CONTENT FINGERPRINT REGRESSION
+               DATE.TIME: 2026-09-11 20:43 +03:00
+               Same-path edits must make the project publishable again.
+               ========================================================================== */
+            File.WriteAllText(Path.Combine(root, "selected", "keep.txt"), "keep changed");
+            RunGit(root, "add", "--", "selected/keep.txt");
+            RunGit(root, "commit", "-m", "change selected content");
+            var secondSnapshot = StandaloneProjectPublishing
+                .BuildSnapshotAsync(config, service, root)
+                .GetAwaiter().GetResult()
+                ?? throw new InvalidOperationException("Updated standalone snapshot was not created.");
+            if (string.Equals(firstSnapshot.Fingerprint, secondSnapshot.Fingerprint, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Standalone fingerprint ignored a same-path content change.");
 
             var workspace = StandaloneProjectPublishing.GetWorkspacePath(project);
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -65,7 +82,7 @@ internal static class StandaloneProjectPublishingRegression
                     "https://github.com/wilderruiz/zar-ai-v2"))
                 throw new InvalidOperationException("Equivalent GitHub remote URLs stopped matching.");
 
-            Console.WriteLine("Standalone project publishing regression passed (selected scope excludes unrelated parent files).");
+            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint).");
         }
         finally
         {
