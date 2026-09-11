@@ -9,11 +9,12 @@ public static class ProjectTestAdvisor
         var suggestions = new List<string>();
         if (string.IsNullOrWhiteSpace(repositoryPath) || !Directory.Exists(repositoryPath)) return suggestions;
 
-        SuggestNode(repositoryPath, suggestions);
-        SuggestDotNet(repositoryPath, suggestions);
-        SuggestPython(repositoryPath, suggestions);
-        SuggestComposer(repositoryPath, suggestions);
-        SuggestCargo(repositoryPath, suggestions);
+        var projectPath = LogicalProjectScopeRuntime.GetWorkingDirectory(repositoryPath);
+        SuggestNode(projectPath, suggestions);
+        SuggestDotNet(projectPath, suggestions);
+        SuggestPython(projectPath, suggestions);
+        SuggestComposer(projectPath, suggestions);
+        SuggestCargo(projectPath, suggestions);
 
         return suggestions
             .Distinct(StringComparer.OrdinalIgnoreCase)

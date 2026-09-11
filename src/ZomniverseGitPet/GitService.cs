@@ -40,9 +40,18 @@ public sealed class GitService(AuditLog audit)
         if (string.IsNullOrWhiteSpace(repositoryPath) || !Directory.Exists(repositoryPath))
             return RepositoryStatus.Failure("Choose a Git repository to begin.");
 
-        var result = await RunGitAsync(repositoryPath,
-            ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],
-            TimeSpan.FromSeconds(20), token);
+        var arguments = new List<string>
+        {
+            "status", "--porcelain=v2", "--branch", "--untracked-files=all"
+        };
+        var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(repositoryPath, includeRootGitIgnore: true);
+        if (pathspecs.Count > 0)
+        {
+            arguments.Add("--");
+            arguments.AddRange(pathspecs);
+        }
+
+        var result = await RunGitAsync(repositoryPath, arguments, TimeSpan.FromSeconds(20), token);
         if (!result.Success)
             return RepositoryStatus.Failure(result.Output.Length == 0 ? "Git status failed." : result.Output);
 
@@ -272,8 +281,42 @@ public sealed class GitService(AuditLog audit)
 
     public async Task<CheckpointResult> CreateCheckpointAsync(string path, string message, CancellationToken token = default)
     {
-        var stage = await RunGitAsync(path, ["add", "-A"], TimeSpan.FromMinutes(1), token);
-        await audit.WriteAsync("git_stage", new { success = stage.Success });
+        var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(path, includeRootGitIgnore: true);
+        if (pathspecs.Count > 0)
+        {
+            var staged = await RunGitAsync(path, ["diff", "--cached", "--name-only"], TimeSpan.FromSeconds(20), token);
+            if (!staged.Success)
+                return new(false, "GitPet could not verify the staged-file boundary before saving: " + staged.Output);
+
+            var outside = staged.Output
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(file => !LogicalProjectScopeRuntime.ContainsPath(path, file))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (outside.Length > 0)
+            {
+                return new(false,
+                    "Git already has staged changes outside this GitPet project's scope. GitPet stopped before creating a commit.\r\n\r\n" +
+                    string.Join("\r\n", outside.Take(12)) +
+                    (outside.Length > 12 ? $"\r\n… and {outside.Length - 12} more" : "") +
+                    "\r\n\r\nSave or unstage those changes from their own project first.");
+            }
+        }
+
+        var stageArguments = new List<string> { "add", "-A" };
+        if (pathspecs.Count > 0)
+        {
+            stageArguments.Add("--");
+            stageArguments.AddRange(pathspecs);
+        }
+
+        var stage = await RunGitAsync(path, stageArguments, TimeSpan.FromMinutes(1), token);
+        await audit.WriteAsync("git_stage", new
+        {
+            success = stage.Success,
+            projectScoped = pathspecs.Count > 0,
+            pathspecCount = pathspecs.Count
+        });
         if (!stage.Success) return new(false, "Staging failed: " + stage.Output);
 
         var commit = await RunGitAsync(path, ["commit", "-m", message], TimeSpan.FromMinutes(2), token);
@@ -285,15 +328,29 @@ public sealed class GitService(AuditLog audit)
 
         var hash = await RunGitAsync(path, ["rev-parse", "HEAD"], cancellationToken: token);
         var value = hash.Success ? hash.Output.Trim() : null;
-        await audit.WriteAsync("checkpoint_created", new { commitHash = value, message });
+        await audit.WriteAsync("checkpoint_created", new
+        {
+            commitHash = value,
+            message,
+            project = LogicalProjectScopeRuntime.DisplayName,
+            projectScoped = pathspecs.Count > 0
+        });
         return new(true, $"Checkpoint created.\r\n\r\n{value}", value);
     }
 
     public async Task<CommandResult> RunTestCommandAsync(string path, string command, CancellationToken token = default)
     {
-        var result = await RunProcessAsync("cmd.exe", ["/d", "/s", "/c", command], path,
+        var workingDirectory = LogicalProjectScopeRuntime.GetWorkingDirectory(path);
+        var result = await RunProcessAsync("cmd.exe", ["/d", "/s", "/c", command], workingDirectory,
             TimeSpan.FromMinutes(10), token);
-        await audit.WriteAsync("test_run", new { command, success = result.Success, result.ExitCode, result.TimedOut });
+        await audit.WriteAsync("test_run", new
+        {
+            command,
+            workingDirectory,
+            success = result.Success,
+            result.ExitCode,
+            result.TimedOut
+        });
         return result;
     }
 

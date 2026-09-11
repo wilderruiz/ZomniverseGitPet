@@ -50,7 +50,11 @@ internal static class GuardianWorkboardRuntime
                 .ToArray();
 
             RemoveClosedBoards(guardians);
-            foreach (var guardian in guardians) EnsureWorkboard(guardian);
+            foreach (var guardian in guardians)
+            {
+                EnsureWorkboard(guardian);
+                ApplyLogicalProjectIdentity(guardian);
+            }
             if (guardians.Length == 0) return;
 
             var activeBoards = guardians
@@ -140,6 +144,28 @@ internal static class GuardianWorkboardRuntime
         var host = new BoardHost(guardian, board, legacyEmpty);
         Boards.Add(guardian, host);
         guardian.Disposed += (_, _) => Boards.Remove(guardian);
+    }
+
+    /* ==========================================================================
+       PATCH: LOGICAL PROJECT HEADER
+       DATE.TIME: 2026-09-11 14:12 +03:00
+       Show GitPet project name instead of shared repository folder.
+       ========================================================================== */
+    private static void ApplyLogicalProjectIdentity(GuardianForm guardian)
+    {
+        if (_config is null) return;
+        var active = _config.GetActiveProject();
+        var displayName = active?.DisplayName;
+        if (string.IsNullOrWhiteSpace(displayName)) return;
+
+        var title = EnumerateControls(guardian)
+            .OfType<Label>()
+            .FirstOrDefault(label =>
+                label.Text.StartsWith("ZOMNIVERSE GITPET  /", StringComparison.OrdinalIgnoreCase));
+        if (title is null) return;
+
+        var expected = $"ZOMNIVERSE GITPET  /  {displayName.ToUpperInvariant()}";
+        if (!string.Equals(title.Text, expected, StringComparison.Ordinal)) title.Text = expected;
     }
 
     private static bool IsWorkingTreeGrid(DataGridView grid)
