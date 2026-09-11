@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace ZomniverseGitPet;
 
@@ -6,6 +7,17 @@ internal sealed record GitHubAccountStatus(
     bool CliAvailable,
     bool Authenticated,
     string Login,
+    string Message);
+
+internal sealed record GitHubRepositoryCandidate(
+    string NameWithOwner,
+    string Url,
+    DateTimeOffset? UpdatedAt,
+    int MatchScore);
+
+internal sealed record GitHubRepositoryCreationResult(
+    bool Success,
+    string RepositoryUrl,
     string Message);
 
 internal sealed class GitHubAccountService
@@ -63,6 +75,189 @@ internal sealed class GitHubAccountService
 
         return new(true, true, user, message);
     }
+
+    /* ==========================================================================
+       PATCH: GITHUB REPOSITORY DISCOVERY
+       DATE.TIME: 2026-09-11 18:13 +03:00
+       Find likely repository matches for the active GitPet project.
+       ========================================================================== */
+    public async Task<IReadOnlyList<GitHubRepositoryCandidate>> FindRepositoriesAsync(
+        string login,
+        IEnumerable<string> hints,
+        CancellationToken token = default)
+    {
+        var executable = FindGitHubCliExecutable();
+        if (string.IsNullOrWhiteSpace(executable)) return [];
+        if (string.IsNullOrWhiteSpace(login)) return [];
+
+        var result = await RunProcessAsync(
+            executable,
+            [
+                "repo", "list", login.Trim(),
+                "--limit", "200",
+                "--json", "nameWithOwner,url,updatedAt",
+                "--jq", ".[] | [.nameWithOwner, .url, .updatedAt] | @tsv"
+            ],
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            TimeSpan.FromSeconds(45),
+            token);
+
+        if (!result.Success)
+        {
+            await _audit.WriteAsync("github_repository_discovery", new { success = false });
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(result.Output)
+                    ? "GitHub did not return the repository list."
+                    : result.Output);
+        }
+
+        var normalizedHints = hints
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(NormalizeRepositoryHint)
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var candidates = new List<GitHubRepositoryCandidate>();
+        foreach (var line in result.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split('\t');
+            if (parts.Length < 2) continue;
+            var nameWithOwner = parts[0].Trim();
+            var url = parts[1].Trim();
+            if (nameWithOwner.Length == 0 || url.Length == 0) continue;
+
+            DateTimeOffset? updated = null;
+            if (parts.Length > 2 && DateTimeOffset.TryParse(parts[2].Trim(), out var parsed)) updated = parsed;
+            var repositoryName = nameWithOwner.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? nameWithOwner;
+            var score = ScoreRepositoryCandidate(repositoryName, normalizedHints);
+            candidates.Add(new(nameWithOwner, url, updated, score));
+        }
+
+        var ordered = candidates
+            .OrderByDescending(item => item.MatchScore)
+            .ThenByDescending(item => item.UpdatedAt ?? DateTimeOffset.MinValue)
+            .Take(12)
+            .ToArray();
+
+        await _audit.WriteAsync("github_repository_discovery", new
+        {
+            success = true,
+            candidates = ordered.Length
+        });
+        return ordered;
+    }
+
+    /* ==========================================================================
+       PATCH: EMPTY GITHUB REPOSITORY CREATION
+       DATE.TIME: 2026-09-11 18:13 +03:00
+       Create an online home without pushing local work automatically.
+       ========================================================================== */
+    public async Task<GitHubRepositoryCreationResult> CreateRepositoryAsync(
+        string owner,
+        string repositoryName,
+        bool isPrivate,
+        string description,
+        CancellationToken token = default)
+    {
+        var executable = FindGitHubCliExecutable();
+        if (string.IsNullOrWhiteSpace(executable))
+            return new(false, string.Empty, "GitHub CLI could not be located.");
+
+        owner = owner.Trim();
+        var name = SuggestRepositoryName(repositoryName);
+        if (owner.Length == 0 || name.Length == 0)
+            return new(false, string.Empty, "A GitHub owner and repository name are required.");
+
+        var arguments = new List<string>
+        {
+            "repo", "create", $"{owner}/{name}", isPrivate ? "--private" : "--public"
+        };
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            arguments.Add("--description");
+            arguments.Add(description.Trim());
+        }
+
+        var result = await RunProcessAsync(
+            executable,
+            arguments,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            TimeSpan.FromMinutes(2),
+            token);
+
+        var url = $"https://github.com/{owner}/{name}.git";
+        await _audit.WriteAsync("github_repository_created", new
+        {
+            owner,
+            repository = name,
+            visibility = isPrivate ? "private" : "public",
+            success = result.Success
+        });
+
+        return result.Success
+            ? new(true, url, "Repository created. Nothing has been pushed.")
+            : new(false, string.Empty,
+                string.IsNullOrWhiteSpace(result.Output)
+                    ? "GitHub could not create the repository."
+                    : result.Output);
+    }
+
+    internal static string SuggestRepositoryName(string? value)
+    {
+        var input = (value ?? string.Empty).Trim().ToLowerInvariant();
+        if (input.Length == 0) return string.Empty;
+
+        var builder = new StringBuilder(input.Length);
+        var pendingDash = false;
+        foreach (var character in input)
+        {
+            if (char.IsLetterOrDigit(character) || character is '.' or '_')
+            {
+                if (pendingDash && builder.Length > 0 && builder[^1] != '-') builder.Append('-');
+                builder.Append(character);
+                pendingDash = false;
+            }
+            else if (character == '-')
+            {
+                if (builder.Length > 0 && builder[^1] != '-') builder.Append('-');
+                pendingDash = false;
+            }
+            else
+            {
+                pendingDash = true;
+            }
+        }
+
+        return builder.ToString().Trim('-', '.');
+    }
+
+    internal static int ScoreRepositoryCandidate(string repositoryName, IEnumerable<string> normalizedHints)
+    {
+        var candidate = NormalizeRepositoryHint(repositoryName);
+        if (candidate.Length == 0) return 0;
+
+        var score = 0;
+        foreach (var hint in normalizedHints)
+        {
+            if (hint.Length == 0) continue;
+            if (candidate.Equals(hint, StringComparison.OrdinalIgnoreCase))
+                score = Math.Max(score, 100);
+            else if (candidate.Contains(hint, StringComparison.OrdinalIgnoreCase) ||
+                     hint.Contains(candidate, StringComparison.OrdinalIgnoreCase))
+                score = Math.Max(score, 70);
+            else
+            {
+                var common = candidate.Zip(hint).TakeWhile(pair => pair.First == pair.Second).Count();
+                if (common >= Math.Min(4, Math.Min(candidate.Length, hint.Length)))
+                    score = Math.Max(score, 30 + common);
+            }
+        }
+        return score;
+    }
+
+    private static string NormalizeRepositoryHint(string value) =>
+        new(value.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
 
     public bool LaunchInstall(IWin32Window? owner = null)
     {
