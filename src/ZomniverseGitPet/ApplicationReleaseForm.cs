@@ -42,8 +42,19 @@ internal sealed class ApplicationReleaseForm : Form
             RowCount = 5,
             BackColor = GuardianTheme.Window
         };
+        /* ==========================================================================
+           PATCH: INCREASE RELEASE PACKAGE SUMMARY HEIGHT
+           FUNCTION:
+           Gives the package summary card enough vertical space to display every
+           version, repository, source, asset, and authentication detail.
+
+           DATE.TIME ADDED: 2026-09-11 23:15 +03:00
+
+           REASON:
+           The fixed package-summary row clips its final detail lines.
+           ========================================================================== */
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 94));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 174));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 230));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 94));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
