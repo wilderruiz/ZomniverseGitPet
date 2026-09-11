@@ -63,6 +63,7 @@ internal sealed class ProjectPreparationForm : Form
         try
         {
             ProjectScopePlan plan;
+            string? allowListText = null;
             var legacyScope = _initializeGit
                 ? null
                 : ProjectGitIgnoreComposer.ReadManagedScope(_folderPath);
@@ -100,6 +101,7 @@ internal sealed class ProjectPreparationForm : Form
                 }
                 plan = scope.ScopePlan;
                 _projectName = scope.ProjectName;
+                allowListText = ProjectAllowListUiBridge.ReadText(scope);
             }
             else
             {
@@ -125,6 +127,15 @@ internal sealed class ProjectPreparationForm : Form
             {
                 Finish(DialogResult.Cancel);
                 return;
+            }
+
+            if (_chooseScope && allowListText is not null)
+            {
+                ProjectAllowListUiBridge.Persist(
+                    _folderPath,
+                    _projectPath,
+                    _projectName,
+                    allowListText);
             }
 
             // Old versions encoded project scope into the root .gitignore. Preserve that

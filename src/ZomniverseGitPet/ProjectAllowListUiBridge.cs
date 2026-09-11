@@ -13,9 +13,7 @@ internal static class ProjectAllowListUiBridge
         string projectPath,
         string projectName)
     {
-        var editor = EnumerateControls(scope)
-            .OfType<TextBox>()
-            .FirstOrDefault(textBox => textBox.Multiline);
+        var editor = FindEditor(scope);
         if (editor is null) return;
 
         var status = EnumerateControls(scope)
@@ -79,31 +77,38 @@ internal static class ProjectAllowListUiBridge
             };
             actions.Controls.Add(compare);
         }
-
-        scope.FormClosed += (_, _) =>
-        {
-            if (scope.DialogResult != DialogResult.OK) return;
-            try
-            {
-                var currentConfig = new ConfigStore().Load();
-                var currentProject = ResolveProject(
-                    currentConfig,
-                    repositoryRoot,
-                    projectPath,
-                    scope.ProjectName);
-                store.Save(
-                    currentProject?.Id ?? projectId,
-                    repositoryRoot,
-                    projectPath,
-                    scope.ProjectName,
-                    editor.Text);
-            }
-            catch
-            {
-                // Persisting the convenience source list must never destabilize project setup.
-            }
-        };
     }
+
+    public static string ReadText(ProjectScopeSelectionForm scope) =>
+        FindEditor(scope)?.Text ?? string.Empty;
+
+    public static void Persist(
+        string repositoryRoot,
+        string projectPath,
+        string projectName,
+        string? text)
+    {
+        try
+        {
+            var config = new ConfigStore().Load();
+            var project = ResolveProject(config, repositoryRoot, projectPath, projectName);
+            new ProjectAllowListStore().Save(
+                project?.Id,
+                repositoryRoot,
+                projectPath,
+                projectName,
+                text);
+        }
+        catch
+        {
+            // Allow-list source persistence must never destabilize project setup.
+        }
+    }
+
+    private static TextBox? FindEditor(Control scope) =>
+        EnumerateControls(scope)
+            .OfType<TextBox>()
+            .FirstOrDefault(textBox => textBox.Multiline);
 
     private static RecentRepositoryEntry? ResolveProject(
         AppConfig config,
@@ -114,7 +119,8 @@ internal static class ProjectAllowListUiBridge
         var active = config.GetActiveProject();
         if (active is not null &&
             PathEquals(active.RepositoryRoot, repositoryRoot) &&
-            PathEquals(active.Path, projectPath))
+            PathEquals(active.Path, projectPath) &&
+            string.Equals(active.DisplayName, projectName, StringComparison.OrdinalIgnoreCase))
             return active;
 
         return config.RecentRepositories
