@@ -35,7 +35,18 @@ internal sealed class GitHubPublishingSetupForm : Form
             RowCount = 4,
             BackColor = GuardianTheme.Window
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        /* ==========================================================================
+           PATCH: EXPANDED GITHUB PUBLISHING HEADER
+           FUNCTION:
+           Provides additional vertical space for the publishing heading and
+           its complete multi-line developer setup description.
+
+           DATE.TIME ADDED: 2026-09-11 08:01 +03:00
+
+           REASON:
+           Allow the complete developer setup description to wrap without clipping.
+           ========================================================================== */
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
