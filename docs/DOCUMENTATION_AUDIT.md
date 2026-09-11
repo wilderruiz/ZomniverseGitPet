@@ -1,7 +1,7 @@
 # Documentation Audit — ZomniverseGitPet
 
-Status: Initial audit
-Date: 2026-09-11
+Status: Initial audit, with a post-audit delta review appended for 0.4.4
+Date: 2026-09-11 (delta review same day, later revision)
 Scope: Full repository (`README.md`, `CHANGELOG.md`, `docs/`, `installer/`, `scripts/`, `mockups/`, `prototype/`, `src/ZomniverseGitPet/`, `tests/ZomniverseGitPet.Tests/`)
 
 This audit was produced by reading source files and regression tests directly (not by inferring behavior from file or method names). Where a claim could not be verified from the files inspected, it is marked **unverified** rather than asserted.
@@ -119,6 +119,57 @@ The following look like genuine, intentional architectural trade-offs worth reco
 6. Restrict self-update to installed builds only, gated by a fixed GitHub-Releases-hosted manifest and mandatory SHA-256 verification, with no auto-update for portable/dev builds.
 
 ---
+
+## Post-audit delta — 0.4.4
+
+Method for this delta: the original audit's file inventory was compared against a fresh, full recursive listing of the repository (file sizes + modification times), which isolated exactly which files changed since the original snapshot. Every changed file was re-read in full at its current content; nothing here relies on the original audit's notes as a substitute for re-reading. Git ref/log files (`HEAD`, `logs/HEAD`, `logs/refs/heads/feature/sync-control-panel`, `refs/heads/...`, `refs/tags/v0.4.4`, `refs/remotes/origin/...`) were read directly (the environment's shell bridge to this device is currently unable to run `git` commands directly — see note at the end of this section) to establish the current branch, HEAD commit, and tag position without relying on a possibly-stale prior understanding.
+
+**Repository state at review time:** current branch `feature/sync-control-panel`, HEAD at commit `75661b54922bc44bef0a7710efb1f8d42ba045b4`. The local branch ref, its `origin` remote-tracking ref, and the `v0.4.4` tag all point at this exact same commit — i.e., the tag was cut from a branch tip that is fully saved and sent (nothing local-only, nothing unpulled). Note this is a feature branch, not `main`; GitPet's release feature has no hard-coded branch requirement, it validates against whatever branch is currently checked out.
+
+Only three application files changed since the original audit's snapshot: `ZomniverseGitPet.csproj` (version bump), `ApplicationReleaseForm.cs`, and `GuardianForm.cs`. No test source file under `tests/ZomniverseGitPet.Tests/` changed (byte-identical to the original snapshot; only their compiled `bin/`/`obj/` artifacts were refreshed by a rebuild). `README.md` and `CHANGELOG.md` are also byte-identical to the original snapshot — neither was updated for 0.4.2, 0.4.3, or 0.4.4.
+
+### Item-by-item findings
+
+**1–4. Standalone publishing, persistent allow lists, Compare-with-Send, publish-boundary safety**
+- Implementation status: **CURRENT, unchanged.** None of the source files implementing these (`StandaloneProjectPublishing.cs`, `StandaloneProjectPublishingUiRuntime.cs`, `ProjectScopeAllowList.cs`, `ProjectAllowListStore.cs`, `ProjectAllowListUiBridge.cs`, `ProjectPublishBoundary.cs`, `ProjectPublishBoundaryDialog.cs`) appear in the set of files touched since the original audit.
+- Authoritative source files: as listed above (unchanged from the original audit's §2 findings).
+- Regression tests: `ProjectScopeAllowListRegression.cs`, `StandaloneProjectPublishingRegression.cs`, `GuardianWorkboardRegression.cs` — all byte-identical to the original snapshot, so the original audit's per-test descriptions stand as current fact, not stale notes.
+- Documentation impact: none beyond what the original audit already scoped for `docs/developer/PUBLISHING_ARCHITECTURE.md`, `docs/safety/PROJECT_BOUNDARIES.md`, and `docs/safety/SEND_PREFLIGHT.md`.
+- ADR warranted: the candidate ADR already proposed in §5 of the original audit ("publish a scoped project via an isolated workspace + separate remote rather than `git subtree`/sparse-checkout") remains correct and sufficient; no new ADR needed for these four items.
+- Obsolete/incomplete earlier statements: none. The original audit's descriptions of these subsystems are reconfirmed accurate against current HEAD.
+
+**5. Release provenance safety**
+- Implementation status: **CURRENT, logic unchanged; only a cosmetic UI edit landed in this window.** The blocking mechanism (`GitHubReleasePublisher.PackageMatchesSource`, consumed by `ApplicationReleaseForm.BuildInitialStatus`/`CanPublishIgnoringBusy`) was already present and already covered by `GitHubReleasePublisherRegression.cs` at the time of the original audit. The only change to `ApplicationReleaseForm.cs` in this window (dated 2026-09-11 23:15) increases the package-summary panel's height so its text isn't clipped — no behavioral change.
+- Newly confirmed detail (not spelled out with this precision in the original audit): reading the current `BuildInitialStatus` method directly shows GitPet blocks publication, in order, when (a) the prepared package's recorded source branch/commit doesn't exactly match the current branch/HEAD commit — exact message: *"Publication blocked: this package was built from a different branch or commit... Run scripts\build-release.ps1 again after your final Save/Send, then reopen this window."* — (b) the working tree is dirty, or (c) local and origin are not aligned (`RemoteHistoryRelation.Equal`). The confirmation dialog additionally states as a hard guarantee: *"Existing releases are never replaced, and no branch is force-pushed."*
+- Authoritative source files: `src/ZomniverseGitPet/ApplicationReleaseForm.cs`, `src/ZomniverseGitPet/GitHubReleasePublisher.cs` (unchanged).
+- Regression tests: `GitHubReleasePublisherRegression.cs` (unchanged; already verified in the original audit that a mismatched source commit is rejected, and that an existing release tag is never overwritten).
+- Documentation impact: this exact set of blocking conditions and their user-facing messages should be documented verbatim in a developer release-process doc (e.g. `docs/developer/BUILD_AND_RELEASE.md`) and referenced from `docs/safety/` as an example of provenance-based safety, since it is the mechanism the user reports was exercised for real during the 0.4.4 release.
+- ADR warranted: **yes, one new ADR** — "Release publication is blocked whenever the prepared package's recorded source branch/commit does not exactly match the currently checked-out branch/HEAD commit, rather than trusting the release manifest's self-reported version alone." This wasn't called out as its own decision in the original audit's ADR candidate list.
+- Obsolete/incomplete earlier statements: none obsolete; the original audit had the mechanism right but under-specified the exact block conditions and wording, now filled in above.
+
+**6. Current release state**
+- Implementation status: version 0.4.4 is **CONFIRMED CURRENT** directly from `ZomniverseGitPet.csproj` (`<Version>0.4.4</Version>`), and the `v0.4.4` git tag exists locally and on `origin`, at the exact current HEAD commit (see repository state above). The claims that a public GitHub Release v0.4.4 exists with installer, portable build, `release-manifest.json`, and `SHA256SUMS.txt` are **consistent with, but not independently verifiable from, the repository alone** — this environment cannot reach GitHub or the sibling `ZomniverseGitPet_Releases/` output folder referenced by `build-release.ps1`/`ApplicationReleaseForm`, so this audit treats that part of the user's report as given rather than independently confirmed. Everything checkable locally (version, tag, tag/branch/origin alignment, and the code path that would have produced and validated those four assets) is consistent with the report.
+- Authoritative source files: `ZomniverseGitPet.csproj`; `.git/refs/tags/v0.4.4`; `ApplicationReleaseForm.BuildDefaultNotes` (confirms the installer is described as "the recommended download for normal Windows use" and the portable build, manifest, and checksums are listed as included assets).
+- Regression tests: none test the release-tag/publication event itself (by nature, this is an operational/one-time event, not a unit of code); `ApplicationUpdateRegression.cs` continues to cover the version-comparison and SHA-256-verification logic that the self-update mechanism will use to detect 0.4.4 as newer than a prior installed version.
+- Documentation impact: `README.md` and `CHANGELOG.md` need correction (see below); `docs/history/` should record the 0.4.4 release once Phase 4 begins.
+- ADR warranted: no.
+- Obsolete/incomplete earlier statements: the original audit's §4.1 ("three different version numbers": README 0.4.1, CHANGELOG 0.4.0, csproj 0.4.3) is now **worse, not resolved** — the csproj has moved on to 0.4.4 while README and CHANGELOG are unchanged, so the drift is now a four-way mismatch in effect (0.4.1 stated / 0.4.0 last changelog entry / 0.4.4 actual and tagged). This should be called out plainly as a widening gap, not a stable known issue.
+
+**7. Regression coverage**
+- Implementation status: **CONFIRMED, unchanged.** All 11 files under `tests/ZomniverseGitPet.Tests/` are byte-identical to the original audit's snapshot (same size, same modification time); only their compiled `bin/`/`obj/` outputs were refreshed by a rebuild triggered alongside the version bump. This means the original audit's per-file, per-test breakdown (bespoke `Check`/`CheckAsync` runner in `Program.cs` plus 9 module-initializer-based regression files, exercising, among other things, project allow-list persistence, project scope resolution, Send-boundary comparison, standalone-publishing isolation, content-fingerprint changes, and release-package/provenance validation) remains the accurate, current picture of regression coverage — it does not need to be re-derived.
+- Documentation impact: none beyond what was already scoped for `docs/developer/TESTING.md`.
+- ADR warranted: no (the original audit's ADR candidate about the bespoke test runner still stands).
+- Obsolete/incomplete earlier statements: none.
+
+**Guardian workboard status-card cosmetics (not requested by name, but the only other functional-looking change found)**
+- Implementation status: **EXPERIMENTAL / in-progress, cosmetic only.** All edits to `GuardianForm.cs` in this window (dated 2026-09-11 12:39–23:32) widen or restyle the repository status card and toolbar buttons (column balancing, muted dividers, wider Projects/Review buttons). None touch Save/Get/Send/Reconcile logic, sync-state computation, or any persisted data. Consistent with the current branch name, `feature/sync-control-panel`, which reads as an in-progress UI redesign rather than a shipped feature.
+- Documentation impact: none yet — do not document this as stable, released behavior. Flag it for the next delta review, since a branch named for a "sync control panel" suggests more UI change may follow before this branch merges to `main`.
+- ADR warranted: no.
+- Obsolete/incomplete earlier statements: none.
+
+### Note on tooling limits during this review
+
+The device-side shell bridge (`device_bash`) could not mount this repository's folder during this review (a known Windows-side mounting issue on this connected device), so git history could not be inspected with `git log`/`git diff` directly. This review instead worked around that by: taking a fresh recursive file listing and diffing file sizes/modification times against the original audit's listing to isolate exactly which files changed, then reading the changed files' current full content directly, plus reading the relevant raw `.git` ref and reflog files (which are plain text) to establish branch/HEAD/tag state without needing the `git` CLI. This is slower than a direct `git log` but is not a lower-confidence method for the specific comparison this task required (identifying what changed and reading its current, real content) — every finding above comes from the actual current file contents, not from inference.
 
 ## 6. Notes on method
 
