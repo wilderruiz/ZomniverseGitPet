@@ -23,10 +23,24 @@ internal static class Program
 
         try
         {
+            /* ==========================================================================
+               PATCH: IMMEDIATE STARTUP FEEDBACK
+               FUNCTION:
+               Display the happy GitPet splash before slower startup services initialize.
+
+               DATE.TIME ADDED: 2026-09-11 07:41 +03:00
+
+               REASON (20 words max):
+               Replace the silent startup pause with visible progress using GitPet's existing embedded artwork.
+               ========================================================================== */
+            using var startupSplash = new StartupSplashForm();
+            startupSplash.ShowImmediately();
+
             var configStore = new ConfigStore();
             var config = configStore.Load();
             var audit = new AuditLog();
             var git = new GitService(audit);
+            startupSplash.SetStage("Preparing your Git guardian");
 
             /* ==========================================================================
                PATCH: CONNECTION UI COORDINATOR
@@ -34,6 +48,7 @@ internal static class Program
                Keep onboarding and Guardian connection state visibly synchronized.
                ========================================================================== */
             ConnectionUiRuntime.Initialize(config, configStore, audit);
+            startupSplash.SetStage("Checking connection settings");
 
             /* ========================================================================== 
                PATCH: GUIDED FIRST-RUN ONBOARDING
@@ -42,6 +57,8 @@ internal static class Program
                ========================================================================== */
             if (!config.OnboardingCompleted)
             {
+                startupSplash.CloseForLaunch();
+
                 using var guidePet = new PetForm(
                     showGuardian: () => { },
                     chooseRepository: () => Task.CompletedTask,
@@ -63,6 +80,7 @@ internal static class Program
                     return;
             }
 
+            startupSplash.SetStage("Checking repository state");
             using var syncWatcher = new GuardianRemoteWatcher(config, git);
 
             /* ==========================================================================
@@ -72,6 +90,7 @@ internal static class Program
                ========================================================================== */
             GuardianWorkboardRuntime.Initialize(config, git, audit);
 
+            startupSplash.SetStage("Starting GitPet");
             using var updater = new ApplicationUpdateCoordinator(audit);
             using var context = new ZomniverseGitPetContext(instanceName, config, configStore, git, audit);
 
@@ -82,6 +101,7 @@ internal static class Program
             */
             updater.Start();
 
+            startupSplash.CloseForLaunch();
             Application.Run(context);
         }
         catch (Exception ex)
