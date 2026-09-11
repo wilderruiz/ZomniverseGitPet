@@ -40,6 +40,7 @@ internal static class Program
             var config = configStore.Load();
             var audit = new AuditLog();
             var git = new GitService(audit);
+            LogicalProjectScopeRuntime.Initialize(config);
             startupSplash.SetStage("Preparing your Git guardian");
 
             /* ==========================================================================
