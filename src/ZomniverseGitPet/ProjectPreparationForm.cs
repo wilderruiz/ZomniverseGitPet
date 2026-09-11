@@ -26,8 +26,6 @@ internal sealed class ProjectPreparationForm : Form
         _chooseScope = initializeGit || chooseScope;
         _initialScope = initialScope;
 
-        // This form is only the modal result carrier now. The visible UX is provided by
-        // ProjectScopeSelectionForm followed by ProjectPreparationReviewForm.
         Text = initializeGit ? "Prepare project for Git" : _chooseScope ? "Reconfigure project" : "Repository hygiene";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.None;
@@ -39,8 +37,6 @@ internal sealed class ProjectPreparationForm : Form
     public IReadOnlyList<string> AcceptedRules => _acceptedRules;
     public ProjectScopePlan? ScopePlan { get; private set; }
 
-    // Replacing the legacy managed scope removes old GitPet scope rules from .gitignore.
-    // The replacement scope itself is persisted in config and enforced with Git pathspecs.
     public bool ReplacesTrackingScope => _chooseScope && !_initializeGit;
 
     protected override void OnShown(EventArgs e)
@@ -56,6 +52,10 @@ internal sealed class ProjectPreparationForm : Form
         try
         {
             ProjectScopePlan plan;
+            var legacyScope = _initializeGit
+                ? null
+                : ProjectGitIgnoreComposer.ReadManagedScope(_folderPath);
+
             if (_chooseScope)
             {
                 /* ==========================================================================
@@ -63,8 +63,7 @@ internal sealed class ProjectPreparationForm : Form
                    DATE.TIME: 2026-09-11 14:05 +03:00
                    Store scope in GitPet instead of repository-wide ignore rules.
                    ========================================================================== */
-                var existingScope = _initialScope ??
-                    (_initializeGit ? null : ProjectGitIgnoreComposer.ReadManagedScope(_folderPath));
+                var existingScope = _initialScope ?? legacyScope;
 
                 using var scope = new ProjectScopeSelectionForm(_folderPath, existingScope);
                 if (scope.ShowDialog(Owner) != DialogResult.OK)
@@ -83,8 +82,6 @@ internal sealed class ProjectPreparationForm : Form
             var scopedSuggestions = ScopedGitIgnoreAdvisor.Suggest(plan);
             var documents = ScopedGitIgnoreAdvisor.FindIgnoreDocuments(plan);
 
-            // Project scope is no longer encoded into .gitignore. The hygiene review remains
-            // repository-aware and may still append explicitly approved ignore suggestions.
             IReadOnlyList<string> scopeRules = [];
 
             using var review = new ProjectPreparationReviewForm(
@@ -101,6 +98,11 @@ internal sealed class ProjectPreparationForm : Form
                 Finish(DialogResult.Cancel);
                 return;
             }
+
+            // Old versions encoded project scope into the root .gitignore. Preserve that
+            // scope on the existing root project before the caller removes the managed block.
+            if (_chooseScope && legacyScope is { Count: > 0 })
+                LogicalProjectScopeRuntime.MigrateLegacyScope(_folderPath, legacyScope);
 
             _acceptedRules = review.AcceptedRules
                 .Where(rule => !string.IsNullOrWhiteSpace(rule))
