@@ -1187,12 +1187,26 @@ public sealed class GuardianForm : Form
                     .OfType<PetForm>()
                     .FirstOrDefault(form => form.Visible && !form.IsDisposed);
 
-                guidancePet?.ShowGuidance(
-                    "⚠ IGNORED FILES FOUND\nTick only files I should track");
+                /* ==========================================================================
+                   PATCH: HELD IGNORED FILE GUIDANCE
+                   FUNCTION:
+                   Keeps the review instruction visible until the ignored-file dialog closes.
+
+                   DATE.TIME ADDED: 2026-09-11 17:34 +03:00
+
+                   REASON:
+                   Prevent repository refreshes from replacing the dialog-specific pet message.
+                   ========================================================================== */
+                guidancePet?.BeginGuidanceHold(
+                    "⚠ IGNORED FILES FOUND\nReview, then tick files to track");
 
                 using var ignoredDialog = new IgnoredProjectFilesDialog(
                     _config.RepositoryPath!, preflight.IgnoredChangedFiles);
-                if (ignoredDialog.ShowDialog(this) != DialogResult.Yes) return;
+                var ignoredDialogResult = ignoredDialog.ShowDialog(this);
+
+                guidancePet?.EndGuidanceHold();
+
+                if (ignoredDialogResult != DialogResult.Yes) return;
 
                 var selected = ignoredDialog.SelectedPaths;
                 if (selected.Count > 0)
@@ -1201,6 +1215,16 @@ public sealed class GuardianForm : Form
                         .Where(item => selected.Contains(item.Path, StringComparer.OrdinalIgnoreCase))
                         .Select(item => $"{item.Path}\r\n  Ignored by: {item.IgnoreSource}" +
                                         (item.IgnoreLine is int line ? $"\r\n  Line {line}: {item.Rule}" : $"\r\n  Rule: {item.Rule}"));
+                    /* ==========================================================================
+                       PATCH: RESIZABLE FORCE-TRACK CONFIRMATION
+                       FUNCTION:
+                       Enables scrolling, resizing, and a complete primary action label for this confirmation.
+
+                       DATE.TIME ADDED: 2026-09-11 17:48 +03:00
+
+                       REASON:
+                       Keep large approved-file lists and both confirmation actions fully accessible.
+                       ========================================================================== */
                     using var confirm = new GuardianConfirmDialog(
                         "Track ignored files?",
                         "TRACK IGNORED FILES?",
@@ -1210,7 +1234,10 @@ public sealed class GuardianForm : Form
                         "Only the exact selected files will be force-added.",
                         "Track selected files",
                         "Back",
-                        dialogSize: new Size(820, 620));
+                        dialogSize: new Size(900, 680),
+                        resizable: true,
+                        scrollable: true,
+                        confirmWidth: 210);
                     if (confirm.ShowDialog(this) != DialogResult.Yes) continue;
                 }
 

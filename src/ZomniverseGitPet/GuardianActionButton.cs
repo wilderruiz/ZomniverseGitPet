@@ -328,8 +328,18 @@ internal sealed class GuardianActionButton : Button
                 }
                 else if (!snapshot.HasRemote)
                 {
+                    /* ==========================================================================
+                       PATCH: WIDER CONNECT ACTION
+                       FUNCTION:
+                       Gives the disconnected Get button enough width to display its complete Connect label.
+
+                       DATE.TIME ADDED: 2026-09-11 17:26 +03:00
+
+                       REASON:
+                       Prevent the Connect action label and arrow from being truncated.
+                       ========================================================================== */
                     desiredText = "Connect ↗";
-                    desiredWidth = 108;
+                    desiredWidth = 132;
                     desiredEnabled = true;
                 }
                 else if (snapshot.ReconciliationPending)

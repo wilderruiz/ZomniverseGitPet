@@ -63,17 +63,17 @@ internal sealed class IgnoredProjectFilesDialog : Form
             BackColor = GuardianTheme.Window
         };
         /* ==========================================================================
-           PATCH: TALLER LOGO HEADER
+           PATCH: EXPANDED GUIDANCE HEADER
            FUNCTION:
-           Adds sufficient header height for the GitPet artwork and dialog title.
+           Provides enough vertical space for the complete four-line ignored-file instructions.
 
-           DATE.TIME ADDED: 2026-09-11 17:16 +03:00
+           DATE.TIME ADDED: 2026-09-11 17:41 +03:00
 
            REASON:
-           Display the GitPet logo without compressing the title.
+           Prevent the final instruction line from being hidden behind the grid.
            ========================================================================== */
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
 
@@ -121,11 +121,23 @@ internal sealed class IgnoredProjectFilesDialog : Form
         header.Controls.Add(logo, 0, 0);
         header.Controls.Add(heading, 1, 0);
         root.Controls.Add(header, 0, 0);
+        /* ==========================================================================
+           PATCH: EXPLICIT IGNORED FILE INSTRUCTIONS
+           FUNCTION:
+           Tells users how to inspect, select, continue, or safely cancel the review.
+
+           DATE.TIME ADDED: 2026-09-11 17:34 +03:00
+
+           REASON:
+           Make the required user decision and consequences immediately understandable.
+           ========================================================================== */
         root.Controls.Add(new Label
         {
             Dock = DockStyle.Fill,
-            Text = "Some files selected for the current GitPet project are ignored by Git.\r\n" +
-                   "GitPet must not force-track anything unless you explicitly approve it.",
+            Text = "Review each file, its ignore source, and the matching rule.\r\n" +
+                   "Tick only files you intentionally want Git to track. Leave all others unticked.\r\n" +
+                   "Use Open ignore file to inspect the selected rule, then choose Continue.\r\n" +
+                   "Unticked files will be skipped. Cancel leaves the Git index unchanged.",
             ForeColor = GuardianTheme.MutedInk,
             Font = new Font("Segoe UI", 10f),
             TextAlign = ContentAlignment.TopLeft,

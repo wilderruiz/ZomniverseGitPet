@@ -20,6 +20,18 @@ public sealed class PetForm : Form
     private Image _stateImage;
     private string _stateMessage = "● CHECKING\nRepository status";
     private bool _incomingAlertActive;
+
+    /* ==========================================================================
+       PATCH: PERSISTENT PET GUIDANCE STATE
+       FUNCTION:
+       Prevents routine repository refreshes from replacing guidance required by an open dialog.
+
+       DATE.TIME ADDED: 2026-09-11 17:34 +03:00
+
+       REASON:
+       Keep contextual instructions visible until the related dialog closes.
+       ========================================================================== */
+    private bool _guidanceHoldActive;
     private int _incomingAnimationFrame;
     private int _lastBehind;
     private string _lastSyncBranch = "";
@@ -191,6 +203,50 @@ public sealed class PetForm : Form
         LayoutPet();
     }
 
+    /* ==========================================================================
+       HELPER: BeginGuidanceHold
+       FUNCTION:
+       Displays contextual warning guidance and protects it from routine status refreshes.
+
+       DATE.TIME ADDED: 2026-09-11 17:34 +03:00
+
+       REASON:
+       Keep ignored-file instructions visible throughout the user review.
+       ========================================================================== */
+    public void BeginGuidanceHold(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return;
+
+        _guidanceHoldActive = true;
+        if (!Visible) Show();
+        if (WindowState == FormWindowState.Minimized)
+            WindowState = FormWindowState.Normal;
+
+        _fox.Image = _assets.Warning;
+        _bubble.SetMessage(message.Trim());
+        LayoutPet();
+    }
+
+    /* ==========================================================================
+       HELPER: EndGuidanceHold
+       FUNCTION:
+       Ends contextual guidance and restores the most recently recorded repository state.
+
+       DATE.TIME ADDED: 2026-09-11 17:34 +03:00
+
+       REASON:
+       Return the pet to normal repository reporting after review.
+       ========================================================================== */
+    public void EndGuidanceHold()
+    {
+        _guidanceHoldActive = false;
+        if (_incomingAlertActive) return;
+
+        _fox.Image = _stateImage;
+        _bubble.SetMessage(_stateMessage);
+        LayoutPet();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -225,7 +281,18 @@ public sealed class PetForm : Form
     {
         _stateImage = image;
         _stateMessage = message;
-        if (_incomingAlertActive) return;
+
+        /* ==========================================================================
+           PATCH: PRESERVE ACTIVE PET GUIDANCE
+           FUNCTION:
+           Records repository state without replacing guidance displayed for an open dialog.
+
+           DATE.TIME ADDED: 2026-09-11 17:34 +03:00
+
+           REASON:
+           Stop status refreshes from immediately replacing ignored-file instructions.
+           ========================================================================== */
+        if (_incomingAlertActive || _guidanceHoldActive) return;
 
         _fox.Image = image;
         _bubble.SetMessage(message);
