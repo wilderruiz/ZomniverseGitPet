@@ -210,14 +210,87 @@ internal static class GuardianSyncState
         }
     }
 
+    /* ==========================================================================
+       PATCH: FRIENDLY PROJECT CONNECTION FLOW
+       DATE.TIME: 2026-09-11 18:15 +03:00
+       Separate GitHub identity from the repository's online home.
+       ========================================================================== */
     public static async Task ConnectOriginAsync(Form? owner)
     {
         var config = _config;
         var git = _git;
         if (config is null || git is null || string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
 
-        var result = await git.GetOriginUrlAsync(config.RepositoryPath);
-        if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return;
+        var repositoryPath = config.RepositoryPath;
+        var existing = await git.RunGitAsync(
+            repositoryPath,
+            ["remote", "get-url", "origin"],
+            TimeSpan.FromSeconds(8));
+        if (existing.Success && !string.IsNullOrWhiteSpace(existing.Output))
+        {
+            await RefreshAsync(true);
+            if (owner is GuardianForm existingGuardian) await existingGuardian.RefreshAsync();
+            return;
+        }
+
+        var github = new GitHubAccountService(new AuditLog());
+        var account = await github.GetStatusAsync();
+        CommandResult result;
+
+        if (account.Authenticated && !string.IsNullOrWhiteSpace(account.Login))
+        {
+            var projectName = LogicalProjectScopeRuntime.DisplayName;
+            var projectPath = LogicalProjectScopeRuntime.GetWorkingDirectory(repositoryPath);
+            var pet = Application.OpenForms
+                .OfType<PetForm>()
+                .FirstOrDefault(form => form.Visible && !form.IsDisposed);
+            pet?.BeginGuidanceHold("🏠 ONLINE HOME\nLet's connect this project");
+
+            try
+            {
+                using var wizard = new RepositoryConnectionWizardForm(
+                    projectName,
+                    projectPath,
+                    account,
+                    github);
+                if (wizard.ShowDialog(owner) != DialogResult.OK || string.IsNullOrWhiteSpace(wizard.RemoteUrl))
+                    return;
+
+                result = await git.AddOriginRemoteAsync(repositoryPath, wizard.RemoteUrl);
+                if (!result.Success)
+                {
+                    using var problem = new GuardianConfirmDialog(
+                        "Connect project",
+                        "CONNECTION NEEDS ATTENTION",
+                        result.Output,
+                        "OK",
+                        showCancel: false);
+                    problem.ShowDialog(owner);
+                    return;
+                }
+
+                using var connected = new GuardianConfirmDialog(
+                    "Connect project",
+                    "PROJECT CONNECTED  ✓",
+                    $"{projectName} now has an online repository:\r\n{wizard.RemoteUrl}\r\n\r\n" +
+                    "Nothing was downloaded or sent automatically.\r\n" +
+                    "Get ↓ and Send ↑ remain under your control.",
+                    "OK",
+                    showCancel: false);
+                connected.ShowDialog(owner);
+                pet?.ShowGuidance("✓ ONLINE HOME READY\nNothing sent yet");
+            }
+            finally
+            {
+                pet?.EndGuidanceHold();
+            }
+        }
+        else
+        {
+            // Preserve support for non-GitHub remotes and users who intentionally skip GitHub authentication.
+            result = await git.GetOriginUrlAsync(repositoryPath);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return;
+        }
 
         await RefreshAsync(true);
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
