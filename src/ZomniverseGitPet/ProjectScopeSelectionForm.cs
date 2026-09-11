@@ -18,7 +18,11 @@ internal sealed class ProjectScopeSelectionForm : Form
     private readonly ProjectScopeSelectionModel _selectionModel;
     private readonly TreeView _tree = new();
     private readonly Label _summary = new();
+    private readonly Panel _advancedPanel = new();
+    private readonly TextBox _allowListText = new();
+    private readonly Label _allowListStatus = new();
     private readonly Button _continueButton;
+    private readonly Button _advancedButton;
 
     public ProjectScopeSelectionForm(
         string rootPath,
@@ -92,10 +96,38 @@ internal sealed class ProjectScopeSelectionForm : Form
         var treeHost = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(18, 12, 18, 8),
+            Padding = new Padding(18, 8, 18, 8),
             BackColor = GuardianTheme.Window
         };
+
+        var treeTools = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 48,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 5, 0, 5),
+            BackColor = GuardianTheme.Window
+        };
+
+        _advancedButton = MakeButton("Advanced allow list ▾", primary: false, 168);
+        _advancedButton.Click += (_, _) => ToggleAdvancedPanel();
+        treeTools.Controls.Add(_advancedButton);
+        treeTools.Controls.Add(new Label
+        {
+            Width = 610,
+            Height = 36,
+            Margin = new Padding(10, 0, 0, 0),
+            Text = "Paste exact file/folder paths and GitPet will map them onto this tree.",
+            ForeColor = GuardianTheme.FaintInk,
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
+        });
+
+        ConfigureAdvancedPanel();
         treeHost.Controls.Add(_tree);
+        treeHost.Controls.Add(treeTools);
+        treeHost.Controls.Add(_advancedPanel);
 
         var footer = new Panel
         {
@@ -162,6 +194,224 @@ internal sealed class ProjectScopeSelectionForm : Form
                 .ToArray();
             var trackEverything = selectableTopLevel.Length > 0 && selectableTopLevel.All(node => node.Checked);
             return ProjectScopePlanner.Create(_rootPath, entries, trackEverything);
+        }
+    }
+
+    /* ==========================================================================
+       PATCH: ADVANCED ALLOW-LIST TREE IMPORT
+       DATE.TIME: 2026-09-11 14:38 +03:00
+       REASON:
+       Let advanced users reproduce exact project scope from pasted paths.
+       ========================================================================== */
+    private void ConfigureAdvancedPanel()
+    {
+        _advancedPanel.Dock = DockStyle.Bottom;
+        _advancedPanel.Height = 278;
+        _advancedPanel.Visible = false;
+        _advancedPanel.Padding = new Padding(12);
+        _advancedPanel.BackColor = GuardianTheme.SurfaceSoft;
+
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = GuardianTheme.SurfaceSoft
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+
+        layout.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "ADVANCED PROJECT ALLOW LIST\r\nOne file or folder path per line. Relative or full Windows paths are accepted. Blank lines and # comments are ignored.",
+            ForeColor = GuardianTheme.Ink,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 0);
+
+        _allowListText.Dock = DockStyle.Fill;
+        _allowListText.Multiline = true;
+        _allowListText.AcceptsReturn = true;
+        _allowListText.AcceptsTab = false;
+        _allowListText.WordWrap = false;
+        _allowListText.ScrollBars = ScrollBars.Both;
+        _allowListText.BorderStyle = BorderStyle.FixedSingle;
+        _allowListText.BackColor = GuardianTheme.Console;
+        _allowListText.ForeColor = GuardianTheme.Ink;
+        _allowListText.Font = new Font("Cascadia Mono", 9.5f);
+        layout.Controls.Add(_allowListText, 0, 1);
+
+        _allowListStatus.Dock = DockStyle.Fill;
+        _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+        _allowListStatus.TextAlign = ContentAlignment.MiddleLeft;
+        _allowListStatus.AutoEllipsis = true;
+        _allowListStatus.Text = "Paste exact paths, then Apply to tree. Nothing is changed until you apply.";
+        layout.Controls.Add(_allowListStatus, 0, 2);
+
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Padding = new Padding(0, 5, 0, 0),
+            BackColor = GuardianTheme.SurfaceSoft
+        };
+
+        var apply = MakeButton("Apply to tree", primary: true, 122);
+        var copy = MakeButton("Copy current selection", primary: false, 164);
+        var clear = MakeButton("Clear text", primary: false, 96);
+        var close = MakeButton("Close advanced", primary: false, 124);
+
+        apply.Click += (_, _) => ApplyAllowListToTree();
+        copy.Click += (_, _) => CopyCurrentSelectionToAllowList();
+        clear.Click += (_, _) =>
+        {
+            _allowListText.Clear();
+            _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+            _allowListStatus.Text = "Text cleared. The tree selection was not changed.";
+        };
+        close.Click += (_, _) => ToggleAdvancedPanel(forceVisible: false);
+
+        actions.Controls.Add(apply);
+        actions.Controls.Add(copy);
+        actions.Controls.Add(clear);
+        actions.Controls.Add(close);
+        layout.Controls.Add(actions, 0, 3);
+
+        _advancedPanel.Controls.Add(layout);
+    }
+
+    private void ToggleAdvancedPanel(bool? forceVisible = null)
+    {
+        var visible = forceVisible ?? !_advancedPanel.Visible;
+        _advancedPanel.Visible = visible;
+        _advancedButton.Text = visible ? "Advanced allow list ▴" : "Advanced allow list ▾";
+        if (visible)
+        {
+            _allowListText.Focus();
+            _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+            if (string.IsNullOrWhiteSpace(_allowListText.Text))
+                _allowListStatus.Text = "Paste exact paths, then Apply to tree. Nothing is changed until you apply.";
+        }
+    }
+
+    private void ApplyAllowListToTree()
+    {
+        var resolved = ProjectScopeAllowList.Resolve(_rootPath, _allowListText.Text);
+        if (!resolved.Success)
+        {
+            _allowListStatus.ForeColor = Color.FromArgb(242, 104, 122);
+            _allowListStatus.Text = ProjectScopeAllowList.FormatIssueSummary(resolved);
+            return;
+        }
+
+        if (resolved.Entries.Count == 0)
+        {
+            _allowListStatus.ForeColor = Color.FromArgb(241, 186, 78);
+            _allowListStatus.Text = "No paths were supplied. The existing tree selection was left unchanged.";
+            return;
+        }
+
+        _tree.BeginUpdate();
+        try
+        {
+            SetAllRootChecks(false, updateSummary: false);
+
+            foreach (var entry in resolved.Entries)
+                _selectionModel.SetSubtree(entry.RelativePath, true);
+
+            TreeNode? last = null;
+            foreach (var entry in resolved.Entries)
+                last = EnsureScopePathLoaded(entry.RelativePath) ?? last;
+
+            RefreshLoadedStatesFromModel();
+
+            if (last is not null)
+            {
+                _tree.SelectedNode = last;
+                last.EnsureVisible();
+            }
+        }
+        finally
+        {
+            _tree.EndUpdate();
+        }
+
+        _allowListStatus.ForeColor = GuardianTheme.Healthy;
+        _allowListStatus.Text =
+            $"Applied: {resolved.FileCount} file{(resolved.FileCount == 1 ? "" : "s")}, " +
+            $"{resolved.DirectoryCount} folder{(resolved.DirectoryCount == 1 ? "" : "s")}. Tree selection updated.";
+        UpdateSummary();
+    }
+
+    private void CopyCurrentSelectionToAllowList()
+    {
+        var entries = BuildSelectedEntries();
+        _allowListText.Text = ProjectScopeAllowList.Format(entries);
+        _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+        _allowListStatus.Text = entries.Count == 0
+            ? "The tree currently has no selected scope entries."
+            : $"Copied {entries.Count} current scope item{(entries.Count == 1 ? "" : "s")} into the editor.";
+        _allowListText.Focus();
+    }
+
+    private TreeNode? EnsureScopePathLoaded(string relativePath)
+    {
+        var normalized = relativePath.Replace('\\', '/').Trim().Trim('/');
+        if (normalized.Length == 0) return null;
+
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        TreeNodeCollection nodes = _tree.Nodes;
+        TreeNode? current = null;
+        var accumulated = string.Empty;
+
+        for (var index = 0; index < segments.Length; index++)
+        {
+            accumulated = accumulated.Length == 0
+                ? segments[index]
+                : accumulated + "/" + segments[index];
+
+            current = nodes.Cast<TreeNode>().FirstOrDefault(node =>
+                node.Tag is ScopeNodeInfo info &&
+                info.RelativePath.Equals(accumulated, StringComparison.OrdinalIgnoreCase));
+
+            if (current is null) return null;
+            if (current.Tag is ScopeNodeInfo { Locked: true }) return null;
+
+            if (index < segments.Length - 1)
+            {
+                EnsureChildrenLoaded(current);
+                current.Expand();
+                nodes = current.Nodes;
+            }
+        }
+
+        return current;
+    }
+
+    private void RefreshLoadedStatesFromModel()
+    {
+        foreach (TreeNode node in _tree.Nodes)
+            RefreshLoadedNodeState(node, inheritedChecked: false);
+    }
+
+    private void RefreshLoadedNodeState(TreeNode node, bool inheritedChecked)
+    {
+        if (node.Tag is not ScopeNodeInfo info || info.Locked) return;
+
+        var state = _selectionModel.GetState(info.RelativePath, info.IsDirectory, inheritedChecked);
+        SetScopeNodeState(node, state);
+        var childInherited = state == ProjectScopeCheckState.Checked;
+
+        foreach (TreeNode child in node.Nodes)
+        {
+            if (child.Tag is LazyMarker) continue;
+            RefreshLoadedNodeState(child, childInherited);
         }
     }
 
@@ -434,7 +684,7 @@ internal sealed class ProjectScopeSelectionForm : Form
         }
     }
 
-    private void SetAllRootChecks(bool value)
+    private void SetAllRootChecks(bool value, bool updateSummary = true)
     {
         foreach (TreeNode node in _tree.Nodes)
         {
@@ -447,7 +697,7 @@ internal sealed class ProjectScopeSelectionForm : Form
             SetLoadedDescendants(node, value);
         }
 
-        UpdateSummary();
+        if (updateSummary) UpdateSummary();
     }
 
     private static void SetLoadedDescendants(TreeNode node, bool value)
