@@ -336,8 +336,19 @@ public sealed class GuardianForm : Form
             BackColor = GuardianTheme.SurfaceRaised,
             CellBorderStyle = TableLayoutPanelCellBorderStyle.None
         };
-        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        /* ==========================================================================
+           PATCH: WIDEN STATUS CARD BRANCH COLUMN
+           FUNCTION:
+           Allocates more status-card width to the Guardian and Branch column so
+           longer branch names can display without horizontal clipping.
+
+           DATE.TIME ADDED: 2026-09-11 23:27 +03:00
+
+           REASON:
+           Equal status columns leave insufficient width for longer branch names.
+           ========================================================================== */
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
         statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
