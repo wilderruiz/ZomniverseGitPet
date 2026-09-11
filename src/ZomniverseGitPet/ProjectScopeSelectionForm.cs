@@ -369,10 +369,21 @@ internal sealed class ProjectScopeSelectionForm : Form
             BackColor = GuardianTheme.SurfaceSoft
         };
 
-        var apply = MakeButton("Apply to tree", primary: true, 122);
-        var copy = MakeButton("Copy current selection", primary: false, 164);
-        var clear = MakeButton("Clear text", primary: false, 96);
-        var close = MakeButton("Close advanced", primary: false, 124);
+        /* ==========================================================================
+           PATCH: WIDEN ADVANCED ALLOW LIST BUTTONS
+           FUNCTION:
+           Gives every advanced allow-list action enough width to display its complete
+           caption without clipping.
+
+           DATE.TIME ADDED: 2026-09-11 22:38 +03:00
+
+           REASON:
+           Advanced allow-list action captions are currently cropped.
+           ========================================================================== */
+        var apply = MakeButton("Apply to tree", primary: true, 150);
+        var copy = MakeButton("Copy current selection", primary: false, 210);
+        var clear = MakeButton("Clear text", primary: false, 120);
+        var close = MakeButton("Close advanced", primary: false, 155);
 
         apply.Click += (_, _) => ApplyAllowListToTree();
         copy.Click += (_, _) => CopyCurrentSelectionToAllowList();

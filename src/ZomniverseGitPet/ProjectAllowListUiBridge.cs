@@ -43,7 +43,23 @@ internal static class ProjectAllowListUiBridge
         if (actions is not null &&
             !actions.Controls.OfType<Button>().Any(button => button.Name == "CompareProjectWithSendButton"))
         {
-            var compare = MakeButton("Compare with Send ↑", 158);
+            /* ==========================================================================
+               PATCH: AUTO-SIZE COMPARE WITH SEND BUTTON
+               FUNCTION:
+               Makes the comparison button expand for its complete caption while
+               retaining a comfortable minimum width at different display scales.
+
+               DATE.TIME ADDED: 2026-09-11 22:43 +03:00
+
+               REASON:
+               Fixed sizing clips the comparison caption under some Windows display scales.
+               ========================================================================== */
+            var compare = MakeButton("Compare with Send ↑", 220);
+            compare.AutoSize = true;
+            compare.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            compare.MinimumSize = new Size(220, 38);
+            compare.Padding = new Padding(12, 0, 12, 0);
+            compare.AutoEllipsis = false;
             compare.Name = "CompareProjectWithSendButton";
             compare.Click += async (_, _) =>
             {

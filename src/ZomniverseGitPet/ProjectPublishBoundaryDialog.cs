@@ -161,6 +161,17 @@ internal sealed class ProjectPublishBoundaryDialog : Form
         }
     }
 
+    /* ==========================================================================
+       PATCH: AUTO-SIZE PUBLISH BOUNDARY BUTTONS
+       FUNCTION:
+       Allows footer buttons to expand for their complete captions while preserving
+       their requested minimum dimensions and existing theme styling.
+
+       DATE.TIME ADDED: 2026-09-11 22:48 +03:00
+
+       REASON:
+       Footer captions are clipped when text changes or Windows display scaling increases.
+       ========================================================================== */
     private static Button MakeButton(string text, bool primary, int width)
     {
         var button = new Button
@@ -168,6 +179,11 @@ internal sealed class ProjectPublishBoundaryDialog : Form
             Text = text,
             Width = width,
             Height = 38,
+            MinimumSize = new Size(width, 38),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            AutoEllipsis = false,
+            Padding = new Padding(12, 0, 12, 0),
             Margin = new Padding(6, 0, 0, 0),
             FlatStyle = FlatStyle.Flat,
             BackColor = primary ? GuardianTheme.Violet : GuardianTheme.SurfaceSoft,
