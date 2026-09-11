@@ -160,7 +160,12 @@ internal static class StandaloneProjectPublishing
             TimeSpan.FromSeconds(12), token);
         if (!head.Success || string.IsNullOrWhiteSpace(head.Output)) return null;
 
-        var arguments = new List<string> { "ls-tree", "-r", "--full-tree", "--name-only", "HEAD", "--" };
+        /* ==========================================================================
+           PATCH: CONTENT-AWARE PROJECT FINGERPRINT
+           DATE.TIME: 2026-09-11 20:41 +03:00
+           Include blob identities so same-path edits trigger Send.
+           ========================================================================== */
+        var arguments = new List<string> { "ls-tree", "-r", "--full-tree", "HEAD", "--" };
         arguments.AddRange(pathspecs);
         var tracked = await git.RunGitAsync(
             repositoryRoot,
@@ -170,6 +175,11 @@ internal static class StandaloneProjectPublishing
 
         var files = tracked.Output
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line =>
+            {
+                var tab = line.IndexOf('\t');
+                return tab >= 0 && tab + 1 < line.Length ? line[(tab + 1)..] : string.Empty;
+            })
             .Select(NormalizeRelative)
             .Where(path => path.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -300,7 +310,12 @@ internal static class StandaloneProjectPublishing
             }
             if (!remoteResult.Success) return Failure("GitPet could not configure the standalone publishing destination.", remoteResult, workspace, link.RemoteUrl);
 
-            var stage = await git.RunGitAsync(workspace, ["add", "-A"], TimeSpan.FromMinutes(1), token);
+            /* ==========================================================================
+               PATCH: ISOLATED WORKSPACE EXACTNESS
+               DATE.TIME: 2026-09-11 20:41 +03:00
+               Keep explicitly selected tracked files despite copied ignore rules.
+               ========================================================================== */
+            var stage = await git.RunGitAsync(workspace, ["add", "-f", "-A"], TimeSpan.FromMinutes(1), token);
             if (!stage.Success) return Failure("GitPet could not stage the isolated project snapshot.", stage, workspace, link.RemoteUrl);
 
             var hasHead = await git.RunGitAsync(workspace, ["rev-parse", "--verify", "HEAD"], cancellationToken: token);
