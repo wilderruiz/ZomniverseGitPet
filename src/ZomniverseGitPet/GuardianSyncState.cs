@@ -310,8 +310,7 @@ internal static class GuardianSyncState
                     projectName,
                     projectPath,
                     account,
-                    github,
-                    standalonePublishing: standalone);
+                    github);
                 if (wizard.ShowDialog(owner) != DialogResult.OK || string.IsNullOrWhiteSpace(wizard.RemoteUrl))
                     return;
                 remoteUrl = wizard.RemoteUrl;
