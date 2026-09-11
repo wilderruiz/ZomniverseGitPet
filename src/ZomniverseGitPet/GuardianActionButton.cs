@@ -54,7 +54,8 @@ internal sealed class GuardianActionButton : Button
 
             Invalidate();
         }
-    }    
+    }
+
     public GuardianActionKind Kind
     {
         get => _kind;
@@ -99,7 +100,7 @@ internal sealed class GuardianActionButton : Button
         DATE: 2026-09-09
         Skip sync logic for decorative buttons.
         */
-        if (!_syncStateAware || _applyingSyncState) return;        
+        if (!_syncStateAware || _applyingSyncState) return;
         if (_syncRole == SyncRole.None)
         {
             if (Text.Equals("Save", StringComparison.OrdinalIgnoreCase)) _syncRole = SyncRole.Save;
@@ -249,7 +250,7 @@ internal sealed class GuardianActionButton : Button
             1.5f,
             5.5f,
             Math.Max(1, Width - 3),
-            Math.Max(1, Height - 7));        
+            Math.Max(1, Height - 7));
         using var path = GuardianTheme.RoundedRectangle(bounds, 11f);
 
         var (fill, border, text) = Palette();
@@ -329,17 +330,12 @@ internal sealed class GuardianActionButton : Button
                 else if (!snapshot.HasRemote)
                 {
                     /* ==========================================================================
-                       PATCH: WIDER CONNECT ACTION
-                       FUNCTION:
-                       Gives the disconnected Get button enough width to display its complete Connect label.
-
-                       DATE.TIME ADDED: 2026-09-11 17:26 +03:00
-
-                       REASON:
-                       Prevent the Connect action label and arrow from being truncated.
+                       PATCH: PROJECT REMOTE ACTION LABEL
+                       DATE.TIME: 2026-09-11 18:16 +03:00
+                       Distinguish repository connection from GitHub account authentication.
                        ========================================================================== */
-                    desiredText = "Connect ↗";
-                    desiredWidth = 132;
+                    desiredText = "Connect project ↗";
+                    desiredWidth = 168;
                     desiredEnabled = true;
                 }
                 else if (snapshot.ReconciliationPending)
