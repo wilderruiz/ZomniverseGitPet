@@ -13,8 +13,18 @@ PATCH: DISTINCT DEVELOPMENT BUILD IDENTITY
 DATE.TIME: 2026-09-10 19:10 +03:00
 Keep development builds unmistakable from installed releases.
 #>
-$releaseDirectory = Join-Path $repositoryParent 'ZomniverseGitPet_Releases\DEV-current'
 $publishedExecutable = Join-Path $publishDirectory 'ZomniverseGitPet.exe'
+
+<#
+PATCH: LOCAL DEV RUNTIME OUTSIDE DROPBOX
+DATE.TIME: 2026-09-11 08:44 +03:00
+Keep the running DEV executable outside cloud-synced folders.
+#>
+if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    throw 'LOCALAPPDATA is unavailable. GitPet cannot choose a safe local DEV runtime folder.'
+}
+
+$releaseDirectory = Join-Path $env:LOCALAPPDATA 'ZomniverseGitPet\DEV'
 $releaseExecutable = Join-Path $releaseDirectory 'DEV-ZomniverseGitPet.exe'
 
 <#
@@ -24,8 +34,13 @@ Create a permanent DEV launcher and remove legacy ambiguity.
 #>
 $startMenuPrograms = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $devShortcut = Join-Path $startMenuPrograms 'DEV-ZGitPet.lnk'
-$legacyDevDirectory = Join-Path $repositoryParent 'ZomniverseGitPet_Releases\current'
-$legacyDevExecutable = Join-Path $legacyDevDirectory 'ZomniverseGitPet.exe'
+
+# Previous DEV runtime locations lived beside the Dropbox repository.
+# Clean only these known historical DEV artifacts after the safe local copy succeeds.
+$legacyDevArtifacts = @(
+    (Join-Path $repositoryParent 'ZomniverseGitPet_Releases\current\ZomniverseGitPet.exe'),
+    (Join-Path $repositoryParent 'ZomniverseGitPet_Releases\DEV-current\DEV-ZomniverseGitPet.exe')
+)
 
 if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
     throw "ZomniverseGitPet project was not found at: $projectPath"
@@ -58,7 +73,7 @@ if (-not (Test-Path -LiteralPath $releaseExecutable -PathType Leaf)) {
     throw "The published DEV executable could not be placed at: $releaseExecutable"
 }
 
-# Always recreate the shortcut so a moved repository/Dropbox drive remains correct.
+# Always recreate the shortcut so it follows the machine-local DEV runtime location.
 try {
     New-Item -ItemType Directory -Force -Path $startMenuPrograms | Out-Null
     $shell = New-Object -ComObject WScript.Shell
@@ -73,10 +88,13 @@ catch {
     Write-Warning "DEV build succeeded, but the Start Menu shortcut could not be refreshed: $($_.Exception.Message)"
 }
 
-# The old development location was visually identical to an installed release.
-# Remove only this known legacy DEV artifact; never touch the installed application.
-if (Test-Path -LiteralPath $legacyDevExecutable -PathType Leaf) {
+foreach ($legacyDevExecutable in $legacyDevArtifacts) {
+    if (-not (Test-Path -LiteralPath $legacyDevExecutable -PathType Leaf)) {
+        continue
+    }
+
     try {
+        $legacyDevDirectory = Split-Path -Parent $legacyDevExecutable
         Remove-Item -LiteralPath $legacyDevExecutable -Force
         if ((Get-ChildItem -LiteralPath $legacyDevDirectory -Force | Measure-Object).Count -eq 0) {
             Remove-Item -LiteralPath $legacyDevDirectory -Force
