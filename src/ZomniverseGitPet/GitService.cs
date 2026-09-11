@@ -280,7 +280,32 @@ public sealed class GitService(AuditLog audit)
     }
 
     public async Task<CheckpointResult> CreateCheckpointAsync(string path, string message, CancellationToken token = default)
+        => await CreateCheckpointAsync(path, message, stagePlan: null, token);
+
+    /* ==========================================================================
+       PATCH: EXACT SAVE STAGING PLAN
+       DATE: 2026-09-11
+
+       Stage approved files without force-adding selected directories.
+       ========================================================================== */
+    public async Task<CheckpointResult> CreateCheckpointAsync(
+        string path,
+        string message,
+        SaveStagePlan? stagePlan,
+        CancellationToken token = default)
     {
+        if (stagePlan is null)
+        {
+            var preflight = await GetSavePreflightAsync(path, token);
+            if (!preflight.Success) return new(false, preflight.Error);
+            if (preflight.IgnoredChangedFiles.Count > 0)
+            {
+                return new(false,
+                    "Ignored project files require explicit approval in the manual Save window. " +
+                    "Nothing was staged.");
+            }
+        }
+
         var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(path, includeRootGitIgnore: true);
         if (pathspecs.Count > 0)
         {
@@ -303,21 +328,56 @@ public sealed class GitService(AuditLog audit)
             }
         }
 
-        var stageArguments = new List<string> { "add", "-A" };
-        if (pathspecs.Count > 0)
+        if (stagePlan is null)
         {
-            stageArguments.Add("--");
-            stageArguments.AddRange(pathspecs);
-        }
+            var stageArguments = new List<string> { "add", "-A" };
+            if (pathspecs.Count > 0)
+            {
+                stageArguments.Add("--");
+                stageArguments.AddRange(pathspecs);
+            }
 
-        var stage = await RunGitAsync(path, stageArguments, TimeSpan.FromMinutes(1), token);
-        await audit.WriteAsync("git_stage", new
+            var stage = await RunGitAsync(path, stageArguments, TimeSpan.FromMinutes(1), token);
+            await audit.WriteAsync("git_stage", new
+            {
+                success = stage.Success,
+                projectScoped = pathspecs.Count > 0,
+                pathspecCount = pathspecs.Count
+            });
+            if (!stage.Success) return new(false, "Staging failed: " + stage.Output);
+        }
+        else
         {
-            success = stage.Success,
-            projectScoped = pathspecs.Count > 0,
-            pathspecCount = pathspecs.Count
-        });
-        if (!stage.Success) return new(false, "Staging failed: " + stage.Output);
+            if (stagePlan.NormalFiles.Count == 0 && stagePlan.ApprovedIgnoredFiles.Count == 0)
+            {
+                var skipped = stagePlan.SkippedIgnoredFiles.Count;
+                return new(true,
+                    $"✓ 0 files saved\r\n○ {skipped} ignored project file{(skipped == 1 ? "" : "s")} skipped",
+                    SkippedIgnoredCount: skipped);
+            }
+
+            var normalArguments = IgnoredFileSavePolicy.BuildStageArguments(stagePlan.NormalFiles, force: false);
+            if (normalArguments.Count > 0)
+            {
+                var normalStage = await RunGitAsync(path, normalArguments, TimeSpan.FromMinutes(1), token);
+                if (!normalStage.Success) return new(false, "Staging failed: " + normalStage.Output);
+            }
+
+            var forcedArguments = IgnoredFileSavePolicy.BuildStageArguments(stagePlan.ApprovedIgnoredFiles, force: true);
+            if (forcedArguments.Count > 0)
+            {
+                var forcedStage = await RunGitAsync(path, forcedArguments, TimeSpan.FromMinutes(1), token);
+                if (!forcedStage.Success) return new(false, "Force-track staging failed: " + forcedStage.Output);
+            }
+
+            await audit.WriteAsync("git_stage", new
+            {
+                success = true,
+                exactNormalFiles = stagePlan.NormalFiles.Count,
+                exactForceTrackedFiles = stagePlan.ApprovedIgnoredFiles.Count,
+                skippedIgnoredFiles = stagePlan.SkippedIgnoredFiles.Count
+            });
+        }
 
         var commit = await RunGitAsync(path, ["commit", "-m", message], TimeSpan.FromMinutes(2), token);
         if (!commit.Success)
@@ -335,7 +395,66 @@ public sealed class GitService(AuditLog audit)
             project = LogicalProjectScopeRuntime.DisplayName,
             projectScoped = pathspecs.Count > 0
         });
-        return new(true, $"Checkpoint created.\r\n\r\n{value}", value);
+        var savedCount = stagePlan is null ? 0 : stagePlan.NormalFiles.Count + stagePlan.ApprovedIgnoredFiles.Count;
+        var skippedCount = stagePlan?.SkippedIgnoredFiles.Count ?? 0;
+        var summary = stagePlan is null
+            ? $"Checkpoint created.\r\n\r\n{value}"
+            : $"✓ {savedCount} file{(savedCount == 1 ? "" : "s")} saved\r\n" +
+              (skippedCount > 0 ? $"○ {skippedCount} ignored project file{(skippedCount == 1 ? "" : "s")} skipped\r\n" : "") +
+              $"\r\n{value}";
+        return new(true, summary, value, savedCount, skippedCount);
+    }
+
+    /* ==========================================================================
+       PATCH: READ-ONLY IGNORE PREFLIGHT
+       DATE: 2026-09-11
+
+       Discover exact ignored files before changing Git's index.
+       ========================================================================== */
+    public async Task<SavePreflightResult> GetSavePreflightAsync(
+        string path,
+        CancellationToken token = default)
+    {
+        var status = await GetStatusAsync(path, token);
+        if (!status.Healthy) return new(false, [], [], status.Error);
+
+        var normal = status.Files.Select(file => NormalizeGitRelativePath(file.Path))
+            .Where(file => file.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(path, includeRootGitIgnore: false);
+        if (pathspecs.Count == 0) return new(true, normal, []);
+
+        var arguments = new List<string> { "ls-files", "--others", "--ignored", "--exclude-standard", "-z" };
+        if (pathspecs.Count > 0)
+        {
+            arguments.Add("--");
+            arguments.AddRange(pathspecs);
+        }
+
+        var ignoredList = await RunGitAsync(path, arguments, TimeSpan.FromMinutes(1), token);
+        if (!ignoredList.Success) return new(false, normal, [], "Ignored-file preflight failed: " + ignoredList.Output);
+
+        var ignored = new List<IgnoredProjectFile>();
+        foreach (var candidate in ignoredList.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var normalized = NormalizeGitRelativePath(candidate);
+            if (normalized.Length == 0 || Directory.Exists(Path.Combine(path, normalized.Replace('/', Path.DirectorySeparatorChar))))
+                continue;
+
+            var provenance = await RunGitAsync(path,
+                ["-c", "core.quotePath=false", "check-ignore", "-v", "--", normalized],
+                TimeSpan.FromSeconds(20), token);
+            if (provenance.ExitCode != 0) continue;
+            var item = IgnoredFileSavePolicy.ParseCheckIgnore(provenance.Output);
+            if (item is not null) ignored.Add(item);
+        }
+
+        return new(true, normal, ignored
+            .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
     }
 
     public async Task<CommandResult> RunTestCommandAsync(string path, string command, CancellationToken token = default)

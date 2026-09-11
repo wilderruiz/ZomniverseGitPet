@@ -458,18 +458,189 @@ Check("github legacy release draft keeps tag and target explicit", () =>
            url.Contains("target=legacy%2Fv1", StringComparison.Ordinal);
 });
 
+/* ==========================================================================
+   PATCH: IGNORED FILE SAVE REGRESSIONS
+   DATE: 2026-09-11
+
+   Verify provenance and exact force-track stage planning.
+   ========================================================================== */
+Check("normal changed file keeps non-force Save staging", () =>
+{
+    var args = IgnoredFileSavePolicy.BuildStageArguments(["src/app.cs"], force: false);
+    return args.SequenceEqual(["add", "-A", "--", "src/app.cs"]);
+});
+
+Check("root gitignore provenance is retained", () =>
+{
+    var item = IgnoredFileSavePolicy.ParseCheckIgnore(string.Join('\0', ".gitignore", "37", "admin/", "admin/wanted.js") + "\0");
+    return item is { IgnoreSource: ".gitignore", IgnoreLine: 37, Rule: "admin/", Path: "admin/wanted.js" };
+});
+
+Check("nested gitignore provenance is retained", () =>
+{
+    var item = IgnoredFileSavePolicy.ParseCheckIgnore(string.Join('\0', "src/.gitignore", "9", "cache/", "src/cache/item.txt") + "\0");
+    return item is { IgnoreSource: "src/.gitignore", IgnoreLine: 9, Rule: "cache/" };
+});
+
+Check("info exclude provenance is retained", () =>
+{
+    var item = IgnoredFileSavePolicy.ParseCheckIgnore(string.Join('\0', ".git/info/exclude", "12", "cache/", "cache/local.txt") + "\0");
+    return item is { IgnoreSource: ".git/info/exclude", IgnoreLine: 12, Rule: "cache/" };
+});
+
+Check("approved ignored file is force-added exactly", () =>
+{
+    var ignored = new IgnoredProjectFile("admin/wanted.js", ".gitignore", 37, "admin/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], [ignored], [ignored.Path]);
+    var args = IgnoredFileSavePolicy.BuildStageArguments(plan.ApprovedIgnoredFiles, force: true);
+    return args.SequenceEqual(["add", "-f", "--", "admin/wanted.js"]);
+});
+
+Check("unticked ignored file is skipped while normal file remains", () =>
+{
+    var ignored = new IgnoredProjectFile("admin/wanted.js", ".gitignore", 37, "admin/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan(["src/app.cs"], [ignored], []);
+    return plan.NormalFiles.SequenceEqual(["src/app.cs"]) &&
+           plan.ApprovedIgnoredFiles.Count == 0 &&
+           plan.SkippedIgnoredFiles.SequenceEqual(["admin/wanted.js"]);
+});
+
+Check("multiple ignored files force-add only ticked paths", () =>
+{
+    var ignored = new[]
+    {
+        new IgnoredProjectFile("admin/a.js", ".gitignore", 37, "admin/"),
+        new IgnoredProjectFile("admin/b.js", ".gitignore", 37, "admin/")
+    };
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], ignored, ["admin/b.js"]);
+    return plan.ApprovedIgnoredFiles.SequenceEqual(["admin/b.js"]) &&
+           plan.SkippedIgnoredFiles.SequenceEqual(["admin/a.js"]);
+});
+
+Check("force stage command never substitutes parent directory", () =>
+{
+    var ignored = new IgnoredProjectFile("admin/deep/wanted.js", ".gitignore", 37, "admin/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], [ignored], [ignored.Path]);
+    var args = IgnoredFileSavePolicy.BuildStageArguments(plan.ApprovedIgnoredFiles, force: true);
+    return args.Contains("admin/deep/wanted.js") && !args.Contains("admin/") && !args.Contains("admin");
+});
+
+Check("cancel-equivalent empty approval produces no force command", () =>
+{
+    var ignored = new IgnoredProjectFile("cache/local.txt", ".git/info/exclude", 12, "cache/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], [ignored], []);
+    return IgnoredFileSavePolicy.BuildStageArguments(plan.ApprovedIgnoredFiles, force: true).Count == 0;
+});
+
+Check("tracked file beneath ignored parent stays normal", () =>
+{
+    var plan = IgnoredFileSavePolicy.CreateStagePlan(["admin/tracked.js"], [], []);
+    return plan.NormalFiles.SequenceEqual(["admin/tracked.js"]) && plan.ApprovedIgnoredFiles.Count == 0;
+});
+
+Check("force stage preserves spaces in exact path", () =>
+{
+    var args = IgnoredFileSavePolicy.BuildStageArguments(["admin/my file.js"], force: true);
+    return args[^1] == "admin/my file.js" && args.Count == 4;
+});
+
+Check("force stage preserves Unicode in exact path", () =>
+{
+    var args = IgnoredFileSavePolicy.BuildStageArguments(["дані/проєкт.txt"], force: true);
+    return args[^1] == "дані/проєкт.txt" && args.Count == 4;
+});
+
+await CheckAsync("Git-native preflight reports all ignore sources before staging", async () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        RunGit(root, "init");
+        RunGit(root, "config", "user.name", "GitPet Test");
+        RunGit(root, "config", "user.email", "gitpet@example.invalid");
+        Directory.CreateDirectory(Path.Combine(root, "admin"));
+        Directory.CreateDirectory(Path.Combine(root, "nested", "cache"));
+        Directory.CreateDirectory(Path.Combine(root, "tracked-parent"));
+        File.WriteAllText(Path.Combine(root, ".gitignore"), "admin/\ntracked-parent/\n");
+        File.WriteAllText(Path.Combine(root, "nested", ".gitignore"), "cache/\n");
+        File.WriteAllText(Path.Combine(root, "tracked-parent", "tracked.txt"), "before");
+        RunGit(root, "add", "-f", "--", ".gitignore", "nested/.gitignore", "tracked-parent/tracked.txt");
+        RunGit(root, "commit", "-m", "baseline");
+
+        File.AppendAllText(Path.Combine(root, "tracked-parent", "tracked.txt"), " after");
+        File.WriteAllText(Path.Combine(root, "admin", "wanted file.js"), "root ignore");
+        File.WriteAllText(Path.Combine(root, "nested", "cache", "wanted.txt"), "nested ignore");
+        File.AppendAllText(Path.Combine(root, ".git", "info", "exclude"), "\nlocal-cache/\n");
+        Directory.CreateDirectory(Path.Combine(root, "local-cache"));
+        File.WriteAllText(Path.Combine(root, "local-cache", "дані.txt"), "exclude ignore");
+
+        var config = new AppConfig();
+        config.RememberProject(root, root, "Scoped test", trackEverything: false,
+        [
+            new ProjectScopeEntry("admin", true),
+            new ProjectScopeEntry("nested", true),
+            new ProjectScopeEntry("local-cache", true),
+            new ProjectScopeEntry("tracked-parent", true)
+        ]);
+        LogicalProjectScopeRuntime.Initialize(config);
+        var service = new GitService(new AuditLog(Path.Combine(root, "audit.jsonl")));
+        var result = await service.GetSavePreflightAsync(root);
+        var stagedAfterPreflight = RunGit(root, "diff", "--cached", "--name-only");
+
+        var passed = result.Success && string.IsNullOrWhiteSpace(stagedAfterPreflight) &&
+                     result.NormalChangedFiles.Contains("tracked-parent/tracked.txt") &&
+                     result.IgnoredChangedFiles.Any(item => item.Path == "admin/wanted file.js" && item.IgnoreSource.EndsWith(".gitignore")) &&
+                     result.IgnoredChangedFiles.Any(item => item.Path == "nested/cache/wanted.txt" && item.IgnoreSource.EndsWith("nested/.gitignore")) &&
+                     result.IgnoredChangedFiles.Any(item => item.Path == "local-cache/дані.txt" && item.IgnoreSource.Contains(".git/info/exclude"));
+        if (!passed)
+            throw new InvalidOperationException(
+                $"success={result.Success}; error={result.Error}; staged={stagedAfterPreflight}; normal={string.Join('|', result.NormalChangedFiles)}; " +
+                $"ignored={string.Join('|', result.IgnoredChangedFiles.Select(item => $"{item.Path}@{item.IgnoreSource}:{item.IgnoreLine}:{item.Rule}"))}");
+        return true;
+    }
+    finally { TryDelete(root); }
+});
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 35 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 48 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
 {
     try { if (!test()) failures.Add("FAIL: " + name); }
     catch (Exception ex) { failures.Add($"FAIL: {name}: {ex.Message}"); }
+}
+
+async Task CheckAsync(string name, Func<Task<bool>> test)
+{
+    try { if (!await test()) failures.Add("FAIL: " + name); }
+    catch (Exception ex) { failures.Add($"FAIL: {name}: {ex.Message}"); }
+}
+
+string RunGit(string workingDirectory, params string[] arguments)
+{
+    using var process = new System.Diagnostics.Process
+    {
+        StartInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git.exe",
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        }
+    };
+    foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
+    process.Start();
+    var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    if (process.ExitCode != 0) throw new InvalidOperationException(output);
+    return output.Trim();
 }
 
 string CreateTempDirectory()

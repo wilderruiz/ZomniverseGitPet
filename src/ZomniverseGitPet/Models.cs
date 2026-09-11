@@ -19,5 +19,27 @@ public sealed record CommandResult(int ExitCode, string Output, bool TimedOut = 
     public bool Success => ExitCode == 0 && !TimedOut;
 }
 
-public sealed record CheckpointResult(bool Success, string Message, string? CommitHash = null);
+public sealed record CheckpointResult(
+    bool Success,
+    string Message,
+    string? CommitHash = null,
+    int SavedFileCount = 0,
+    int SkippedIgnoredCount = 0);
+
+public sealed record IgnoredProjectFile(
+    string Path,
+    string IgnoreSource,
+    int? IgnoreLine,
+    string Rule);
+
+public sealed record SavePreflightResult(
+    bool Success,
+    IReadOnlyList<string> NormalChangedFiles,
+    IReadOnlyList<IgnoredProjectFile> IgnoredChangedFiles,
+    string Error = "");
+
+public sealed record SaveStagePlan(
+    IReadOnlyList<string> NormalFiles,
+    IReadOnlyList<string> ApprovedIgnoredFiles,
+    IReadOnlyList<string> SkippedIgnoredFiles);
 

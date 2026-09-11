@@ -1142,9 +1142,15 @@ public sealed class GuardianForm : Form
         if (!HasRepository()) return;
 
         _status = await _git.GetStatusAsync(_config.RepositoryPath!, token);
-        if (!_status.Healthy || _status.Files.Count == 0)
+        var preflight = await _git.GetSavePreflightAsync(_config.RepositoryPath!, token);
+        if (!_status.Healthy || !preflight.Success)
         {
-            _output.Text = _status.Healthy ? "Everything is already saved locally." : _status.Error;
+            _output.Text = _status.Healthy ? preflight.Error : _status.Error;
+            return;
+        }
+        if (preflight.NormalChangedFiles.Count == 0 && preflight.IgnoredChangedFiles.Count == 0)
+        {
+            _output.Text = "Everything is already saved locally.";
             return;
         }
 
@@ -1156,32 +1162,88 @@ public sealed class GuardianForm : Form
             return;
         }
 
-        var preview = string.Join("\n", _status.Files.Take(20).Select(f => $"{HumanizeGitStatus(f.Status)}  {f.Path}"));
-        if (_status.Files.Count > 20) preview += $"\n... and {_status.Files.Count - 20} more";
+        SaveStagePlan? stagePlan = null;
+        if (preflight.IgnoredChangedFiles.Count > 0)
+        {
+            /* ==========================================================================
+               PATCH: EXPLICIT FORCE-TRACK APPROVAL
+               DATE: 2026-09-11
 
-        var countText = FriendlyGitState.Count(_status.Files.Count, "current change");
-        /*
-        PATCH: STYLED SAVE CONFIRMATION
-        DATE: 2026-09-09
-        Use GitPet theme for Save confirmation.
-        */
-        using var saveDialog = new GuardianConfirmDialog(
-            "Save changes",
-            "SAVE LOCALLY",
-            $"Save all {countText} as a local version?\r\n\r\n" +
-            preview +
-            "\r\n\r\nThis saves the current state on this PC.\r\n" +
-            "Nothing will be sent online.",
-            "Save",
-            "Cancel");
+               Review ignored files before any staging mutation.
+               ========================================================================== */
+            while (true)
+            {
+                /* ==========================================================================
+                   PATCH: IGNORED FILE PET GUIDANCE
+                   FUNCTION:
+                   Explains why the ignored-file review appeared and what the user should select.
 
-        var answer = saveDialog.ShowDialog(this);
+                   DATE.TIME ADDED: 2026-09-11 17:16 +03:00
 
-        if (answer != DialogResult.Yes) return;
+                   REASON:
+                   Guide users through explicit force-track approval without changing Save behavior.
+                   ========================================================================== */
+                var guidancePet = Application.OpenForms
+                    .OfType<PetForm>()
+                    .FirstOrDefault(form => form.Visible && !form.IsDisposed);
+
+                guidancePet?.ShowGuidance(
+                    "⚠ IGNORED FILES FOUND\nTick only files I should track");
+
+                using var ignoredDialog = new IgnoredProjectFilesDialog(
+                    _config.RepositoryPath!, preflight.IgnoredChangedFiles);
+                if (ignoredDialog.ShowDialog(this) != DialogResult.Yes) return;
+
+                var selected = ignoredDialog.SelectedPaths;
+                if (selected.Count > 0)
+                {
+                    var details = preflight.IgnoredChangedFiles
+                        .Where(item => selected.Contains(item.Path, StringComparer.OrdinalIgnoreCase))
+                        .Select(item => $"{item.Path}\r\n  Ignored by: {item.IgnoreSource}" +
+                                        (item.IgnoreLine is int line ? $"\r\n  Line {line}: {item.Rule}" : $"\r\n  Rule: {item.Rule}"));
+                    using var confirm = new GuardianConfirmDialog(
+                        "Track ignored files?",
+                        "TRACK IGNORED FILES?",
+                        "GitPet will explicitly track these files even though Git currently ignores them:\r\n\r\n" +
+                        string.Join("\r\n\r\n", details) +
+                        "\r\n\r\nThis does NOT remove or modify the ignore rule.\r\n" +
+                        "Only the exact selected files will be force-added.",
+                        "Track selected files",
+                        "Back",
+                        dialogSize: new Size(820, 620));
+                    if (confirm.ShowDialog(this) != DialogResult.Yes) continue;
+                }
+
+                stagePlan = IgnoredFileSavePolicy.CreateStagePlan(
+                    preflight.NormalChangedFiles,
+                    preflight.IgnoredChangedFiles,
+                    selected);
+                break;
+            }
+        }
+        else
+        {
+            var preview = string.Join("\n", _status.Files.Take(20).Select(f => $"{HumanizeGitStatus(f.Status)}  {f.Path}"));
+            if (_status.Files.Count > 20) preview += $"\n... and {_status.Files.Count - 20} more";
+
+            var countText = FriendlyGitState.Count(_status.Files.Count, "current change");
+            using var saveDialog = new GuardianConfirmDialog(
+                "Save changes",
+                "SAVE LOCALLY",
+                $"Save all {countText} as a local version?\r\n\r\n" +
+                preview +
+                "\r\n\r\nThis saves the current state on this PC.\r\n" +
+                "Nothing will be sent online.",
+                "Save",
+                "Cancel");
+
+            if (saveDialog.ShowDialog(this) != DialogResult.Yes) return;
+        }
+
         if (!await EnsureGitIdentityAsync(token)) return;
 
         var message = $"checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}";
-        var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, token);
+        var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, stagePlan, token);
         _output.Text = result.Success
             ? "Changes saved locally ✓\n\n" + result.Message
             : result.Message;
@@ -1195,7 +1257,9 @@ public sealed class GuardianForm : Form
                 "Save changes",
                 result.Success ? "SAVED LOCALLY  ✓" : "SAVE NEEDS ATTENTION",
                 result.Success
-                    ? "Changes saved locally.\r\n\r\nNothing was sent online."
+                    ? (stagePlan is null
+                        ? "Changes saved locally.\r\n\r\nNothing was sent online."
+                        : result.Message + "\r\n\r\nNothing was sent online.")
                     : result.Message,
                 "OK",
                 "",
