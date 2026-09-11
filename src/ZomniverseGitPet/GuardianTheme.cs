@@ -71,7 +71,19 @@ internal static class GuardianTheme
     {
         public GuardianColorTable() => UseSystemColors = false;
 
+        /* ==========================================================================
+           PATCH: THEMED DROPDOWN MENU BORDER
+           FUNCTION:
+           Replaces the standard Windows dropdown outline with GitPet's subtle
+           purple border and existing selection styling.
+
+           DATE.TIME ADDED: 2026-09-11 12:50 +03:00
+
+           REASON:
+           Remove the bright system border from GitPet dropdown menus.
+           ========================================================================== */
         public override Color ToolStripDropDownBackground => SurfaceRaised;
+        public override Color MenuBorder => Border;
         public override Color MenuItemSelected => SurfaceSoft;
         public override Color MenuItemBorder => Border;
         public override Color MenuItemSelectedGradientBegin => SurfaceSoft;

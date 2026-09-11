@@ -155,10 +155,27 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     private void ShowProjectsMenu()
     {
         _projectsMenu?.Dispose();
+        /* ==========================================================================
+           PATCH: THEMED PROJECTS CONTEXT MENU
+           FUNCTION:
+           Applies GitPet's dark surfaces, typography, spacing, and shared
+           interactive menu renderer to the Projects dropdown.
+
+           DATE.TIME ADDED: 2026-09-11 12:50 +03:00
+
+           REASON:
+           Make the Projects dropdown visually consistent with the Guardian interface.
+           ========================================================================== */
         var menu = new ContextMenuStrip
         {
             ShowImageMargin = false,
-            Font = new Font("Segoe UI", 9)
+            ShowCheckMargin = false,
+            BackColor = GuardianTheme.SurfaceRaised,
+            ForeColor = GuardianTheme.Ink,
+            Font = new Font("Segoe UI", 9.5f),
+            Padding = new Padding(4),
+            RenderMode = ToolStripRenderMode.Professional,
+            Renderer = GuardianTheme.CreateMenuRenderer()
         };
         _projectsMenu = menu;
 
