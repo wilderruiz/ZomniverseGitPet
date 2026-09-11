@@ -15,7 +15,7 @@ This design-review pack defines one coherent **purple fox repository companion**
 
 Open `mockups/pet/index.html` directly in a browser. The gallery has no build step, framework, network request, or external dependency.
 
-**These mockups are not yet integrated into the live application.**
+**Four of the six static states above (`pet_idle_01`, `pet_happy_01`, `pet_review_ready_01`, `pet_warning_01`) are already embedded in the live application and rendered by it; `pet_idle_02` and `pet_sleep_01` are not yet used. Animation and state-transition behavior beyond swapping a static image are not yet implemented for any state.** (Corrected 2026-09-11 during documentation review — this file previously stated none of the mockups were integrated, which the shipped application's embedded resources and the main `README.md`'s "Meet the guardian" section now contradict.)
 
 ## Visual direction
 
