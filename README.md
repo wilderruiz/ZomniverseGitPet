@@ -7,9 +7,7 @@
 <p align="center"><strong>A desktop Git guardian for human and AI-assisted development.</strong></p>
 
 <p align="center">
-  <strong>Version 0.4.1</strong>
-  &nbsp;•&nbsp;
-  Windows 10 / 11
+  <strong>Windows 10 / 11</strong>
   &nbsp;•&nbsp;
   .NET 8
   &nbsp;•&nbsp;
@@ -24,7 +22,18 @@ ZomniverseGitPet is a lightweight Windows desktop companion that turns Git safet
 
 It is designed for developers, people working with AI coding agents, and anyone who wants Git protection without having to translate every normal action into terminal vocabulary first.
 
-> **Current release:** `0.4.1` · native .NET 8 WinForms · Windows x64 · Git for Windows
+> Native .NET 8 WinForms · Windows x64 · Git for Windows. For the current version and downloads, see this repository's [GitHub Releases](../../releases) page.
+
+---
+
+## Documentation
+
+The full documentation is in [`docs/README.md`](docs/README.md). A few starting points:
+
+- New to GitPet? [Getting Started](docs/user/GETTING_STARTED.md)
+- The core loop: [Save, Get, Send](docs/user/SAVE_GET_SEND.md)
+- How it's built: [Architecture](docs/developer/ARCHITECTURE.md)
+- What it will and won't do automatically: [Safety Model](docs/safety/SAFETY_MODEL.md)
 
 ---
 
@@ -71,7 +80,7 @@ The toolbar intentionally uses human-first labels: <strong>Projects · Refresh �
   </tr>
 </table>
 
-<p align="center"><sub>Guardian Console, desktop pet, review workflows, and repository-safety UI from the evolving 0.4.x preview.</sub></p>
+<p align="center"><sub>Guardian Console, desktop pet, review workflows, and repository-safety UI from the evolving public preview.</sub></p>
 
 ---
 
@@ -140,7 +149,7 @@ The executable, taskbar, Guardian window, and tray all use the same canonical fo
 <h2>How the application is structured</h2>
 
 <table>
-  <tr><th colspan="3">ZomniverseGitPet 0.4.1 architecture</th></tr>
+  <tr><th colspan="3">ZomniverseGitPet architecture</th></tr>
   <tr>
     <td align="center"><strong>Desktop shell</strong><br><sub>PetForm · tray · single-instance activation</sub></td>
     <td align="center">→</td>
@@ -162,6 +171,8 @@ The executable, taskbar, Guardian window, and tray all use the same canonical fo
     <td align="center"><strong>Audit trail</strong><br><sub>append-only local activity metadata under LocalAppData</sub></td>
   </tr>
 </table>
+
+See [`docs/developer/ARCHITECTURE.md`](docs/developer/ARCHITECTURE.md) for the full breakdown, with diagrams.
 
 <details>
 <summary><strong>Important source areas</strong></summary>
@@ -328,7 +339,7 @@ The **Milestones / Major update? ✦** flow can preserve a previous generation a
 
 For GitHub remotes it can also open GitHub's release editor for a protected legacy tag and navigate to previous releases.
 
-See [Major updates, milestones, and releases](docs/MAJOR_UPDATES_AND_RELEASES.md) for the detailed model.
+See [Major updates, milestones, and releases](docs/history/MAJOR_UPDATES_AND_RELEASES.md) for the detailed model.
 
 ---
 
@@ -353,7 +364,7 @@ Background repository checks run quietly and do not masquerade as foreground wor
 
 ZomniverseGitPet stores typed JSON configuration and an append-only audit trail beneath `%LOCALAPPDATA%\ZomniverseGitPet`.
 
-Configuration can include the active repository, up to 20 recent repositories, project-specific test commands, automatic-save preferences, and local UI convenience state. Machine-specific paths are not built into the public source tree.
+Configuration can include the active repository, up to 20 recent repositories, project-specific test commands, automatic-save preferences, and local UI convenience state. Machine-specific paths are not built into the public source tree. See [`docs/reference/CONFIGURATION.md`](docs/reference/CONFIGURATION.md) and [`docs/reference/APPDATA_LAYOUT.md`](docs/reference/APPDATA_LAYOUT.md) for the full field-by-field reference.
 
 ---
 
@@ -378,13 +389,15 @@ For local development, the repository includes a convenience publisher:
 powershell -ExecutionPolicy Bypass -File scripts/publish-local.ps1
 ```
 
-That script places the runnable development executable in the sibling `ZomniverseGitPet_Releases/current` directory while ordinary compiler output remains under ignored `bin/` and `obj/` directories.
+That script places a runnable, filename-tagged development executable under `%LOCALAPPDATA%\ZomniverseGitPet\DEV\` (with its own Start Menu shortcut) while ordinary compiler output remains under ignored `bin/` and `obj/` directories.
+
+A full versioned release — installer, portable build, update manifest, and checksums — is produced by `scripts/build-release.ps1` instead; see [`docs/developer/BUILD_AND_RELEASE.md`](docs/developer/BUILD_AND_RELEASE.md) for that pipeline.
 
 ---
 
 <h2>Project status</h2>
 
-<strong>ZomniverseGitPet 0.4.1</strong> is an early public preview. The maintained application is the native C#/.NET 8 WinForms project under `src/ZomniverseGitPet/`. The original PowerShell proof of concept remains under `prototype/powershell/` as a historical reference.
+ZomniverseGitPet is an early public preview. The maintained application is the native C#/.NET 8 WinForms project under `src/ZomniverseGitPet/`. The original PowerShell proof of concept remains under `prototype/powershell/` as a historical reference. See [GitHub Releases](../../releases) for the current version and downloads.
 
 Current platform support: Windows 10/11 x64 with Git for Windows.
 
@@ -396,7 +409,7 @@ Current platform support: Windows 10/11 x64 with Git for Windows.
 - Curated screenshot/feature gallery from a safe demo repository
 - In-app settings editor for automatic-saving policy
 - File-system-assisted refresh with polling fallback
-- Signed release artifacts and installer packaging
+- Signed release artifacts (installer packaging itself already ships via `scripts/build-release.ps1`; code signing does not yet)
 - Broader accessibility and multi-monitor refinements
 - Task/worktree-aware saves for parallel AI agents
 - Additional automated integration and UI tests

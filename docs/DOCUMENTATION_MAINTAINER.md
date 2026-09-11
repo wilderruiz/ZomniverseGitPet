@@ -1,73 +1,77 @@
 # Documentation Maintainer Contract — ZomniverseGitPet
 
-This file is the standing contract for anyone (human or agent) doing documentation work in this repository from this point forward. It supersedes ad-hoc habits from earlier notes such as `docs/wilder_notes.md`, which is a personal scratch file, not a canonical source.
+This file is the standing contract for anyone — human or AI (Claude, Codex, or otherwise) — doing documentation work in this repository. It applies to every future documentation change, not only the initial Phase 4 pass that created this tree.
 
 ## Core principle
 
-Documentation must describe the system that **exists**, not the system anyone wishes existed. A doc's job is to be a faithful map of current, checked-in behavior — not a proposal, not a memory of what was intended, not an inference from a class name.
+Documentation must describe the system that **exists**, not the system anyone wishes existed. A doc's job is to be a faithful map of current, checked-in behavior — not a proposal, not a memory of intent, not an inference from a class or file name.
 
 ## Before touching any documentation
 
-1. **Inspect the implementation before documenting it.** Read the actual source files and, where they exist, the regression tests that exercise the behavior in question. Never write a claim about behavior based only on a file name, a class name, or a comment's stated intent — comments and names drift from code.
-2. **Treat source code and tests as authoritative.** If a doc and the code disagree, the code is right and the doc is wrong (fix the doc). If a doc and a regression test disagree about a behavior the test actually exercises, the test's assertions are the ground truth.
-3. **Never invent behavior.** If you cannot verify a claim by reading code or a test, either don't make the claim, or explicitly label it as unverified / planned / aspirational (see labeling rules below). Do not fill gaps with plausible-sounding detail.
+1. **Inspect the implementation before documenting it.** Read the actual source files that back a claim. Never write a claim about behavior based only on a file name, a class name, or a comment's stated intent — comments and names drift from code.
+2. **Inspect the relevant regression tests.** If a behavior is covered by a test under `tests/ZomniverseGitPet.Tests/`, read the test's assertions, not just its name — names can be misleading, and the arrange/act/assert is the real specification.
+3. **Treat source code and tests as authoritative.** If a doc and the code disagree, the doc is wrong — fix the doc. If a doc and a test disagree about a behavior the test actually exercises, the test wins.
+4. **Never silently turn PLANNED behavior into CURRENT behavior.** A roadmap item, a comment describing a future intention, or a partially-wired feature must never be described in `docs/user/` or `docs/developer/` as if it already works.
 
 ## Labeling requirements
 
 Every behavior described in canonical documentation must be labeled, explicitly or by the section it lives in, as one of:
 
-- **CURRENT** — implemented, wired up, and (ideally) covered by a regression test or directly observable in the code path that runs in production use.
-- **DEPRECATED** — was implemented, still present in code, but no longer the recommended path (e.g. the PowerShell prototype, superseded config schemas).
-- **EXPERIMENTAL** — implemented but not yet stable/complete, or gated behind a flag, or acknowledged in code/comments as provisional.
-- **PLANNED** — described in a roadmap, issue, or note, but not present in the code at all. Planned behavior must never appear in `docs/user/` or `docs/developer/` prose as if it already works; it belongs in a roadmap section or a dedicated planning doc, clearly marked.
+- **CURRENT** — implemented, wired up, and ideally covered by a regression test.
+- **DEPRECATED** — still present in code but no longer the recommended path.
+- **EXPERIMENTAL** — implemented but not yet stable, or on a branch not yet merged to the main line.
+- **PLANNED** — described in a roadmap or note but not present in code. Belongs in a roadmap section, never in main prose.
 
-When in doubt about which label applies, re-check the code rather than guessing.
+When in doubt, re-check the code rather than guessing.
 
 ## Structural rules
 
-4. **Update existing canonical documentation instead of creating duplicate documents.** Before creating a new file, check `docs/README.md`'s index and the relevant subfolder for an existing doc covering the same subject. If one exists, edit it. A second doc on the same topic is a maintenance liability, not a convenience.
-5. **Preserve historical architecture decisions through ADRs.** When an intentional architectural trade-off changes, do not edit the old ADR to match the new reality — write a new ADR that supersedes it (state the supersession explicitly in both documents). ADRs are a record of decisions made at a point in time, not living documents.
-6. **Keep user documentation separate from internal architecture documentation.** `docs/user/` explains what GitPet does and how to use it, in GitPet's own vocabulary first. `docs/developer/` explains how the code is built, in implementation terms. A user document should never require reading class names to understand; a developer document should never soften a mechanism to protect a beginner's feelings.
+5. **Update existing canonical documentation instead of creating duplicate documents.** Check `docs/README.md`'s index and the relevant subfolder before creating a new file. If a document already covers the subject, edit it.
+6. **Never rewrite an accepted ADR merely because the implementation evolved.** Write a new ADR that supersedes it, and mark the old one's Status as `Superseded by ADR-NNNN` in both directions.
+7. **Keep user documentation separate from internal architecture documentation.** `docs/user/` explains what GitPet does and how to use it, in GitPet's own vocabulary first. `docs/developer/` explains how the code is built, in implementation terms.
+8. **Distinguish DEV, installed, and portable builds explicitly wherever the distinction matters** — for example, self-update only runs for installed builds; the DEV executable is filename-prefixed and lives in its own LocalAppData subfolder. Don't let these blur together in prose.
+9. **Distinguish GitPet's own application releases from a user project's "Major Update" milestones.** These are two unrelated features that both involve branches, tags, and GitHub Releases, and are the single easiest thing in this codebase to conflate. Any document touching either must state clearly which one it means.
+
+## Version-independence rule
+
+10. **Keep the root `README.md` version-independent.** It must not hard-code a "current version" number, a version-specific architecture heading, or duplicate long-form internal documentation that belongs under `docs/`. The authoritative source for "what is the latest version" is the project's GitHub Releases page, not a string baked into a Markdown file that will inevitably drift (see the Post-audit delta in `docs/DOCUMENTATION_AUDIT.md` for a concrete example of what happens when it isn't). A version number is fine in a historical record (`docs/history/RELEASE_HISTORY.md`, an ADR's `Date`), never in living prose that describes current behavior.
 
 ## Safety and content hygiene
 
-7. **Avoid leaking secrets, private paths, credentials, or user-specific information.** Do not put the maintainer's real file paths (e.g. an actual `I:\Dropbox\...` path), account names, tokens, or machine-specific detail into committed documentation. Use placeholders (`<repo-root>`, `%LOCALAPPDATA%\ZomniverseGitPet\...`) instead.
-8. **Prefer relative repository paths in documentation.** Reference `src/ZomniverseGitPet/GuardianForm.cs`, not an absolute filesystem path.
-9. **Keep screenshots optional rather than necessary for understanding.** Prose and small examples should stand on their own; an image may help but a reader without one must not be lost.
-10. **Document safety boundaries and destructive operations explicitly.** Anything that can lose local work, force-overwrite history, or send data off the user's machine must be named plainly, in `docs/safety/`, with the exact command or code path that performs it and the exact condition under which GitPet will or won't do it automatically.
-11. **Document important failure modes.** What happens when the network is down mid-Send, when a merge conflicts, when the working tree is dirty during a Get, when GitHub auth expires — these are as important to document as the happy path.
+11. **Keep personal machine paths, credentials, and other private data out of public documentation.** Do not put the maintainer's real file paths (e.g. a real Dropbox or drive-letter path), account names, tokens, or machine-specific detail into committed documentation. Use placeholders (`<repo-root>`, `%LOCALAPPDATA%\ZomniverseGitPet\...`) instead.
+12. **Prefer relative repository paths in documentation and relative Markdown links between docs.**
+13. **Keep screenshots optional rather than necessary for understanding.**
+14. **Document destructive or externally visible behavior explicitly.** Anything that can lose local work, rewrite history, publish data outside the user's machine, or block an action the user expects to succeed must be named plainly, with the exact code path and the exact condition under which it happens.
+15. **Document important failure modes** — network failures mid-Send, merge conflicts, a dirty tree during Get, expired GitHub auth, a mismatched allow list — as thoroughly as the happy path.
 
 ## Change discipline
 
-12. **Document any new persistent configuration.** Any new field written to `config.json`, `project-allow-lists.json`, `standalone-publishing.json`, the audit log, or any other file under `%LOCALAPPDATA%\ZomniverseGitPet\` must be added to the relevant reference doc (schema, location, default value, who reads/writes it) in the same change that introduces it.
-13. **Document migrations when behavior or storage formats change.** If a config schema version bumps, or an on-disk format changes shape, document what the migration does to existing user data and what happens to entries that don't fit the new shape.
-14. **Update `docs/README.md` whenever a canonical document is added or retired.** The entry point must never list a document that no longer exists, or omit one that does.
-15. **Audit documentation drift after substantial architectural changes.** After a change that touches how a major subsystem works (not a small bugfix), re-read the docs that describe that subsystem and correct anything that no longer matches, rather than leaving the correction for later.
+16. **Document any new persistent configuration or storage change in the same change that introduces it** — a new `config.json` field, a new file under `%LOCALAPPDATA%\ZomniverseGitPet\`, a schema version bump, or a change to an on-disk format's shape, including what happens to existing data that doesn't fit the new shape.
+17. **Update documentation after architectural changes, not just after feature changes.** A change to how a major subsystem works deserves a documentation re-read and correction, not a deferral.
+18. **Update `docs/README.md` whenever a canonical document is added or retired.** The entry point must never list a document that no longer exists, or omit one that does.
+19. **Audit documentation drift before public releases.** Before a release is published, re-check that the documents describing the subsystems that changed since the last release still match the code, and that no version number was accidentally reintroduced into `README.md` or an architecture heading.
 
 ## Style
 
-- Write concise technical English. Prefer diagrams and small, concrete examples over long prose.
-- Use consistent terminology — see `docs/reference/TERMINOLOGY.md` for the canonical GitPet vocabulary, and use it exactly, everywhere.
+- Write concise technical English. Prefer diagrams (Mermaid, GitHub-renders natively) and small, concrete examples over long prose.
+- Use consistent terminology — see `docs/reference/TERMINOLOGY.md` — and use it exactly, everywhere.
 - Avoid marketing language in developer documentation.
 - User documentation should explain Git concepts using GitPet's own terminology first (Save, Get, Send, Reconcile, Checkpoint, Project), with the underlying Git terminology (commit, pull, push, merge, repository) given secondarily where it helps a reader who already knows Git.
+- Safety documentation should be explicit and unemotional: state what GitPet may do, what it refuses to do, and where it requires confirmation — as plain fact, not reassurance.
 
 ## ADR format
 
 ```
 # ADR-NNNN — Title
 
-Status:
-Date:
+Status: Accepted
+Date: YYYY-MM-DD
 
 ## Context
-
 ## Decision
-
 ## Reasons
-
 ## Consequences
-
 ## Alternatives considered
 ```
 
-Numbers are sequential and never reused. Never rewrite an accepted ADR merely because the implementation evolved — write a new, superseding ADR instead, and mark the old one's Status as `Superseded by ADR-NNNN`.
+Numbers are sequential and never reused. ADRs describe *why* a decision exists, not a full implementation manual — link to the relevant developer document for the mechanics.
