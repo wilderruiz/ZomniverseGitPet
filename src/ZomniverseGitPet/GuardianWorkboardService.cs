@@ -64,14 +64,8 @@ internal sealed class GuardianWorkboardService(GitService git)
             return new GuardianWorkboardSnapshot(
                 true,
                 status.Branch,
-                [],
-                [],
-                [],
-                [],
-                0,
-                0,
-                false,
-                false,
+                [], [], [], [],
+                0, 0, false, false,
                 "GitPet could not read local changes yet.",
                 "Incoming state is unavailable until Git status recovers.",
                 "Outgoing state is unavailable until Git status recovers.",
@@ -86,9 +80,25 @@ internal sealed class GuardianWorkboardService(GitService git)
             .ToArray();
 
         var branch = status.Branch;
-        var validBranch = IsUsableBranch(branch);
         var localOnly = config.ConnectionMode == GitPetConnectionModes.LocalGitOnly;
 
+        /* ==========================================================================
+           PATCH: STANDALONE PROJECT WORKBOARD
+           DATE.TIME: 2026-09-11 20:32 +03:00
+           Never preview unrelated parent files as project output.
+           ========================================================================== */
+        if (!localOnly && StandaloneProjectPublishing.IsLogicalProject(config, repositoryPath))
+        {
+            return await BuildStandaloneProjectAsync(
+                config,
+                repositoryPath,
+                status,
+                saveRows,
+                remoteState,
+                token);
+        }
+
+        var validBranch = IsUsableBranch(branch);
         var hasRemote = !localOnly && remoteState.HasRemote && validBranch;
         var remoteBranchExists = hasRemote && remoteState.RemoteBranchExists;
         var onlineReachable = hasRemote && remoteState.OnlineReachable;
@@ -102,7 +112,7 @@ internal sealed class GuardianWorkboardService(GitService git)
 
         var divergence = !localOnly && ahead > 0 && behind > 0;
         var reconciliationPending = status.Files.Any(file => file.Status.Contains('U')) ||
-            (!localOnly && remoteState.ReconciliationPending);
+                                    (!localOnly && remoteState.ReconciliationPending);
 
         IReadOnlyList<GuardianWorkboardRow> getRows = [];
         IReadOnlyList<GuardianWorkboardRow> sendRows = [];
@@ -204,6 +214,72 @@ internal sealed class GuardianWorkboardService(GitService git)
             sendFileCount,
             divergence,
             reconciliationPending,
+            saveEmpty,
+            getEmpty,
+            sendEmpty,
+            reconcileEmpty);
+    }
+
+    private async Task<GuardianWorkboardSnapshot> BuildStandaloneProjectAsync(
+        AppConfig config,
+        string repositoryPath,
+        RepositoryStatus status,
+        IReadOnlyList<GuardianWorkboardRow> saveRows,
+        GuardianSyncSnapshot remoteState,
+        CancellationToken token)
+    {
+        var project = config.GetActiveProject();
+        var link = StandaloneProjectPublishing.GetLink(config);
+        var hasRemote = link is not null && remoteState.HasRemote;
+        var pending = hasRemote && remoteState.Ahead > 0;
+
+        IReadOnlyList<GuardianWorkboardRow> sendRows = [];
+        var sendFileCount = 0;
+        var sendCommitCount = 0;
+        if (pending)
+        {
+            var files = await StandaloneProjectPublishing.GetTrackedScopeFilesAsync(
+                config, git, repositoryPath, token);
+            var fileRows = files
+                .Select(path => new GuardianWorkboardRow(
+                    "FILE",
+                    path,
+                    "This tracked file belongs to the standalone GitPet project package."))
+                .ToArray();
+            sendFileCount = fileRows.Length;
+            sendCommitCount = 1;
+            sendRows = new[]
+            {
+                new GuardianWorkboardRow(
+                    "PROJECT",
+                    $"{project?.DisplayName ?? "Logical project"} standalone snapshot",
+                    "GitPet will create/update an isolated project-only commit. The parent repository history is not sent.",
+                    IsCommit: true)
+            }.Concat(LimitRows(fileRows, MaxFileRows)).ToArray();
+        }
+
+        var saveEmpty = "Nothing waiting to be saved.\nLocal working files match the latest saved version.";
+        var getEmpty = !hasRemote
+            ? "No project-only online home is connected yet."
+            : "Standalone project publishing is outbound-only for now.\nThe parent repository is never pulled into this project copy.";
+        var sendEmpty = !hasRemote
+            ? "Connect a project-only online home before sending.\nThe parent repository will not be used."
+            : "Everything in this selected project scope has already been sent.";
+        var reconcileEmpty = !hasRemote
+            ? "No standalone publishing history is connected yet."
+            : "Standalone project publishing keeps parent and project histories isolated.\nNothing needs reconciliation here.";
+
+        return new GuardianWorkboardSnapshot(
+            true,
+            status.Branch,
+            saveRows,
+            [],
+            sendRows,
+            [],
+            sendCommitCount,
+            sendFileCount,
+            false,
+            false,
             saveEmpty,
             getEmpty,
             sendEmpty,
