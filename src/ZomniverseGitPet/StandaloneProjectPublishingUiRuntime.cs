@@ -40,9 +40,9 @@ internal static class StandaloneProjectPublishingUiRuntime
         foreach (var guardian in Buttons.Keys.ToArray()) UpdateButton(guardian);
     }
 
-    private static async Task TickAsync()
+    private static Task TickAsync()
     {
-        if (_tickRunning || _config is null || _git is null || _audit is null) return;
+        if (_tickRunning || _config is null || _git is null || _audit is null) return Task.CompletedTask;
         _tickRunning = true;
         try
         {
@@ -64,7 +64,7 @@ internal static class StandaloneProjectPublishingUiRuntime
         {
             _tickRunning = false;
         }
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     private static void EnsureButton(GuardianForm guardian)
@@ -113,10 +113,12 @@ internal static class StandaloneProjectPublishingUiRuntime
 
         var snapshot = GuardianSyncState.Current;
         var linked = StandaloneProjectPublishing.GetLink(_config) is not null;
+        var onlineMode = _config.ConnectionMode != GitPetConnectionModes.LocalGitOnly;
         var operationRunning = OperationInProgress(guardian);
         standaloneButton.Text = "Send ↑";
         standaloneButton.Width = 92;
-        standaloneButton.Enabled = linked &&
+        standaloneButton.Enabled = onlineMode &&
+                                   linked &&
                                    snapshot.HasRepository &&
                                    snapshot.HasRemote &&
                                    snapshot.OnlineReachable &&
@@ -133,6 +135,18 @@ internal static class StandaloneProjectPublishingUiRuntime
         var audit = _audit;
         if (config is null || git is null || audit is null || string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
         if (!StandaloneProjectPublishing.IsLogicalProject(config, config.RepositoryPath)) return;
+
+        if (config.ConnectionMode == GitPetConnectionModes.LocalGitOnly)
+        {
+            using var localOnly = new GuardianConfirmDialog(
+                "Send project",
+                "LOCAL GIT MODE",
+                "GitPet is currently keeping this project local. Switch the GitHub connection back on before publishing.",
+                "OK",
+                showCancel: false);
+            localOnly.ShowDialog(guardian);
+            return;
+        }
 
         var project = config.GetActiveProject();
         var link = StandaloneProjectPublishing.GetLink(config);
@@ -162,7 +176,8 @@ internal static class StandaloneProjectPublishingUiRuntime
             "GitPet will build an isolated copy containing ONLY this project's selected tracked files.\r\n\r\n" +
             "The larger parent repository and unrelated sibling folders will NOT be sent.",
             "Send project ↑",
-            "Cancel");
+            "Cancel",
+            confirmWidth: 160);
         if (confirmation.ShowDialog(guardian) != DialogResult.Yes) return;
 
         var pet = Application.OpenForms
@@ -183,7 +198,8 @@ internal static class StandaloneProjectPublishingUiRuntime
                     ? result.Message + "\r\n\r\nStandalone workspace:\r\n" + result.WorkspacePath
                     : result.Message,
                 "OK",
-                showCancel: false);
+                showCancel: false,
+                dialogSize: result.Success ? new Size(760, 460) : new Size(760, 500));
             done.ShowDialog(guardian);
             pet?.ShowGuidance(result.Success
                 ? "✓ PROJECT SENT\nParent repo stayed private"
