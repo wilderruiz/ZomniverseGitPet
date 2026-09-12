@@ -8,7 +8,19 @@ public sealed class GuardianForm : Form
     private readonly AuditLog _audit;
     private readonly Func<Task> _chooseRepository;
 
-    private readonly Label _projectTitle = new();
+    /* ==========================================================================
+       PATCH: CURRENT PROJECT PILL CONTROLS
+       FUNCTION:
+       Separates the current-project context label from the dynamic, scrollable
+       project-name pill used in the repository header.
+
+       DATE.TIME ADDED: 2026-09-12 20:05 +03:00
+
+       REASON:
+       Replace the repeated application title with a clearer active-project identity.
+       ========================================================================== */
+    private readonly Label _projectContextLabel = new();
+    private readonly ProjectNamePill _projectTitle = new();
     private readonly Label _onlineLabel = new();
     private readonly Label _commitLabel = new();
     private readonly Label _watchingLabel = new();
@@ -266,17 +278,62 @@ public sealed class GuardianForm : Form
             Margin = new Padding(0, 0, 28, 0),
             BackColor = GuardianTheme.Surface
         };
-        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
 
-        _projectTitle.Dock = DockStyle.Fill;
-        _projectTitle.Text = "ZOMNIVERSE GITPET";
-        _projectTitle.ForeColor = Color.White;
-        _projectTitle.Font = new Font("Segoe UI", 13.5f, FontStyle.Bold);
-        _projectTitle.TextAlign = ContentAlignment.MiddleLeft;
-        _projectTitle.AutoEllipsis = true;
+        /* ==========================================================================
+           PATCH: BUILD CURRENT PROJECT PILL HEADER
+           FUNCTION:
+           Places a muted context label beside a dynamically sized project pill and
+           constrains long names to the available header width.
+
+           DATE.TIME ADDED: 2026-09-12 20:05 +03:00
+
+           REASON:
+           Clarify which text is the active project while preserving access to long names.
+           ========================================================================== */
+        var projectHeading = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = GuardianTheme.Surface
+        };
+
+        _projectContextLabel.AutoSize = true;
+        _projectContextLabel.Text = "CURRENT PROJECT";
+        _projectContextLabel.ForeColor = GuardianTheme.MutedInk;
+        _projectContextLabel.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+        _projectContextLabel.Margin = new Padding(0, 10, 12, 0);
+        _projectContextLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        _projectTitle.Text = "NO PROJECT";
+        _projectTitle.Margin = Padding.Empty;
+        projectHeading.Controls.Add(_projectContextLabel);
+        projectHeading.Controls.Add(_projectTitle);
+        /* ==========================================================================
+           PATCH: USE ALL AVAILABLE PROJECT PILL WIDTH
+           FUNCTION:
+           Calculates the pill ceiling from the live header width after subtracting
+           the context label and both controls' horizontal margins.
+
+           DATE.TIME ADDED: 2026-09-12 20:29 +03:00
+
+           REASON:
+           Let full project names use free header space without entering the status region.
+           ========================================================================== */
+        projectHeading.Resize += (_, _) =>
+        {
+            var available = projectHeading.ClientSize.Width
+                - _projectContextLabel.Width
+                - _projectContextLabel.Margin.Horizontal
+                - _projectTitle.Margin.Horizontal;
+            _projectTitle.MaximumPillWidth = Math.Max(1, available);
+        };
 
         var overview = new Label
         {
@@ -313,7 +370,7 @@ public sealed class GuardianForm : Form
         _watchingLabel.Font = new Font("Segoe UI", 9);
         _watchingLabel.TextAlign = ContentAlignment.MiddleLeft;
 
-        summary.Controls.Add(_projectTitle, 0, 0);
+        summary.Controls.Add(projectHeading, 0, 0);
         summary.Controls.Add(overview, 0, 1);
         summary.Controls.Add(commitArea, 0, 2);
         summary.Controls.Add(_watchingLabel, 0, 3);
@@ -828,12 +885,28 @@ public sealed class GuardianForm : Form
 
     private void UpdateRepositoryHeader(RepositoryStatus status, CommandResult commit)
     {
+        /* ==========================================================================
+           PATCH: DISPLAY SAVED PROJECT NAME IN HEADER
+           FUNCTION:
+           Uses the active GitPet project's saved display name for the project pill,
+           falling back to the repository folder name when no display name exists.
+
+           DATE.TIME ADDED: 2026-09-12 20:16 +03:00
+
+           REASON:
+           The folder basename hides the complete logical project name.
+           ========================================================================== */
         var path = _config.RepositoryPath ?? "";
         var normalized = string.IsNullOrWhiteSpace(path) ? "" : Path.TrimEndingDirectorySeparator(path);
-        var name = string.IsNullOrWhiteSpace(normalized) ? "NO PROJECT" : Path.GetFileName(normalized);
+        var activeProject = _config.GetActiveProject();
+        var name = !string.IsNullOrWhiteSpace(activeProject?.DisplayName)
+            ? activeProject.DisplayName
+            : string.IsNullOrWhiteSpace(normalized)
+                ? "NO PROJECT"
+                : Path.GetFileName(normalized);
         if (string.IsNullOrWhiteSpace(name)) name = normalized;
 
-        _projectTitle.Text = $"ZOMNIVERSE GITPET  /  {name.ToUpperInvariant()}";
+        _projectTitle.Text = name.ToUpperInvariant();
         _toolTips.SetToolTip(_projectTitle, string.IsNullOrWhiteSpace(path)
             ? "No active project."
             : $"Active project\n{path}\n\nClosing Guardian with X only hides this window; the fox keeps running.");
@@ -869,7 +942,7 @@ public sealed class GuardianForm : Form
 
     private void SetNoProjectHeader()
     {
-        _projectTitle.Text = "ZOMNIVERSE GITPET  /  NO PROJECT";
+        _projectTitle.Text = "NO PROJECT";
         _healthChip.Text = "● WAITING";
         _healthChip.Tone = GuardianChipTone.Neutral;
         _branchChip.Text = "—";

@@ -1,0 +1,158 @@
+<div id="gitpet-project-pill-mockup">
+  <style>
+    #gitpet-project-pill-mockup {
+      width: 100%;
+      padding: 12px;
+      box-sizing: border-box;
+      color: #f4f0f9;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    #gitpet-project-pill-mockup * { box-sizing: border-box; }
+    #gitpet-project-pill-mockup .gp-window {
+      overflow: hidden;
+      background: #17121f;
+      border: 1px solid #ff329e;
+      border-radius: 12px;
+      box-shadow: 0 16px 38px rgba(0, 0, 0, .32);
+    }
+    #gitpet-project-pill-mockup .gp-titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 40px;
+      padding: 0 14px;
+      background: #1b1624;
+      color: #e9e2f0;
+    }
+    #gitpet-project-pill-mockup .gp-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+    }
+    #gitpet-project-pill-mockup .gp-title img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+    }
+    #gitpet-project-pill-mockup .gp-controls {
+      display: flex;
+      gap: 20px;
+      color: #a99eb7;
+    }
+    #gitpet-project-pill-mockup .gp-menu {
+      display: flex;
+      gap: 26px;
+      padding: 8px 16px;
+      color: #d5ccdf;
+      background: #231c2f;
+    }
+    #gitpet-project-pill-mockup .gp-header {
+      padding: 20px;
+      background: #231c2f;
+    }
+    #gitpet-project-pill-mockup .gp-repository-panel {
+      min-height: 152px;
+      padding: 24px 28px;
+      background: #1b1624;
+      border: 1px solid #4d3e65;
+      border-radius: 11px;
+    }
+    #gitpet-project-pill-mockup .gp-project-heading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    #gitpet-project-pill-mockup .gp-current-label {
+      flex: 0 0 auto;
+      color: #9f92b2;
+      font-weight: 500;
+      letter-spacing: .06em;
+    }
+    #gitpet-project-pill-mockup .gp-project-pill {
+      display: inline-block;
+      width: max-content;
+      max-width: min(560px, 62vw);
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 8px 14px 6px;
+      color: #8dbbff;
+      background: #29203a;
+      border: 1px solid #574471;
+      border-radius: 999px;
+      font-weight: 500;
+      white-space: nowrap;
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+      transition: border-color .16s ease, background-color .16s ease;
+    }
+    #gitpet-project-pill-mockup .gp-project-pill:hover,
+    #gitpet-project-pill-mockup .gp-project-pill:focus {
+      background: #2d2340;
+      border-color: #735893;
+      scrollbar-color: rgba(197, 164, 235, .62) transparent;
+    }
+    #gitpet-project-pill-mockup .gp-project-pill::-webkit-scrollbar {
+      height: 4px;
+    }
+    #gitpet-project-pill-mockup .gp-project-pill::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #gitpet-project-pill-mockup .gp-project-pill::-webkit-scrollbar-thumb {
+      background: transparent;
+      border-radius: 999px;
+    }
+    #gitpet-project-pill-mockup .gp-project-pill:hover::-webkit-scrollbar-thumb,
+    #gitpet-project-pill-mockup .gp-project-pill:focus::-webkit-scrollbar-thumb {
+      background: rgba(197, 164, 235, .62);
+    }
+    #gitpet-project-pill-mockup .gp-caption {
+      margin-top: 13px;
+      color: #9e92ad;
+    }
+    #gitpet-project-pill-mockup .gp-checkpoint {
+      margin-top: 22px;
+      padding-top: 16px;
+      border-top: 1px solid #3c314e;
+      color: #bdb2ca;
+      font-family: "Cascadia Mono", Consolas, monospace;
+    }
+    #gitpet-project-pill-mockup .gp-checkpoint strong {
+      color: #f4f0f9;
+      font-weight: 500;
+    }
+    @media (max-width: 620px) {
+      #gitpet-project-pill-mockup .gp-project-heading {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      #gitpet-project-pill-mockup .gp-project-pill {
+        max-width: 100%;
+      }
+    }
+  </style>
+
+  <section class="gp-window" aria-label="GitPet current-project heading mockup">
+    <div class="gp-titlebar">
+      <div class="gp-title">
+        <img src="file:///I:/Dropbox/WORK_LAPTOP/Programming/ZomniverseGitPet/src/ZomniverseGitPet/Assets/Pet/pet_happy_01.png" alt="">
+        <span>DEV-ZGitPet Guardian</span>
+      </div>
+      <div class="gp-controls" aria-hidden="true"><span>—</span><span>□</span><span>×</span></div>
+    </div>
+    <nav class="gp-menu" aria-label="Application menu">
+      <span>Project setup</span><span>Milestones</span><span>Help</span>
+    </nav>
+    <header class="gp-header">
+      <div class="gp-repository-panel">
+        <div class="gp-project-heading">
+          <span class="gp-current-label">CURRENT PROJECT</span>
+          <span class="gp-project-pill" tabindex="0" aria-label="Current project: ZomniverseGitPet feature synchronization control panel workspace">ZOMNIVERSEGITPET_FEATURE_SYNCHRONIZATION_CONTROL_PANEL_WORKSPACE</span>
+        </div>
+        <div class="gp-caption">Repository overview and most recent checkpoint</div>
+        <div class="gp-checkpoint">LATEST&nbsp; <strong>0410049</strong> — checkpoint: 2026-09-12 18:27</div>
+      </div>
+    </header>
+  </section>
+</div>
