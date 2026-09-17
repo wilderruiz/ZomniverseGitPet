@@ -88,14 +88,24 @@ internal sealed class GuardianWorkboardControl : UserControl
     public void SetBusy(bool busy)
     {
         if (!busy) return;
-        if (_save.HasOperationState) return;
+        if (_save.HasOperationState || _get.HasOperationState || _send.HasOperationState || _reconcile.HasOperationState) return;
         _save.SetTransientBadge("WORKING…");
         _get.SetTransientBadge("WORKING…");
         _send.SetTransientBadge("WORKING…");
         _reconcile.SetTransientBadge("WORKING…");
     }
 
-    public void SetSaveOperationState(SaveOperationVisualState state) => _save.SetOperationState(state);
+    public void SetOperationState(SaveOperationVisualState state)
+    {
+        var section = state.Operation switch
+        {
+            GuardianOperationKind.Get => _get,
+            GuardianOperationKind.Send => _send,
+            GuardianOperationKind.Reconcile => _reconcile,
+            _ => _save
+        };
+        section.SetOperationState(state);
+    }
 
     internal static string? SaveBadgeFor(SaveOperationPhase phase) => phase switch
     {
@@ -109,6 +119,23 @@ internal sealed class GuardianWorkboardControl : UserControl
         SaveOperationPhase.Cancelled => "CANCELLED",
         _ => null
     };
+
+    internal static string? OperationBadgeFor(GuardianOperationKind operation, SaveOperationPhase phase)
+    {
+        if (operation == GuardianOperationKind.Save) return SaveBadgeFor(phase);
+        return phase switch
+        {
+            SaveOperationPhase.Preparing => "PREPARING…",
+            SaveOperationPhase.CheckingPathSupport => "CHECKING…",
+            SaveOperationPhase.Staging or SaveOperationPhase.CreatingCheckpoint => "WORKING…",
+            SaveOperationPhase.Completed => operation == GuardianOperationKind.Get ? "RECEIVED ✓" :
+                operation == GuardianOperationKind.Send ? "SENT ✓" : "READY ✓",
+            SaveOperationPhase.Warning => "ATTENTION",
+            SaveOperationPhase.Failed => "FAILED",
+            SaveOperationPhase.Cancelled => "CANCELLED",
+            _ => null
+        };
+    }
 
     private static int CountProjectedFiles(IEnumerable<GuardianWorkboardRow> rows) =>
         rows.Count(row => !row.IsCommit && row.State != "MORE");
@@ -253,7 +280,7 @@ internal sealed class GuardianWorkboardControl : UserControl
             _operationState = state;
             _progressRing.Active = state.IsActive;
             _progressRing.Visible = state.IsActive;
-            _badge.Text = SaveBadgeFor(state.Phase) ?? _normalBadge;
+            _badge.Text = OperationBadgeFor(state.Operation, state.Phase) ?? _normalBadge;
             _attention = state.Phase is SaveOperationPhase.Warning or SaveOperationPhase.Failed;
             ApplyOperationTone(state.Phase);
         }

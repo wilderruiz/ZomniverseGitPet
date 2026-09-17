@@ -195,7 +195,7 @@ public sealed class PetForm : Form
         _tray.Text = error.Length > 60 ? error[..60] : error;
     }
 
-    public void SetSaveOperationState(SaveOperationVisualState state)
+    public void SetOperationState(SaveOperationVisualState state)
     {
         _saveOperationState = state;
         _operationHoldTimer.Stop();
@@ -351,16 +351,22 @@ public sealed class PetForm : Form
             SaveOperationPhase.Cancelled => _assets.Idle,
             _ => _stateImage
         };
-        var heading = phase switch
+        var heading = (state: phase, operation: _saveOperationState.Operation) switch
         {
-            SaveOperationPhase.Preparing => "● THINKING",
-            SaveOperationPhase.CheckingPathSupport => "● CHECKING PATHS",
-            SaveOperationPhase.Staging => "● WORKING",
-            SaveOperationPhase.CreatingCheckpoint => "● PACKING SAVE",
-            SaveOperationPhase.Completed => "● SAVED ✓",
-            SaveOperationPhase.Warning => "● SAVE NEEDS ATTENTION",
-            SaveOperationPhase.Failed => "● SAVE FAILED",
-            SaveOperationPhase.Cancelled => "● SAVE CANCELLED",
+            (SaveOperationPhase.Preparing, _) => "● THINKING",
+            (SaveOperationPhase.CheckingPathSupport, _) => "● CHECKING",
+            (SaveOperationPhase.Staging or SaveOperationPhase.CreatingCheckpoint, GuardianOperationKind.Get) => "● GETTING UPDATES",
+            (SaveOperationPhase.Staging or SaveOperationPhase.CreatingCheckpoint, GuardianOperationKind.Send) => "● SENDING UPDATES",
+            (SaveOperationPhase.Staging or SaveOperationPhase.CreatingCheckpoint, GuardianOperationKind.Reconcile) => "● RECONCILING",
+            (SaveOperationPhase.Staging, _) => "● WORKING",
+            (SaveOperationPhase.CreatingCheckpoint, _) => "● PACKING SAVE",
+            (SaveOperationPhase.Completed, GuardianOperationKind.Get) => "● UPDATES RECEIVED ✓",
+            (SaveOperationPhase.Completed, GuardianOperationKind.Send) => "● SENT ONLINE ✓",
+            (SaveOperationPhase.Completed, GuardianOperationKind.Reconcile) => "● RECONCILED ✓",
+            (SaveOperationPhase.Completed, _) => "● SAVED ✓",
+            (SaveOperationPhase.Warning, _) => "● NEEDS ATTENTION",
+            (SaveOperationPhase.Failed, _) => "● OPERATION FAILED",
+            (SaveOperationPhase.Cancelled, _) => "● CANCELLED",
             _ => ""
         };
         _fox.Image = image;

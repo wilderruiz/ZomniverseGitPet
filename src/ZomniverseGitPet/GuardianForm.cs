@@ -52,6 +52,9 @@ public sealed class GuardianForm : Form
     private readonly System.Windows.Forms.Timer _pulseTimer = new() { Interval = 1050 };
     private readonly System.Windows.Forms.Timer _saveTerminalTimer = new() { Interval = 2200 };
     private readonly SaveOperationStateController _saveOperation = new();
+    private readonly SaveOperationStateController _getOperation = new(GuardianOperationKind.Get);
+    private readonly SaveOperationStateController _sendOperation = new(GuardianOperationKind.Send);
+    private readonly SaveOperationStateController _reconcileOperation = new(GuardianOperationKind.Reconcile);
     private bool _pulseBright;
 
     private readonly Button[] _operationButtons;
@@ -233,10 +236,16 @@ public sealed class GuardianForm : Form
         };
         _pulseTimer.Start();
         _saveOperation.Changed += OnSaveOperationStateChanged;
+        _getOperation.Changed += OnSaveOperationStateChanged;
+        _sendOperation.Changed += OnSaveOperationStateChanged;
+        _reconcileOperation.Changed += OnSaveOperationStateChanged;
         _saveTerminalTimer.Tick += (_, _) =>
         {
             _saveTerminalTimer.Stop();
             _saveOperation.Transition(SaveOperationPhase.Idle);
+            _getOperation.Transition(SaveOperationPhase.Idle);
+            _sendOperation.Transition(SaveOperationPhase.Idle);
+            _reconcileOperation.Transition(SaveOperationPhase.Idle);
         };
     }
 
@@ -1420,8 +1429,7 @@ public sealed class GuardianForm : Form
 
         if (!await EnsureGitIdentityAsync(token))
         {
-            if (_saveOperation.Current.IsActive)
-                _saveOperation.Transition(SaveOperationPhase.Cancelled);
+            GetActiveOperationController()?.Transition(SaveOperationPhase.Cancelled);
             return;
         }
 
@@ -1506,7 +1514,11 @@ public sealed class GuardianForm : Form
         return true;
     }
 
-    private async Task PullFromOriginAsync() => await RunOperationAsync("Checking Get safety...", async token =>
+    private async Task PullFromOriginAsync()
+    {
+        _getOperation.Transition(SaveOperationPhase.Preparing, "Checking Get safety...");
+        await Task.Yield();
+        await RunOperationAsync("Checking Get safety...", async token =>
     {
         if (!HasRepository()) return;
 
@@ -1516,6 +1528,7 @@ public sealed class GuardianForm : Form
         {
             ReportActivity("Get unavailable because Git could not read the current project state.\n\n" + status.Error,
                 GuardianActivityKind.Error);
+            _getOperation.Transition(SaveOperationPhase.Failed, "Git could not read the current project state.");
             return;
         }
 
@@ -1534,6 +1547,7 @@ public sealed class GuardianForm : Form
                 "Save first",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            _getOperation.Transition(SaveOperationPhase.Warning, "Save local changes before using Get.");
             return;
         }
 
@@ -1543,6 +1557,7 @@ public sealed class GuardianForm : Form
         {
             ReportActivity("Get unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).",
                 GuardianActivityKind.Error);
+            _getOperation.Transition(SaveOperationPhase.Failed, "The current branch could not be determined.");
             return;
         }
 
@@ -1552,6 +1567,7 @@ public sealed class GuardianForm : Form
             ReportActivity(string.IsNullOrWhiteSpace(originResult.Output)
                 ? "Get unavailable: no readable origin remote is configured."
                 : originResult.Output, GuardianActivityKind.Error);
+            _getOperation.Transition(SaveOperationPhase.Failed, "No readable origin remote is configured.");
             return;
         }
 
@@ -1569,9 +1585,11 @@ public sealed class GuardianForm : Form
         if (answer != DialogResult.Yes)
         {
             ReportActivity("Get cancelled. Nothing was changed.", GuardianActivityKind.Cancelled);
+            _getOperation.Transition(SaveOperationPhase.Cancelled);
             return;
         }
 
+        _getOperation.Transition(SaveOperationPhase.Staging, $"Getting updates from origin/{branch}...");
         ReportActivity($"Getting updates from origin/{branch} with fast-forward-only safety...");
         var result = await _git.PullFromOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
@@ -1580,6 +1598,8 @@ public sealed class GuardianForm : Form
             ? $"Updates received ✓\norigin/{branch} → local {branch}\n\n{details}"
             : $"Get stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.",
             result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
+        _getOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
+            result.Success ? "Updates received successfully." : "Get stopped safely.");
 
         MessageBox.Show(
             this,
@@ -1591,9 +1611,16 @@ public sealed class GuardianForm : Form
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
         await RefreshRepositoryViewAsync(token);
-    });
+        });
+        if (_getOperation.Current.IsActive)
+            _getOperation.Transition(SaveOperationPhase.Warning, "Get stopped before receiving updates.");
+    }
 
-    private async Task PushToOriginAsync() => await RunOperationAsync("Checking what is ready to send...", async token =>
+    private async Task PushToOriginAsync()
+    {
+        _sendOperation.Transition(SaveOperationPhase.Preparing, "Checking what is ready to send...");
+        await Task.Yield();
+        await RunOperationAsync("Checking what is ready to send...", async token =>
     {
         if (!HasRepository()) return;
 
@@ -1603,6 +1630,7 @@ public sealed class GuardianForm : Form
         {
             ReportActivity("Send unavailable because Git could not read the current project state.\n\n" + status.Error,
                 GuardianActivityKind.Error);
+            _sendOperation.Transition(SaveOperationPhase.Failed, "Git could not read the current project state.");
             return;
         }
 
@@ -1618,12 +1646,14 @@ public sealed class GuardianForm : Form
                 "Save your changes first",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            _sendOperation.Transition(SaveOperationPhase.Warning, "Save local changes before using Send.");
             return;
         }
 
         if (readiness == SendReadiness.AlreadyUpToDate)
         {
             ReportActivity("Everything saved is already online.\n\nThere is nothing new to send.", GuardianActivityKind.Success);
+            _sendOperation.Transition(SaveOperationPhase.Completed, "Everything saved is already online.");
             MessageBox.Show(
                 this,
                 "Everything saved is already online.\n\nThere is nothing new to send.",
@@ -1639,6 +1669,7 @@ public sealed class GuardianForm : Form
         {
             ReportActivity("Send unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).",
                 GuardianActivityKind.Error);
+            _sendOperation.Transition(SaveOperationPhase.Failed, "The current branch could not be determined.");
             return;
         }
 
@@ -1648,6 +1679,7 @@ public sealed class GuardianForm : Form
             ReportActivity(string.IsNullOrWhiteSpace(originResult.Output)
                 ? "Send unavailable: no readable origin remote is configured."
                 : originResult.Output, GuardianActivityKind.Error);
+            _sendOperation.Transition(SaveOperationPhase.Failed, "No readable origin remote is configured.");
             return;
         }
 
@@ -1688,9 +1720,11 @@ public sealed class GuardianForm : Form
         if (answer != DialogResult.Yes)
         {
             ReportActivity("Send cancelled. Nothing was sent online.", GuardianActivityKind.Cancelled);
+            _sendOperation.Transition(SaveOperationPhase.Cancelled);
             return;
         }
 
+        _sendOperation.Transition(SaveOperationPhase.Staging, $"Sending saved updates to origin/{branch}...");
         ReportActivity($"Sending saved updates to origin/{branch}...");
         var result = await _git.PushToOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
@@ -1699,6 +1733,8 @@ public sealed class GuardianForm : Form
             ? $"Send completed ✓\norigin/{branch}\n\n{details}"
             : $"Send failed.\norigin/{branch}\n\n{details}",
             result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
+        _sendOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
+            result.Success ? "Saved updates were sent successfully." : "Send failed.");
 
         /*
         PATCH: THEMED SEND RESULT
@@ -1718,7 +1754,10 @@ public sealed class GuardianForm : Form
         sentDialog.ShowDialog(this);
 
         await RefreshRepositoryViewAsync(token);
-    });
+        });
+        if (_sendOperation.Current.IsActive)
+            _sendOperation.Transition(SaveOperationPhase.Warning, "Send stopped before uploading updates.");
+    }
 
     private static string FormatCommitPreview(CommandResult commit)
     {
@@ -1808,8 +1847,7 @@ public sealed class GuardianForm : Form
         catch (Exception ex)
         {
             outcome = "failed";
-            if (_saveOperation.Current.IsActive)
-                _saveOperation.Transition(SaveOperationPhase.Failed, ex.Message);
+            GetActiveOperationController()?.Transition(SaveOperationPhase.Failed, ex.Message);
             _activityConsole?.Finish(GuardianActivityKind.Error, ex.Message);
             await _audit.WriteAsync("operation_error", new { error = ex.Message });
         }
@@ -1821,8 +1859,9 @@ public sealed class GuardianForm : Form
 
             _operation.Dispose();
             _operation = null;
-            if (_saveOperation.Current.Phase is SaveOperationPhase.Completed or SaveOperationPhase.Warning or
-                SaveOperationPhase.Failed or SaveOperationPhase.Cancelled)
+            if (AllOperationControllers().Any(controller => controller.Current.Phase is
+                    SaveOperationPhase.Completed or SaveOperationPhase.Warning or
+                    SaveOperationPhase.Failed or SaveOperationPhase.Cancelled))
                 ScheduleSaveIdle();
             await _audit.WriteAsync("operation_completed", new
             {
@@ -1858,9 +1897,9 @@ public sealed class GuardianForm : Form
 
     private void OnSaveOperationStateChanged(object? sender, SaveOperationVisualState state)
     {
-        GuardianWorkboardRuntime.SetSaveOperationState(this, state);
+        GuardianWorkboardRuntime.SetOperationState(this, state);
         foreach (var pet in Application.OpenForms.OfType<PetForm>().Where(pet => !pet.IsDisposed))
-            pet.SetSaveOperationState(state);
+            pet.SetOperationState(state);
 
         var blockConflictingActions = state.IsActive;
         foreach (var button in _operationButtons.Where(button =>
@@ -1882,6 +1921,38 @@ public sealed class GuardianForm : Form
     {
         _saveTerminalTimer.Stop();
         _saveTerminalTimer.Start();
+    }
+
+    private IEnumerable<SaveOperationStateController> AllOperationControllers()
+    {
+        yield return _saveOperation;
+        yield return _getOperation;
+        yield return _sendOperation;
+        yield return _reconcileOperation;
+    }
+
+    private SaveOperationStateController? GetActiveOperationController() =>
+        AllOperationControllers().FirstOrDefault(controller => controller.Current.IsActive);
+
+    internal void SetReconcileOperationState(SaveOperationPhase phase, string? message = null)
+    {
+        var text = message ?? SaveOperationStateController.DefaultMessage(phase, GuardianOperationKind.Reconcile);
+        _reconcileOperation.Transition(phase, message);
+        if (phase == SaveOperationPhase.Idle) return;
+        ShowActivityPanel();
+        if (phase == SaveOperationPhase.Preparing)
+            _activityConsole?.Begin(text);
+        else if (phase is SaveOperationPhase.Completed or SaveOperationPhase.Warning or
+                 SaveOperationPhase.Failed or SaveOperationPhase.Cancelled)
+            _activityConsole?.Finish(phase switch
+            {
+                SaveOperationPhase.Completed => GuardianActivityKind.OperationCompleted,
+                SaveOperationPhase.Warning => GuardianActivityKind.Warning,
+                SaveOperationPhase.Failed => GuardianActivityKind.Error,
+                _ => GuardianActivityKind.Cancelled
+            }, text);
+        else
+            ReportActivity(text);
     }
 
     private void ShowActivityPanel()
@@ -1925,6 +1996,9 @@ public sealed class GuardianForm : Form
             _saveTerminalTimer.Stop();
             _saveTerminalTimer.Dispose();
             _saveOperation.Changed -= OnSaveOperationStateChanged;
+            _getOperation.Changed -= OnSaveOperationStateChanged;
+            _sendOperation.Changed -= OnSaveOperationStateChanged;
+            _reconcileOperation.Changed -= OnSaveOperationStateChanged;
             _comparisonLoad?.Cancel();
             _comparisonLoad?.Dispose();
             _toolTips.Dispose();

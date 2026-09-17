@@ -37,11 +37,11 @@ internal static class GuardianWorkboardRuntime
         };
     }
 
-    public static void SetSaveOperationState(GuardianForm guardian, SaveOperationVisualState state)
+    public static void SetOperationState(GuardianForm guardian, SaveOperationVisualState state)
     {
         if (guardian.IsDisposed) return;
         EnsureWorkboard(guardian);
-        if (Boards.TryGetValue(guardian, out var host)) host.Board.SetSaveOperationState(state);
+        if (Boards.TryGetValue(guardian, out var host)) host.Board.SetOperationState(state);
     }
 
     private static async Task TickAsync()

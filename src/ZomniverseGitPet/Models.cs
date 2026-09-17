@@ -88,10 +88,19 @@ public enum SaveOperationPhase
     Cancelled
 }
 
+public enum GuardianOperationKind
+{
+    Save,
+    Get,
+    Send,
+    Reconcile
+}
+
 public sealed record SaveOperationVisualState(
     SaveOperationPhase Phase,
     string Message,
-    DateTimeOffset ChangedAt)
+    DateTimeOffset ChangedAt,
+    GuardianOperationKind Operation = GuardianOperationKind.Save)
 {
     public bool IsActive => Phase is SaveOperationPhase.Preparing or
         SaveOperationPhase.CheckingPathSupport or
@@ -101,29 +110,39 @@ public sealed record SaveOperationVisualState(
 
 internal sealed class SaveOperationStateController
 {
+    private readonly GuardianOperationKind _operation;
     public SaveOperationVisualState Current { get; private set; } =
         new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
+
+    public SaveOperationStateController(GuardianOperationKind operation = GuardianOperationKind.Save)
+    {
+        _operation = operation;
+        Current = Current with { Operation = operation };
+    }
 
     public event EventHandler<SaveOperationVisualState>? Changed;
 
     public void Transition(SaveOperationPhase phase, string? message = null)
     {
-        var next = new SaveOperationVisualState(phase, message ?? DefaultMessage(phase), DateTimeOffset.UtcNow);
+        var next = new SaveOperationVisualState(
+            phase, message ?? DefaultMessage(phase, _operation), DateTimeOffset.UtcNow, _operation);
         if (Current.Phase == next.Phase && string.Equals(Current.Message, next.Message, StringComparison.Ordinal)) return;
         Current = next;
         Changed?.Invoke(this, next);
     }
 
-    internal static string DefaultMessage(SaveOperationPhase phase) => phase switch
+    internal static string DefaultMessage(
+        SaveOperationPhase phase,
+        GuardianOperationKind operation = GuardianOperationKind.Save) => phase switch
     {
-        SaveOperationPhase.Preparing => "Preparing save...",
+        SaveOperationPhase.Preparing => $"Preparing {operation.ToString().ToLowerInvariant()}...",
         SaveOperationPhase.CheckingPathSupport => "Checking repository path support...",
         SaveOperationPhase.Staging => "Staging files...",
         SaveOperationPhase.CreatingCheckpoint => "Creating local checkpoint...",
-        SaveOperationPhase.Completed => "Save completed.",
-        SaveOperationPhase.Warning => "Save needs attention.",
-        SaveOperationPhase.Failed => "Save failed.",
-        SaveOperationPhase.Cancelled => "Save cancelled.",
+        SaveOperationPhase.Completed => $"{operation} completed.",
+        SaveOperationPhase.Warning => $"{operation} needs attention.",
+        SaveOperationPhase.Failed => $"{operation} failed.",
+        SaveOperationPhase.Cancelled => $"{operation} cancelled.",
         _ => "Ready"
     };
 }

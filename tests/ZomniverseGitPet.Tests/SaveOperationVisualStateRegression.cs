@@ -44,6 +44,21 @@ internal static class SaveOperationVisualStateRegression
             GuardianWorkboardControl.SaveBadgeFor(SaveOperationPhase.Idle) is not null)
             throw new InvalidOperationException("Save workboard badges do not reflect operation phases.");
 
+        foreach (var operation in new[]
+                 {
+                     GuardianOperationKind.Get,
+                     GuardianOperationKind.Send,
+                     GuardianOperationKind.Reconcile
+                 })
+        {
+            var operationController = new SaveOperationStateController(operation);
+            operationController.Transition(SaveOperationPhase.Preparing);
+            if (operationController.Current.Operation != operation || !operationController.Current.IsActive ||
+                GuardianWorkboardControl.OperationBadgeFor(operation, SaveOperationPhase.Preparing) != "PREPARING…" ||
+                GuardianWorkboardControl.OperationBadgeFor(operation, SaveOperationPhase.Completed) is null)
+                throw new InvalidOperationException($"{operation} visual state was not projected consistently.");
+        }
+
         Console.WriteLine("Save operation visual-state regression passed.");
     }
 }

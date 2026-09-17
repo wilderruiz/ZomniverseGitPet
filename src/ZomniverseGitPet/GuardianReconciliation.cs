@@ -6,9 +6,15 @@ internal static class GuardianReconciliation
 
     public static async Task BeginAsync(Form? owner)
     {
+        SetState(owner, SaveOperationPhase.Preparing, "Checking reconciliation safety...");
+        await Task.Yield();
         var config = GuardianSyncState.Config;
         var git = GuardianSyncState.Git;
-        if (config is null || git is null || string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
+        if (config is null || git is null || string.IsNullOrWhiteSpace(config.RepositoryPath))
+        {
+            SetState(owner, SaveOperationPhase.Failed, "No repository is available to reconcile.");
+            return;
+        }
 
         await GuardianSyncState.RefreshAsync(true);
         var snapshot = GuardianSyncState.Current;
@@ -19,6 +25,7 @@ internal static class GuardianReconciliation
                 "Reconciliation unavailable",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            SetState(owner, SaveOperationPhase.Warning, "The online repository cannot be reached.");
             return;
         }
 
@@ -30,6 +37,7 @@ internal static class GuardianReconciliation
                 "Save first",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            SetState(owner, SaveOperationPhase.Warning, "Save local changes before reconciling.");
             return;
         }
 
@@ -40,6 +48,7 @@ internal static class GuardianReconciliation
                 "Already reconciled",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            SetState(owner, SaveOperationPhase.Completed, "Local and online history already agree.");
             return;
         }
 
@@ -68,9 +77,14 @@ internal static class GuardianReconciliation
             cancelText: "Not now");
 
         var answer = confirmation.ShowDialog(owner);
-        if (answer != DialogResult.Yes) return;
+        if (answer != DialogResult.Yes)
+        {
+            SetState(owner, SaveOperationPhase.Cancelled);
+            return;
+        }
 
         SuspendAutomaticSaving(owner);
+        SetState(owner, SaveOperationPhase.Staging, "Combining local and online history...");
         var repositoryPath = config.RepositoryPath;
         var merge = await git.RunGitAsync(
             repositoryPath,
@@ -101,6 +115,7 @@ internal static class GuardianReconciliation
                 "Reconciliation stopped",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
+            SetState(owner, SaveOperationPhase.Failed, "Git could not prepare the reconciliation.");
             return;
         }
 
@@ -181,9 +196,15 @@ internal static class GuardianReconciliation
 
     public static async Task SaveAsync(Form? owner)
     {
+        SetState(owner, SaveOperationPhase.Preparing, "Preparing reconciliation save...");
+        await Task.Yield();
         var config = GuardianSyncState.Config;
         var git = GuardianSyncState.Git;
-        if (config is null || git is null || string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
+        if (config is null || git is null || string.IsNullOrWhiteSpace(config.RepositoryPath))
+        {
+            SetState(owner, SaveOperationPhase.Failed, "No repository is available to reconcile.");
+            return;
+        }
 
         var repositoryPath = config.RepositoryPath;
         var mergeHead = await git.RunGitAsync(
@@ -194,6 +215,7 @@ internal static class GuardianReconciliation
         {
             await GuardianSyncState.RefreshAsync(true);
             if (owner is GuardianForm staleGuardian) await staleGuardian.RefreshAsync();
+            SetState(owner, SaveOperationPhase.Cancelled, "No prepared reconciliation was found.");
             return;
         }
 
@@ -215,10 +237,19 @@ internal static class GuardianReconciliation
             "Save reconciliation",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
-        if (answer != DialogResult.Yes) return;
+        if (answer != DialogResult.Yes)
+        {
+            SetState(owner, SaveOperationPhase.Cancelled);
+            return;
+        }
 
-        if (!await EnsureGitIdentityAsync(owner, repositoryPath)) return;
+        if (!await EnsureGitIdentityAsync(owner, repositoryPath))
+        {
+            SetState(owner, SaveOperationPhase.Cancelled);
+            return;
+        }
 
+        SetState(owner, SaveOperationPhase.CreatingCheckpoint, "Saving reconciliation locally...");
         var message = $"reconcile local and online: {DateTime.Now:yyyy-MM-dd HH:mm}";
         var result = await git.CreateCheckpointAsync(repositoryPath, message);
         MessageBox.Show(owner,
@@ -230,12 +261,16 @@ internal static class GuardianReconciliation
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
         if (result.Success) RestoreAutomaticSaving(owner);
+        SetState(owner, result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
+            result.Success ? "Reconciliation saved locally." : result.Message);
         await GuardianSyncState.RefreshAsync(true);
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
     }
 
     public static async Task CancelAsync(Form? owner)
     {
+        SetState(owner, SaveOperationPhase.Preparing, "Preparing to cancel reconciliation...");
+        await Task.Yield();
         var config = GuardianSyncState.Config;
         var git = GuardianSyncState.Git;
         if (config is null || git is null || string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
@@ -245,14 +280,21 @@ internal static class GuardianReconciliation
             "Cancel reconciliation?",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
-        if (answer != DialogResult.Yes) return;
+        if (answer != DialogResult.Yes)
+        {
+            SetState(owner, SaveOperationPhase.Cancelled);
+            return;
+        }
 
+        SetState(owner, SaveOperationPhase.Staging, "Restoring the pre-reconciliation state...");
         var result = await git.RunGitAsync(
             config.RepositoryPath,
             ["merge", "--abort"],
             TimeSpan.FromMinutes(1));
 
         if (result.Success) RestoreAutomaticSaving(owner);
+        SetState(owner, result.Success ? SaveOperationPhase.Cancelled : SaveOperationPhase.Failed,
+            result.Success ? "Reconciliation cancelled safely." : result.Output);
 
         MessageBox.Show(owner,
             result.Success
@@ -272,6 +314,7 @@ internal static class GuardianReconciliation
         var git = GuardianSyncState.Git!;
         var status = await git.GetStatusAsync(config.RepositoryPath!);
         GuardianSyncState.PublishReconciliationPending(status);
+        SetState(owner, SaveOperationPhase.Completed, "Reconciliation is ready for review and Save.");
 
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
 
@@ -305,6 +348,8 @@ internal static class GuardianReconciliation
         var git = GuardianSyncState.Git!;
         var abort = await git.RunGitAsync(repositoryPath, ["merge", "--abort"], TimeSpan.FromMinutes(1));
         if (abort.Success) RestoreAutomaticSaving(owner);
+        SetState(owner, abort.Success ? SaveOperationPhase.Cancelled : SaveOperationPhase.Failed,
+            abort.Success ? "Reconciliation cancelled safely." : abort.Output);
         await GuardianSyncState.RefreshAsync(true);
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
         MessageBox.Show(owner,
@@ -319,6 +364,7 @@ internal static class GuardianReconciliation
         var git = GuardianSyncState.Git!;
         var abort = await git.RunGitAsync(repositoryPath, ["merge", "--abort"], TimeSpan.FromMinutes(1));
         if (abort.Success) RestoreAutomaticSaving(owner);
+        SetState(owner, SaveOperationPhase.Failed, message);
         await GuardianSyncState.RefreshAsync(true);
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
         if (!abort.Success)
@@ -370,6 +416,12 @@ internal static class GuardianReconciliation
             yield return child;
             foreach (var descendant in EnumerateControls(child)) yield return descendant;
         }
+    }
+
+    private static void SetState(Form? owner, SaveOperationPhase phase, string? message = null)
+    {
+        if (owner is GuardianForm guardian)
+            guardian.SetReconcileOperationState(phase, message);
     }
 
     private static async Task<bool> EnsureGitIdentityAsync(Form? owner, string repositoryPath)
