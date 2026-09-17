@@ -14,6 +14,7 @@ internal sealed class GuardianProgressPanel : UserControl
     private readonly System.Windows.Forms.Timer _animationTimer = new() { Interval = 115 };
     private Rectangle _foxHome = new(170, 26, 180, 180);
     private int _frame;
+    private int _progressFrame;
     private int _dotPhase;
     private string _stageText = "Working";
 
@@ -117,7 +118,7 @@ internal sealed class GuardianProgressPanel : UserControl
         if (trackWidth <= 0) return;
 
         var travel = Math.Max(1, trackWidth - _progressGlow.Width);
-        var phase = _frame % 18;
+        var phase = _progressFrame++ % 18;
         var reflected = phase <= 9 ? phase : 18 - phase;
         _progressGlow.Left = (int)Math.Round(travel * (reflected / 9d));
     }

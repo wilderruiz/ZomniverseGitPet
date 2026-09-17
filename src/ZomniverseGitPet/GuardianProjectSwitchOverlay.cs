@@ -6,7 +6,7 @@ internal sealed class GuardianProjectSwitchOverlay : Panel
 
     public GuardianProjectSwitchOverlay(string projectName)
     {
-        Dock = DockStyle.Fill;
+        Dock = DockStyle.None;
         BackColor = GuardianTheme.Window;
         TabStop = true;
         _progress.Configure("SWITCHING PROJECT...", projectName);
@@ -48,6 +48,7 @@ internal static class GuardianProjectSwitchOverlayHost
         private readonly GuardianForm _guardian;
         private readonly GuardianProjectSwitchOverlay _overlay;
         private readonly RichTextBox? _activity;
+        private readonly Dictionary<Control, bool> _enabledStates = [];
         private ProjectSwitchPhase? _lastPhase;
         private bool _disposed;
 
@@ -58,7 +59,18 @@ internal static class GuardianProjectSwitchOverlayHost
                 .OfType<RichTextBox>()
                 .FirstOrDefault(box => box.ReadOnly && box.BackColor.ToArgb() == GuardianTheme.Console.ToArgb());
 
-            _overlay = new GuardianProjectSwitchOverlay(projectName);
+            foreach (Control control in guardian.Controls)
+            {
+                _enabledStates[control] = control.Enabled;
+                control.Enabled = false;
+            }
+
+            _overlay = new GuardianProjectSwitchOverlay(projectName)
+            {
+                Bounds = guardian.ClientRectangle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                Enabled = true
+            };
             guardian.Controls.Add(_overlay);
             _overlay.BringToFront();
             _overlay.Focus();
@@ -135,8 +147,16 @@ internal static class GuardianProjectSwitchOverlayHost
             _disposed = true;
             ProjectSwitchRuntime.Changed -= OnChanged;
             _overlay.Stop();
-            if (!_guardian.IsDisposed && !_overlay.IsDisposed)
-                _guardian.Controls.Remove(_overlay);
+
+            if (!_guardian.IsDisposed)
+            {
+                if (!_overlay.IsDisposed) _guardian.Controls.Remove(_overlay);
+                foreach (var pair in _enabledStates)
+                {
+                    if (!pair.Key.IsDisposed) pair.Key.Enabled = pair.Value;
+                }
+            }
+
             _overlay.Dispose();
         }
     }
