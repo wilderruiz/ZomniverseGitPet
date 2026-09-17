@@ -25,7 +25,7 @@ internal sealed class GuardianRemoteWatcher : IDisposable
 
     private async Task TickAsync()
     {
-        if (_busy || _lifetime.IsCancellationRequested) return;
+        if (_busy || _lifetime.IsCancellationRequested || ProjectSwitchRuntime.IsSwitching) return;
         _busy = true;
         try
         {

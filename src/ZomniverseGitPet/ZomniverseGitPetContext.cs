@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipes;
 
 namespace ZomniverseGitPet;
@@ -10,6 +11,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     private readonly AuditLog _audit;
     private readonly ProjectInspector _projectInspector;
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly SemaphoreSlim _projectSwitchGate = new(1, 1);
     private readonly System.Windows.Forms.Timer _timer;
     private readonly PetForm _pet;
     private GuardianForm? _guardian;
@@ -58,12 +60,13 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private Task ChooseRepositoryAsync()
     {
-        ShowProjectsMenu();
+        if (!ProjectSwitchRuntime.IsSwitching) ShowProjectsMenu();
         return Task.CompletedTask;
     }
 
     private async Task ReconfigureCurrentProjectAsync()
     {
+        if (ProjectSwitchRuntime.IsSwitching) return;
         if (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian))
         {
             MessageBox.Show(
@@ -115,6 +118,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private async Task ShowConnectionSetupAsync()
     {
+        if (ProjectSwitchRuntime.IsSwitching) return;
         if (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian))
         {
             MessageBox.Show(DialogOwner,
@@ -152,6 +156,8 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private void ShowProjectsMenu()
     {
+        if (ProjectSwitchRuntime.IsSwitching) return;
+
         _projectsMenu?.Dispose();
         var menu = new ContextMenuStrip
         {
@@ -524,8 +530,6 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 out _,
                 out var suggestionRules);
 
-            // Any old GitPet managed scope is migrated out of .gitignore. Scope now belongs
-            // to the logical project registration, so sibling projects remain visible to Git.
             var gitignoreChanged = ProjectGitIgnoreComposer.ApplyReplacingScope(root, [], suggestionRules);
             var plan = preparation.ScopePlan ?? ProjectScopePlanner.Create(root, [], trackEverything: true);
             var entry = _config.RememberProject(
@@ -657,38 +661,184 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     {
         var project = _config.FindProject(projectId);
         if (project is null || !Directory.Exists(project.Path) || !Directory.Exists(project.RepositoryRoot)) return;
+        if (string.Equals(projectId, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase)) return;
+        if (!await _projectSwitchGate.WaitAsync(0)) return;
 
-        var rootResult = await _git.GetRepositoryRootAsync(project.Path, _lifetime.Token);
-        if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
+        var previousProjectId = _config.ActiveProjectId;
+        var activated = false;
+        var timer = Stopwatch.StartNew();
+        using var overlay = GuardianProjectSwitchOverlayHost.Begin(_guardian, project.DisplayName);
+
+        try
         {
-            MessageBox.Show(DialogOwner,
-                "That project is no longer inside a readable Git repository.\r\n\r\n" + rootResult.Output,
-                "Open project", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
+            ProjectSwitchRuntime.Begin(project.Id, project.DisplayName);
+            _pet.SetOperationState(new SaveOperationVisualState(
+                SaveOperationPhase.Preparing,
+                $"Switching to {project.DisplayName}...",
+                DateTimeOffset.UtcNow));
+            await _audit.WriteAsync("project_switch_started", new
+            {
+                fromProjectId = previousProjectId,
+                toProjectId = project.Id,
+                project = project.DisplayName,
+                projectPath = project.Path,
+                repository = project.RepositoryRoot
+            });
 
-        var actualRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootResult.Output.Trim()));
-        if (!PathEquals(actualRoot, project.RepositoryRoot))
+            // Give WinForms one normal message-loop turn so the blocking overlay paints.
+            await Task.Yield();
+
+            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.VerifyingRepository, "Reading repository...");
+            _pet.SetOperationState(new SaveOperationVisualState(
+                SaveOperationPhase.CheckingPathSupport,
+                "Reading repository...",
+                DateTimeOffset.UtcNow));
+
+            var rootResult = await _git.GetRepositoryRootAsync(project.Path, _lifetime.Token);
+            if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
+                throw new InvalidOperationException(
+                    "That project is no longer inside a readable Git repository.\r\n\r\n" + rootResult.Output);
+
+            var actualRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootResult.Output.Trim()));
+            if (!PathEquals(actualRoot, project.RepositoryRoot))
+                throw new InvalidOperationException(
+                    "This project's Git repository root changed since it was registered.\r\n\r\n" +
+                    $"Saved root: {project.RepositoryRoot}\r\nCurrent root: {actualRoot}\r\n\r\n" +
+                    "Forget and add the project again so GitPet can rebuild its scope safely.");
+
+            var scopeCount = project.TrackEverything ? 0 : project.ScopeEntries.Count;
+            ProjectSwitchRuntime.Transition(
+                ProjectSwitchPhase.LoadingScope,
+                project.TrackEverything
+                    ? "Loading full repository scope..."
+                    : $"Loading project scope ({scopeCount} entries)...");
+            await Task.Yield();
+
+            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.ActivatingProject, "Activating project...");
+            _config.ActivateProject(projectId);
+            _configStore.Save(_config);
+            ResetProjectState();
+            activated = true;
+
+            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.LoadingRepository, "Checking Git state...");
+            _pet.SetOperationState(new SaveOperationVisualState(
+                SaveOperationPhase.Staging,
+                "Checking Git state...",
+                DateTimeOffset.UtcNow));
+            var status = await _git.GetStatusAsync(project.RepositoryRoot, _lifetime.Token);
+            if (!status.Healthy)
+                throw new InvalidOperationException(status.Error);
+
+            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.LoadingRemoteState, "Checking online updates...");
+            await GuardianSyncState.RefreshAsync(true, _lifetime.Token);
+
+            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.PreparingWorkboard, "Preparing workboard...");
+            if (_guardian is { IsDisposed: false, Visible: true })
+                await _guardian.RefreshAsync();
+            await GuardianWorkboardRuntime.RefreshNowAsync(_lifetime.Token);
+
+            timer.Stop();
+            _pet.SetOperationState(new SaveOperationVisualState(
+                SaveOperationPhase.Idle,
+                "Ready",
+                DateTimeOffset.UtcNow));
+            _pet.SetStatus(status);
+            _pet.ShowGuidance($"✅ PROJECT READY\n{project.DisplayName}");
+            ProjectSwitchRuntime.Complete(timer.Elapsed);
+
+            await _audit.WriteAsync("logical_project_selected", new
+            {
+                projectId,
+                project = project.DisplayName,
+                projectPath = project.Path,
+                repository = project.RepositoryRoot
+            });
+            await _audit.WriteAsync("project_switch_completed", new
+            {
+                projectId,
+                project = project.DisplayName,
+                elapsedMilliseconds = timer.ElapsedMilliseconds,
+                scopeEntries = scopeCount
+            });
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
-            MessageBox.Show(DialogOwner,
-                "This project's Git repository root changed since it was registered.\r\n\r\n" +
-                $"Saved root: {project.RepositoryRoot}\r\nCurrent root: {actualRoot}\r\n\r\n" +
-                "Forget and add the project again so GitPet can rebuild its scope safely.",
-                "Project root changed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+            timer.Stop();
+            if (activated) await RestorePreviousProjectAsync(previousProjectId);
+            _pet.SetOperationState(new SaveOperationVisualState(
+                SaveOperationPhase.Idle,
+                "Ready",
+                DateTimeOffset.UtcNow));
+            ProjectSwitchRuntime.Cancel(timer.Elapsed);
+            await _audit.WriteAsync("project_switch_cancelled", new
+            {
+                projectId,
+                project = project.DisplayName,
+                elapsedMilliseconds = timer.ElapsedMilliseconds
+            });
         }
+        catch (Exception ex)
+        {
+            timer.Stop();
+            if (activated)
+            {
+                try
+                {
+                    await RestorePreviousProjectAsync(previousProjectId);
+                }
+                catch (Exception rollbackError)
+                {
+                    await _audit.WriteAsync("project_switch_rollback_error", new { error = rollbackError.Message });
+                }
+            }
 
-        _config.ActivateProject(projectId);
+            _pet.SetOperationState(new SaveOperationVisualState(
+                SaveOperationPhase.Idle,
+                "Ready",
+                DateTimeOffset.UtcNow));
+            _pet.SetError(ex.Message);
+            ProjectSwitchRuntime.Fail(ex.Message, timer.Elapsed);
+            await _audit.WriteAsync("project_switch_failed", new
+            {
+                projectId,
+                project = project.DisplayName,
+                error = ex.Message,
+                elapsedMilliseconds = timer.ElapsedMilliseconds
+            });
+
+            MessageBox.Show(
+                DialogOwner,
+                "PROJECT COULD NOT BE OPENED\r\n\r\n" + ex.Message,
+                "Open project",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            _projectSwitchGate.Release();
+        }
+    }
+
+    private async Task RestorePreviousProjectAsync(string? previousProjectId)
+    {
+        if (string.IsNullOrWhiteSpace(previousProjectId)) return;
+        var previous = _config.FindProject(previousProjectId);
+        if (previous is null || !Directory.Exists(previous.Path) || !Directory.Exists(previous.RepositoryRoot)) return;
+
+        _config.ActivateProject(previousProjectId);
         _configStore.Save(_config);
         ResetProjectState();
-        await _audit.WriteAsync("logical_project_selected", new
-        {
-            projectId,
-            project = project.DisplayName,
-            projectPath = project.Path,
-            repository = project.RepositoryRoot
-        });
-        await RefreshAsync(true);
+        await GuardianSyncState.RefreshAsync(true, _lifetime.Token);
+        if (_guardian is { IsDisposed: false, Visible: true })
+            await _guardian.RefreshAsync();
+        await GuardianWorkboardRuntime.RefreshNowAsync(_lifetime.Token);
+
+        var status = await _git.GetStatusAsync(previous.RepositoryRoot, _lifetime.Token);
+        _pet.SetOperationState(new SaveOperationVisualState(
+            SaveOperationPhase.Idle,
+            "Ready",
+            DateTimeOffset.UtcNow));
+        if (status.Healthy) _pet.SetStatus(status);
     }
 
     private async Task ActivateRepositoryAsync(string path)
@@ -723,7 +873,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private async Task RefreshAsync(bool refreshGuardian)
     {
-        if (_pet.RefreshInProgress) return;
+        if (ProjectSwitchRuntime.IsSwitching || _pet.RefreshInProgress) return;
         _pet.RefreshInProgress = true;
         try
         {
@@ -754,7 +904,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private async Task ConsiderAutomaticCheckpointAsync(RepositoryStatus status)
     {
-        if (!status.Healthy) return;
+        if (!status.Healthy || ProjectSwitchRuntime.IsSwitching) return;
         var fingerprint = string.Join("\n", status.Files.Select(file => $"{file.Status}\t{file.Path}"));
         if (!string.Equals(fingerprint, _statusFingerprint, StringComparison.Ordinal))
         {
@@ -877,6 +1027,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             _timer.Dispose();
             _lifetime.Cancel();
             _lifetime.Dispose();
+            _projectSwitchGate.Dispose();
             _projectsMenu?.Dispose();
             _guardian?.Dispose();
             _pet.Dispose();

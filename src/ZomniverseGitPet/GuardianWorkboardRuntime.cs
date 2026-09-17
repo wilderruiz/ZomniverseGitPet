@@ -8,12 +8,12 @@ namespace ZomniverseGitPet;
 internal static class GuardianWorkboardRuntime
 {
     private static readonly Dictionary<GuardianForm, BoardHost> Boards = [];
+    private static readonly SemaphoreSlim RefreshGate = new(1, 1);
     private static AppConfig? _config;
     private static GitService? _git;
     private static AuditLog? _audit;
     private static GuardianWorkboardService? _service;
     private static System.Windows.Forms.Timer? _timer;
-    private static bool _tickRunning;
 
     public static void Initialize(AppConfig config, GitService git, AuditLog audit)
     {
@@ -44,57 +44,30 @@ internal static class GuardianWorkboardRuntime
         if (Boards.TryGetValue(guardian, out var host)) host.Board.SetOperationState(state);
     }
 
-    private static async Task TickAsync()
+    internal static async Task RefreshNowAsync(CancellationToken token = default)
     {
-        if (_tickRunning || _config is null || _git is null || _service is null) return;
+        if (_config is null || _git is null || _service is null) return;
 
-        _tickRunning = true;
+        await RefreshGate.WaitAsync(token);
         try
         {
-            var guardians = Application.OpenForms
-                .OfType<GuardianForm>()
-                .Where(form => !form.IsDisposed)
-                .ToArray();
+            await RefreshCoreAsync(token);
+        }
+        finally
+        {
+            RefreshGate.Release();
+        }
+    }
 
-            RemoveClosedBoards(guardians);
-            foreach (var guardian in guardians)
-            {
-                EnsureWorkboard(guardian);
-                ApplyLogicalProjectIdentity(guardian);
-            }
-            if (guardians.Length == 0) return;
+    private static async Task TickAsync()
+    {
+        if (_config is null || _git is null || _service is null || ProjectSwitchRuntime.IsSwitching) return;
+        if (!await RefreshGate.WaitAsync(0)) return;
 
-            var activeBoards = guardians
-                .Where(guardian => Boards.ContainsKey(guardian))
-                .Select(guardian => Boards[guardian])
-                .ToArray();
-            if (activeBoards.Length == 0) return;
-
-            var anyOperation = guardians.Any(IsOperationRunning);
-            if (anyOperation)
-            {
-                foreach (var host in activeBoards) host.Board.SetBusy(true);
-                return;
-            }
-
+        try
+        {
             using var refresh = new CancellationTokenSource(TimeSpan.FromSeconds(25));
-            var snapshot = await _service.BuildAsync(
-                _config,
-                GuardianSyncState.Current,
-                refresh.Token);
-
-            var fingerprint = BuildFingerprint(snapshot);
-            foreach (var host in activeBoards)
-            {
-                host.Board.ApplySnapshot(snapshot);
-
-                if (!string.Equals(host.LastFingerprint, fingerprint, StringComparison.Ordinal))
-                {
-                    host.LastFingerprint = fingerprint;
-                    if (host.Guardian.Visible)
-                        _ = host.Guardian.RefreshAsync();
-                }
-            }
+            await RefreshCoreAsync(refresh.Token);
         }
         catch (OperationCanceledException)
         {
@@ -115,7 +88,56 @@ internal static class GuardianWorkboardRuntime
         }
         finally
         {
-            _tickRunning = false;
+            RefreshGate.Release();
+        }
+    }
+
+    private static async Task RefreshCoreAsync(CancellationToken token)
+    {
+        if (_config is null || _service is null) return;
+
+        var guardians = Application.OpenForms
+            .OfType<GuardianForm>()
+            .Where(form => !form.IsDisposed)
+            .ToArray();
+
+        RemoveClosedBoards(guardians);
+        foreach (var guardian in guardians)
+        {
+            EnsureWorkboard(guardian);
+            ApplyLogicalProjectIdentity(guardian);
+        }
+        if (guardians.Length == 0) return;
+
+        var activeBoards = guardians
+            .Where(guardian => Boards.ContainsKey(guardian))
+            .Select(guardian => Boards[guardian])
+            .ToArray();
+        if (activeBoards.Length == 0) return;
+
+        var anyOperation = guardians.Any(IsOperationRunning);
+        if (anyOperation)
+        {
+            foreach (var host in activeBoards) host.Board.SetBusy(true);
+            return;
+        }
+
+        var snapshot = await _service.BuildAsync(
+            _config,
+            GuardianSyncState.Current,
+            token);
+
+        var fingerprint = BuildFingerprint(snapshot);
+        foreach (var host in activeBoards)
+        {
+            host.Board.ApplySnapshot(snapshot);
+
+            if (!string.Equals(host.LastFingerprint, fingerprint, StringComparison.Ordinal))
+            {
+                host.LastFingerprint = fingerprint;
+                if (host.Guardian.Visible && !ProjectSwitchRuntime.IsSwitching)
+                    _ = host.Guardian.RefreshAsync();
+            }
         }
     }
 
