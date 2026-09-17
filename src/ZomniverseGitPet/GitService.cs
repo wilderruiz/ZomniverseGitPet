@@ -261,6 +261,22 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> GetLastCommitAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-1", "--format=%H%x09%h%x09%ad%x09%s", "--date=iso-strict"], cancellationToken: token);
 
+    // Interactive, read-only review must not queue behind background fetch/status work.
+    // Pin both content and diff to the commit returned by this query.
+    internal Task<CommandResult> GetReviewCommitAsync(string path, CancellationToken token) =>
+        RunProcessAsync("git.exe",
+            ["log", "-1", "--format=%H%x09%h%x09%ad%x09%s", "--date=iso-strict"],
+            path, TimeSpan.FromSeconds(20), token);
+
+    internal Task<CommandResult> GetReviewContentAsync(string path, string file, string commit, CancellationToken token) =>
+        RunProcessAsync("git.exe", ["show", $"{commit}:{NormalizeGitRelativePath(file)}"],
+            path, TimeSpan.FromSeconds(20), token);
+
+    internal Task<CommandResult> GetReviewDiffAsync(string path, string file, string commit, CancellationToken token) =>
+        RunProcessAsync("git.exe",
+            ["diff", "--no-ext-diff", "--no-textconv", "--unified=0", commit, "--", NormalizeGitRelativePath(file)],
+            path, TimeSpan.FromSeconds(20), token);
+
     public Task<CommandResult> GetRecentCommitsAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-12", "--date=short", "--pretty=format:%h  %ad  %s"], cancellationToken: token);
 

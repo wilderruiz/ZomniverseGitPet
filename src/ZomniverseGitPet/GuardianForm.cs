@@ -1066,21 +1066,23 @@ public sealed class GuardianForm : Form
         try
         {
             var repositoryPath = _config.RepositoryPath!;
-            var headTask = _git.HasHeadCommitAsync(repositoryPath, token);
-            var commitTask = _git.GetLastCommitAsync(repositoryPath, token);
+            var commitTask = _git.GetReviewCommitAsync(repositoryPath, token);
             var workingTask = ReadWorkingPreviewAsync(repositoryPath, relativePath, token);
 
-            var head = await headTask;
-            var hasBaseline = head.Success && !string.IsNullOrWhiteSpace(head.Output);
             var commit = await commitTask;
+            var commitHash = commit.Success ? commit.Output.Split('\t')[0].Trim() : "";
+            var hasBaseline = commitHash.Length > 0;
             var working = await workingTask;
 
             CommandResult? beforeResult = null;
             CommandResult? diffResult = null;
             if (hasBaseline)
             {
-                beforeResult = await _git.GetFileAtHeadAsync(repositoryPath, relativePath, token);
-                diffResult = await _git.GetDiffAgainstHeadAsync(repositoryPath, relativePath, token);
+                var beforeTask = _git.GetReviewContentAsync(repositoryPath, relativePath, commitHash, token);
+                var diffTask = _git.GetReviewDiffAsync(repositoryPath, relativePath, commitHash, token);
+                await Task.WhenAll(beforeTask, diffTask);
+                beforeResult = await beforeTask;
+                diffResult = await diffTask;
             }
 
             var beforeExists = hasBaseline && beforeResult is { Success: true };
