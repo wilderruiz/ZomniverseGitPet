@@ -60,5 +60,33 @@ internal static class SaveOperationVisualStateRegression
         }
 
         Console.WriteLine("Save operation visual-state regression passed.");
+        using var assets = new PetAssets();
+        foreach (var phase in new[] { SaveOperationPhase.Preparing, SaveOperationPhase.CheckingPathSupport,
+                     SaveOperationPhase.Staging, SaveOperationPhase.CreatingCheckpoint, SaveOperationPhase.Completed,
+                     SaveOperationPhase.Warning, SaveOperationPhase.Failed })
+        {
+            foreach (var alternate in new[] { false, true })
+            {
+                var state = new SaveOperationVisualState(phase, "test", DateTimeOffset.UtcNow);
+                var image = assets.ForOperation(state, alternate, assets.Idle);
+                if (new[] { assets.Idle, assets.Happy, assets.Warning, assets.ReviewReady }.Contains(image) ||
+                    image.Width != 320 || image.Height != 320)
+                    throw new InvalidOperationException($"Dedicated Save artwork missing for {phase}.");
+            }
+        }
+        var completed = new SaveOperationVisualState(SaveOperationPhase.Completed, "saved", DateTimeOffset.UtcNow);
+        if (assets.ForOperation(completed with { Operation = GuardianOperationKind.Send }, false, assets.Idle) != assets.Happy ||
+            assets.ForOperation(completed with { Phase = SaveOperationPhase.Cancelled }, false, assets.Idle) != assets.Idle)
+            throw new InvalidOperationException("Save artwork changed unrelated operations or cancellation.");
+        // Simulate a missing optional asset and verify that fallback remains usable.
+        var images = (Dictionary<string, System.Drawing.Image>)typeof(PetAssets)
+            .GetField("_saveImages", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(assets)!;
+        var name = PetAssets.SaveAssetName(SaveOperationPhase.Completed, false)!;
+        images[name].Dispose();
+        images.Remove(name);
+        if (assets.ForOperation(completed, false, assets.Idle) != assets.Happy)
+            throw new InvalidOperationException("Missing Save artwork did not fall back safely.");
+        Console.WriteLine("Dedicated Save pet assets and fallback regression passed.");
     }
 }

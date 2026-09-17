@@ -340,17 +340,7 @@ public sealed class PetForm : Form
     private void RenderSaveOperationState()
     {
         var phase = _saveOperationState.Phase;
-        var image = phase switch
-        {
-            SaveOperationPhase.Preparing or SaveOperationPhase.CheckingPathSupport =>
-                _operationAnimationFrame ? _assets.ReviewReady : _assets.Idle,
-            SaveOperationPhase.Staging or SaveOperationPhase.CreatingCheckpoint =>
-                _operationAnimationFrame ? _assets.ReviewReady : _assets.Happy,
-            SaveOperationPhase.Completed => _assets.Happy,
-            SaveOperationPhase.Warning or SaveOperationPhase.Failed => _assets.Warning,
-            SaveOperationPhase.Cancelled => _assets.Idle,
-            _ => _stateImage
-        };
+        var image = _assets.ForOperation(_saveOperationState, _operationAnimationFrame, _stateImage);
         var heading = (state: phase, operation: _saveOperationState.Operation) switch
         {
             (SaveOperationPhase.Preparing, _) => "● THINKING",
