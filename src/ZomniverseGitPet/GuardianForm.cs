@@ -50,6 +50,8 @@ public sealed class GuardianForm : Form
     private readonly Font _toolTipFont = new("Segoe UI", 9);
 
     private readonly System.Windows.Forms.Timer _pulseTimer = new() { Interval = 1050 };
+    private readonly System.Windows.Forms.Timer _saveTerminalTimer = new() { Interval = 2200 };
+    private readonly SaveOperationStateController _saveOperation = new();
     private bool _pulseBright;
 
     private readonly Button[] _operationButtons;
@@ -230,6 +232,12 @@ public sealed class GuardianForm : Form
                 : Color.FromArgb(56, 157, 108);
         };
         _pulseTimer.Start();
+        _saveOperation.Changed += OnSaveOperationStateChanged;
+        _saveTerminalTimer.Tick += (_, _) =>
+        {
+            _saveTerminalTimer.Stop();
+            _saveOperation.Transition(SaveOperationPhase.Idle);
+        };
     }
 
     private Control BuildHeader()
@@ -1253,22 +1261,37 @@ public sealed class GuardianForm : Form
         });
     });
 
-    private async Task CreateCheckpointAsync() => await RunOperationAsync("Preparing save...", async token =>
+    private async Task CreateCheckpointAsync()
     {
-        if (!HasRepository()) return;
+        _saveTerminalTimer.Stop();
+        _saveOperation.Transition(SaveOperationPhase.Preparing);
+        await Task.Yield();
+        await RunOperationAsync("Preparing save...", ExecuteSaveAsync);
+    }
+
+    private async Task ExecuteSaveAsync(CancellationToken token)
+    {
+        if (!HasRepository())
+        {
+            _saveOperation.Transition(SaveOperationPhase.Failed, "Open a project before saving.");
+            return;
+        }
 
         _status = await _git.GetStatusAsync(_config.RepositoryPath!, token);
-        var progress = new Progress<GuardianActivityEvent>(activity => _activityConsole?.Append(activity));
+        var progress = new Progress<GuardianActivityEvent>(HandleSaveProgress);
         var preflight = await _git.GetSavePreflightAsync(
             _config.RepositoryPath!, token, progress, _status);
         if (!_status.Healthy || !preflight.Success)
         {
             ReportActivity(_status.Healthy ? preflight.Error : _status.Error, GuardianActivityKind.Error);
+            _saveOperation.Transition(SaveOperationPhase.Failed,
+                _status.Healthy ? preflight.Error : _status.Error);
             return;
         }
         if (preflight.NormalChangedFiles.Count == 0 && preflight.IgnoredChangedFiles.Count == 0)
         {
             ReportActivity("Everything is already saved locally.", GuardianActivityKind.Success);
+            _saveOperation.Transition(SaveOperationPhase.Completed, "Everything is already saved locally.");
             return;
         }
 
@@ -1278,6 +1301,7 @@ public sealed class GuardianForm : Form
             ReportActivity("Save blocked because suspicious paths are present:\n\n" +
                 string.Join("\n", suspicious), GuardianActivityKind.Warning);
             await _audit.WriteAsync("checkpoint_blocked_suspicious_paths", new { files = suspicious });
+            _saveOperation.Transition(SaveOperationPhase.Warning, "Suspicious paths require attention.");
             return;
         }
 
@@ -1325,7 +1349,11 @@ public sealed class GuardianForm : Form
 
                 guidancePet?.EndGuidanceHold();
 
-                if (ignoredDialogResult != DialogResult.Yes) return;
+                if (ignoredDialogResult != DialogResult.Yes)
+                {
+                    _saveOperation.Transition(SaveOperationPhase.Cancelled);
+                    return;
+                }
 
                 var selected = ignoredDialog.SelectedPaths;
                 if (selected.Count > 0)
@@ -1383,17 +1411,28 @@ public sealed class GuardianForm : Form
                 "Save",
                 "Cancel");
 
-            if (saveDialog.ShowDialog(this) != DialogResult.Yes) return;
+            if (saveDialog.ShowDialog(this) != DialogResult.Yes)
+            {
+                _saveOperation.Transition(SaveOperationPhase.Cancelled);
+                return;
+            }
         }
 
-        if (!await EnsureGitIdentityAsync(token)) return;
+        if (!await EnsureGitIdentityAsync(token))
+        {
+            if (_saveOperation.Current.IsActive)
+                _saveOperation.Transition(SaveOperationPhase.Cancelled);
+            return;
+        }
 
         var message = $"checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}";
-        var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, stagePlan, token);
+        var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, stagePlan, token, progress);
         ReportActivity(result.Success
                 ? "Changes saved locally ✓\n\n" + result.Message
                 : result.Message,
             result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
+        _saveOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
+            result.Success ? "Changes saved locally." : result.Message);
 
             /*
             PATCH: THEMED SAVE RESULT
@@ -1415,7 +1454,7 @@ public sealed class GuardianForm : Form
             savedDialog.ShowDialog(this);
 
         await RefreshRepositoryViewAsync(token);
-    });
+    }
 
     private async Task<bool> EnsureGitIdentityAsync(CancellationToken token)
     {
@@ -1437,6 +1476,7 @@ public sealed class GuardianForm : Form
         {
             ReportActivity("Save cancelled. Git still needs an author name and email before it can save a local version.",
                 GuardianActivityKind.Cancelled);
+            _saveOperation.Transition(SaveOperationPhase.Cancelled);
             return false;
         }
 
@@ -1450,6 +1490,7 @@ public sealed class GuardianForm : Form
         if (!save.Success)
         {
             ReportActivity(save.Output, GuardianActivityKind.Error);
+            _saveOperation.Transition(SaveOperationPhase.Failed, save.Output);
             MessageBox.Show(
                 this,
                 "GitPet could not save the Git identity. No changes were saved.\n\n" + save.Output,
@@ -1744,7 +1785,10 @@ public sealed class GuardianForm : Form
         try
         {
             await action(_operation.Token);
-            var hasErrors = _activityConsole?.HasKindSince(firstOperationEntry, GuardianActivityKind.Error) == true;
+            var hasErrors = _activityConsole?.HasKindSince(firstOperationEntry,
+                GuardianActivityKind.Error,
+                GuardianActivityKind.LongPathConfigurationFailed,
+                GuardianActivityKind.LongPathRetryFailed) == true;
             var hasWarnings = _activityConsole?.HasKindSince(firstOperationEntry, GuardianActivityKind.Warning) == true;
             var finalKind = hasErrors
                 ? GuardianActivityKind.Error
@@ -1757,11 +1801,15 @@ public sealed class GuardianForm : Form
         catch (OperationCanceledException)
         {
             outcome = "cancelled";
+            if (_saveOperation.Current.IsActive)
+                _saveOperation.Transition(SaveOperationPhase.Cancelled);
             _activityConsole?.Finish(GuardianActivityKind.Cancelled, "Operation cancelled.");
         }
         catch (Exception ex)
         {
             outcome = "failed";
+            if (_saveOperation.Current.IsActive)
+                _saveOperation.Transition(SaveOperationPhase.Failed, ex.Message);
             _activityConsole?.Finish(GuardianActivityKind.Error, ex.Message);
             await _audit.WriteAsync("operation_error", new { error = ex.Message });
         }
@@ -1773,6 +1821,9 @@ public sealed class GuardianForm : Form
 
             _operation.Dispose();
             _operation = null;
+            if (_saveOperation.Current.Phase is SaveOperationPhase.Completed or SaveOperationPhase.Warning or
+                SaveOperationPhase.Failed or SaveOperationPhase.Cancelled)
+                ScheduleSaveIdle();
             await _audit.WriteAsync("operation_completed", new
             {
                 message,
@@ -1787,6 +1838,51 @@ public sealed class GuardianForm : Form
 
     private void ReportActivity(string message, GuardianActivityKind kind = GuardianActivityKind.Information) =>
         _activityConsole?.AppendMessage(message, kind);
+
+    private void HandleSaveProgress(GuardianActivityEvent activity)
+    {
+        var phase = MapActivityToSavePhase(activity.Kind);
+        if (phase is SaveOperationPhase next) _saveOperation.Transition(next, activity.Message);
+        _activityConsole?.Append(activity);
+    }
+
+    internal static SaveOperationPhase? MapActivityToSavePhase(GuardianActivityKind kind) => kind switch
+        {
+            GuardianActivityKind.LongPathChecking or GuardianActivityKind.LongPathEnabling or
+                GuardianActivityKind.LongPathAlreadyEnabled => SaveOperationPhase.CheckingPathSupport,
+            GuardianActivityKind.SaveStaging or GuardianActivityKind.LongPathRetrying => SaveOperationPhase.Staging,
+            GuardianActivityKind.SaveCreatingCheckpoint => SaveOperationPhase.CreatingCheckpoint,
+            GuardianActivityKind.LongPathRetryFailed => SaveOperationPhase.Failed,
+            _ => (SaveOperationPhase?)null
+        };
+
+    private void OnSaveOperationStateChanged(object? sender, SaveOperationVisualState state)
+    {
+        GuardianWorkboardRuntime.SetSaveOperationState(this, state);
+        foreach (var pet in Application.OpenForms.OfType<PetForm>().Where(pet => !pet.IsDisposed))
+            pet.SetSaveOperationState(state);
+
+        var blockConflictingActions = state.IsActive;
+        foreach (var button in _operationButtons.Where(button =>
+                     button.Text.StartsWith("Save", StringComparison.OrdinalIgnoreCase) ||
+                     button.Text.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
+                     button.Text.StartsWith("Send", StringComparison.OrdinalIgnoreCase) ||
+                     button.Text.StartsWith("Refresh", StringComparison.OrdinalIgnoreCase)))
+            button.Enabled = !blockConflictingActions && _operation is null;
+
+        if (state.IsActive)
+            SetActivityState("● " + state.Phase.ToString().ToUpperInvariant(), GuardianTheme.Changes);
+        else if (state.Phase != SaveOperationPhase.Idle)
+        {
+            if (_operation is null) ScheduleSaveIdle();
+        }
+    }
+
+    private void ScheduleSaveIdle()
+    {
+        _saveTerminalTimer.Stop();
+        _saveTerminalTimer.Start();
+    }
 
     private void ShowActivityPanel()
     {
@@ -1826,6 +1922,9 @@ public sealed class GuardianForm : Form
         {
             _pulseTimer.Stop();
             _pulseTimer.Dispose();
+            _saveTerminalTimer.Stop();
+            _saveTerminalTimer.Dispose();
+            _saveOperation.Changed -= OnSaveOperationStateChanged;
             _comparisonLoad?.Cancel();
             _comparisonLoad?.Dispose();
             _toolTips.Dispose();

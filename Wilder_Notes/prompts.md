@@ -1,5 +1,0 @@
-- in the console GUARDIAN ACTIVITY:
-- a file progress log should be displayed, showing all files being processed and a soft blinking scan style on that file while is being processed, there should be a timer process on the right side to show the process i hr, min, sec, milleseconds
-- errors should be logged to and captured in the console in red, warnings in yellow, and sucess in green, normal process in current color
-- which files would be involved to implement this?
-- will the proposal you made solve the "hung like" state of the current run?

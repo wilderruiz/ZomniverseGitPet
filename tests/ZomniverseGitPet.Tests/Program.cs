@@ -602,6 +602,7 @@ await CheckAsync("Git-native preflight reports all ignore sources before staging
 });
 
 await SavePreflightBatchRegression.RunAsync();
+await LongPathRegression.RunAsync();
 
 if (failures.Count > 0)
 {

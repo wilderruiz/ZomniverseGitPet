@@ -37,6 +37,13 @@ internal static class GuardianWorkboardRuntime
         };
     }
 
+    public static void SetSaveOperationState(GuardianForm guardian, SaveOperationVisualState state)
+    {
+        if (guardian.IsDisposed) return;
+        EnsureWorkboard(guardian);
+        if (Boards.TryGetValue(guardian, out var host)) host.Board.SetSaveOperationState(state);
+    }
+
     private static async Task TickAsync()
     {
         if (_tickRunning || _config is null || _git is null || _service is null) return;

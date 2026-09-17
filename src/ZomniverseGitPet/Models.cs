@@ -44,6 +44,15 @@ public enum GuardianActivityKind
     PhaseStarted,
     FilePending,
     FileCompleted,
+    LongPathChecking,
+    LongPathAlreadyEnabled,
+    LongPathEnabling,
+    LongPathConfigurationFailed,
+    LongPathRetrying,
+    LongPathRetrySucceeded,
+    LongPathRetryFailed,
+    SaveStaging,
+    SaveCreatingCheckpoint,
     Information,
     Success,
     Warning,
@@ -59,6 +68,65 @@ public sealed record GuardianActivityEvent(
     int Completed = 0,
     int Total = 0,
     TimeSpan? Elapsed = null);
+
+public sealed record RepositoryLongPathResult(
+    bool Applicable,
+    bool Enabled,
+    bool Changed,
+    string Error = "");
+
+public enum SaveOperationPhase
+{
+    Idle,
+    Preparing,
+    CheckingPathSupport,
+    Staging,
+    CreatingCheckpoint,
+    Completed,
+    Warning,
+    Failed,
+    Cancelled
+}
+
+public sealed record SaveOperationVisualState(
+    SaveOperationPhase Phase,
+    string Message,
+    DateTimeOffset ChangedAt)
+{
+    public bool IsActive => Phase is SaveOperationPhase.Preparing or
+        SaveOperationPhase.CheckingPathSupport or
+        SaveOperationPhase.Staging or
+        SaveOperationPhase.CreatingCheckpoint;
+}
+
+internal sealed class SaveOperationStateController
+{
+    public SaveOperationVisualState Current { get; private set; } =
+        new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
+
+    public event EventHandler<SaveOperationVisualState>? Changed;
+
+    public void Transition(SaveOperationPhase phase, string? message = null)
+    {
+        var next = new SaveOperationVisualState(phase, message ?? DefaultMessage(phase), DateTimeOffset.UtcNow);
+        if (Current.Phase == next.Phase && string.Equals(Current.Message, next.Message, StringComparison.Ordinal)) return;
+        Current = next;
+        Changed?.Invoke(this, next);
+    }
+
+    internal static string DefaultMessage(SaveOperationPhase phase) => phase switch
+    {
+        SaveOperationPhase.Preparing => "Preparing save...",
+        SaveOperationPhase.CheckingPathSupport => "Checking repository path support...",
+        SaveOperationPhase.Staging => "Staging files...",
+        SaveOperationPhase.CreatingCheckpoint => "Creating local checkpoint...",
+        SaveOperationPhase.Completed => "Save completed.",
+        SaveOperationPhase.Warning => "Save needs attention.",
+        SaveOperationPhase.Failed => "Save failed.",
+        SaveOperationPhase.Cancelled => "Save cancelled.",
+        _ => "Ready"
+    };
+}
 
 public sealed record SaveStagePlan(
     IReadOnlyList<string> NormalFiles,

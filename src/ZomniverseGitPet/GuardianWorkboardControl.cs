@@ -88,11 +88,27 @@ internal sealed class GuardianWorkboardControl : UserControl
     public void SetBusy(bool busy)
     {
         if (!busy) return;
+        if (_save.HasOperationState) return;
         _save.SetTransientBadge("WORKING…");
         _get.SetTransientBadge("WORKING…");
         _send.SetTransientBadge("WORKING…");
         _reconcile.SetTransientBadge("WORKING…");
     }
+
+    public void SetSaveOperationState(SaveOperationVisualState state) => _save.SetOperationState(state);
+
+    internal static string? SaveBadgeFor(SaveOperationPhase phase) => phase switch
+    {
+        SaveOperationPhase.Preparing => "PREPARING SAVE…",
+        SaveOperationPhase.CheckingPathSupport => "CHECKING PATHS…",
+        SaveOperationPhase.Staging => "STAGING…",
+        SaveOperationPhase.CreatingCheckpoint => "CREATING SAVE…",
+        SaveOperationPhase.Completed => "SAVED ✓",
+        SaveOperationPhase.Warning => "ATTENTION",
+        SaveOperationPhase.Failed => "FAILED",
+        SaveOperationPhase.Cancelled => "CANCELLED",
+        _ => null
+    };
 
     private static int CountProjectedFiles(IEnumerable<GuardianWorkboardRow> rows) =>
         rows.Count(row => !row.IsCommit && row.State != "MORE");
@@ -108,8 +124,14 @@ internal sealed class GuardianWorkboardControl : UserControl
         private readonly Color _normalAccent;
         private readonly Color _normalFill;
         private readonly Panel _header;
+        private readonly SaveProgressRing _progressRing = new();
         private readonly Font _commitFont = new("Cascadia Mono", 8.25f);
         private bool _attention;
+        private string _normalBadge = "CLEAR";
+        private SaveOperationVisualState _operationState =
+            new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
+        public bool HasActiveOperation => _operationState.IsActive;
+        public bool HasOperationState => _operationState.Phase != SaveOperationPhase.Idle;
 
         public WorkboardSection(
             string title,
@@ -147,8 +169,13 @@ internal sealed class GuardianWorkboardControl : UserControl
             _badge.Font = new Font("Segoe UI", 7.75f, FontStyle.Bold);
             _badge.TextAlign = ContentAlignment.MiddleRight;
 
+            _progressRing.Dock = DockStyle.Right;
+            _progressRing.Width = 28;
+            _progressRing.Visible = false;
+
             _header.Controls.Add(_title);
             _header.Controls.Add(_badge);
+            _header.Controls.Add(_progressRing);
 
             var body = new Panel
             {
@@ -203,6 +230,7 @@ internal sealed class GuardianWorkboardControl : UserControl
                 _grid.ResumeLayout();
             }
 
+            _normalBadge = badge;
             _badge.Text = badge;
             _empty.Text = emptyText;
             var hasRows = rows.Count > 0;
@@ -211,11 +239,23 @@ internal sealed class GuardianWorkboardControl : UserControl
             if (!hasRows) _empty.BringToFront();
 
             ApplyTone();
+            if (_operationState.Phase != SaveOperationPhase.Idle)
+                ApplyOperationTone(_operationState.Phase);
         }
 
         public void SetTransientBadge(string text)
         {
             _badge.Text = text;
+        }
+
+        public void SetOperationState(SaveOperationVisualState state)
+        {
+            _operationState = state;
+            _progressRing.Active = state.IsActive;
+            _progressRing.Visible = state.IsActive;
+            _badge.Text = SaveBadgeFor(state.Phase) ?? _normalBadge;
+            _attention = state.Phase is SaveOperationPhase.Warning or SaveOperationPhase.Failed;
+            ApplyOperationTone(state.Phase);
         }
 
         public void SetAttention(bool attention)
@@ -234,6 +274,21 @@ internal sealed class GuardianWorkboardControl : UserControl
         {
             var accent = _attention ? GuardianTheme.Warning : _normalAccent;
             var fill = _attention ? GuardianTheme.WarningFill : _normalFill;
+            ApplyHeaderTone(accent, fill);
+        }
+
+        private void ApplyOperationTone(SaveOperationPhase phase)
+        {
+            if (phase == SaveOperationPhase.Completed)
+                ApplyHeaderTone(GuardianTheme.Healthy, GuardianTheme.HealthyFill);
+            else if (phase == SaveOperationPhase.Cancelled)
+                ApplyHeaderTone(GuardianTheme.Changes, GuardianTheme.ChangesFill);
+            else
+                ApplyTone();
+        }
+
+        private void ApplyHeaderTone(Color accent, Color fill)
+        {
             _header.BackColor = fill;
             _title.ForeColor = accent;
             _badge.ForeColor = accent;
@@ -287,6 +342,52 @@ internal sealed class GuardianWorkboardControl : UserControl
             grid.Columns[1].FillWeight = 74;
             grid.Columns[0].DefaultCellStyle.Font = new Font("Segoe UI", 7.75f, FontStyle.Bold);
             return grid;
+        }
+    }
+
+    private sealed class SaveProgressRing : Control
+    {
+        private readonly System.Windows.Forms.Timer _timer = new() { Interval = 70 };
+        private int _angle;
+
+        public bool Active
+        {
+            get => _timer.Enabled;
+            set
+            {
+                if (value) _timer.Start(); else _timer.Stop();
+                Invalidate();
+            }
+        }
+
+        public SaveProgressRing()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                     ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+            _timer.Tick += (_, _) => { _angle = (_angle + 24) % 360; Invalidate(); };
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (!Active) return;
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var size = Math.Min(16, Math.Min(Width - 6, Height - 6));
+            var bounds = new Rectangle((Width - size) / 2, (Height - size) / 2, size, size);
+            using var track = new Pen(Color.FromArgb(70, GuardianTheme.HotPinkSoft), 2.4f);
+            using var arc = new Pen(GuardianTheme.HotPinkSoft, 2.4f)
+            {
+                StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                EndCap = System.Drawing.Drawing2D.LineCap.Round
+            };
+            e.Graphics.DrawEllipse(track, bounds);
+            e.Graphics.DrawArc(arc, bounds, _angle, 105);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _timer.Dispose();
+            base.Dispose(disposing);
         }
     }
 }

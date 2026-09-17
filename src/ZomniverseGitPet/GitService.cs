@@ -7,6 +7,7 @@ namespace ZomniverseGitPet;
 public sealed class GitService(AuditLog audit)
 {
     private readonly SemaphoreSlim _gitGate = new(1, 1);
+    private readonly HashSet<string> _longPathReadyRepositories = new(StringComparer.OrdinalIgnoreCase);
     internal int GitProcessLaunchCount { get; private set; }
     private readonly List<string> _launchedGitSubcommands = [];
     internal IReadOnlyList<string> LaunchedGitSubcommands => _launchedGitSubcommands;
@@ -84,6 +85,76 @@ public sealed class GitService(AuditLog audit)
         return arguments.FirstOrDefault() ?? "unknown";
     }
 
+    public Task<RepositoryLongPathResult> EnsureRepositoryLongPathsAsync(
+        string path,
+        IProgress<GuardianActivityEvent>? progress = null,
+        CancellationToken token = default) =>
+        EnsureRepositoryLongPathsCoreAsync(path, OperatingSystem.IsWindows(), progress, token,
+            arguments => RunGitAsync(path, arguments, TimeSpan.FromSeconds(20), token));
+
+    internal async Task<RepositoryLongPathResult> EnsureRepositoryLongPathsCoreAsync(
+        string path,
+        bool isWindows,
+        IProgress<GuardianActivityEvent>? progress,
+        CancellationToken token,
+        Func<IReadOnlyList<string>, Task<CommandResult>> runGit,
+        bool forceRecheck = false)
+    {
+        if (!isWindows) return new(false, false, false);
+        var repositoryKey = Path.GetFullPath(path);
+        if (!forceRecheck && _longPathReadyRepositories.Contains(repositoryKey))
+            return new(true, true, false);
+
+        token.ThrowIfCancellationRequested();
+        var started = Stopwatch.StartNew();
+        progress?.Report(new(GuardianActivityKind.LongPathChecking,
+            "Checking repository path support..."));
+        var current = await runGit(["config", "--local", "--get", "core.longpaths"]);
+        if (current.Success && string.Equals(current.Output.Trim(), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            _longPathReadyRepositories.Add(repositoryKey);
+            progress?.Report(new(GuardianActivityKind.LongPathAlreadyEnabled,
+                "Git long-path support is enabled for this repository."));
+            await audit.WriteAsync("repository_longpaths_checked", new
+            {
+                repository = Path.GetFileName(repositoryKey),
+                enabled = true,
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+            return new(true, true, false);
+        }
+
+        progress?.Report(new(GuardianActivityKind.LongPathEnabling,
+            "Enabling Git long-path support for this repository..."));
+        var configured = await runGit(["config", "--local", "core.longpaths", "true"]);
+        if (configured.Success)
+        {
+            _longPathReadyRepositories.Add(repositoryKey);
+            progress?.Report(new(GuardianActivityKind.LongPathAlreadyEnabled,
+                "core.longpaths enabled locally."));
+            await audit.WriteAsync("repository_longpaths_enabled", new
+            {
+                repository = Path.GetFileName(repositoryKey),
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+            return new(true, true, true);
+        }
+
+        var error = "GitPet could not enable repository-local long-path support. " +
+                    "Long paths may still prevent Save.\r\n" + configured.Output;
+        progress?.Report(new(GuardianActivityKind.LongPathConfigurationFailed, error));
+        await audit.WriteAsync("repository_longpaths_enable_failed", new
+        {
+            repository = Path.GetFileName(repositoryKey),
+            elapsedMilliseconds = started.ElapsedMilliseconds,
+            error = configured.Output
+        });
+        return new(true, false, false, error);
+    }
+
+    internal static bool IsLongPathFailure(CommandResult result) =>
+        !result.Success && result.Output.Contains("filename too long", StringComparison.OrdinalIgnoreCase);
+
     public async Task<RepositoryStatus> GetStatusAsync(string repositoryPath, CancellationToken token = default)
     {
         if (string.IsNullOrWhiteSpace(repositoryPath) || !Directory.Exists(repositoryPath))
@@ -113,7 +184,12 @@ public sealed class GitService(AuditLog audit)
     public async Task<CommandResult> GetRepositoryRootAsync(string path, CancellationToken token = default)
     {
         var result = await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
-        if (result.Success || !IsDubiousOwnershipError(result.Output)) return result;
+        if (result.Success)
+        {
+            await EnsureRepositoryLongPathsAsync(path, token: token);
+            return result;
+        }
+        if (!IsDubiousOwnershipError(result.Output)) return result;
 
         using var trust = new SafeDirectorySetupForm(path, result.Output);
         if (trust.ShowDialog() != DialogResult.OK)
@@ -124,7 +200,9 @@ public sealed class GitService(AuditLog audit)
         var configured = await AddSafeDirectoryAsync(path, token);
         if (!configured.Success) return configured;
 
-        return await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+        var verified = await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+        if (verified.Success) await EnsureRepositoryLongPathsAsync(path, token: token);
+        return verified;
     }
 
     public Task<CommandResult> InitializeRepositoryAsync(string path, CancellationToken token = default) =>
@@ -329,7 +407,7 @@ public sealed class GitService(AuditLog audit)
     }
 
     public async Task<CheckpointResult> CreateCheckpointAsync(string path, string message, CancellationToken token = default)
-        => await CreateCheckpointAsync(path, message, stagePlan: null, token);
+        => await CreateCheckpointAsync(path, message, stagePlan: null, token, progress: null);
 
     /* ==========================================================================
        PATCH: EXACT SAVE STAGING PLAN
@@ -341,7 +419,8 @@ public sealed class GitService(AuditLog audit)
         string path,
         string message,
         SaveStagePlan? stagePlan,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        IProgress<GuardianActivityEvent>? progress = null)
     {
         if (stagePlan is null)
         {
@@ -377,6 +456,16 @@ public sealed class GitService(AuditLog audit)
             }
         }
 
+        var diagnosticPaths = stagePlan is null
+            ? pathspecs
+            : stagePlan.NormalFiles.Concat(stagePlan.ApprovedIgnoredFiles).ToArray();
+        foreach (var relativePath in diagnosticPaths.Where(candidate =>
+                     Path.GetFullPath(Path.Combine(path, candidate.Replace('/', Path.DirectorySeparatorChar))).Length >= 260))
+            progress?.Report(new(GuardianActivityKind.Warning, "Long path detected", relativePath));
+
+        await EnsureRepositoryLongPathsAsync(path, progress, token);
+        progress?.Report(new(GuardianActivityKind.SaveStaging, "Staging files..."));
+
         if (stagePlan is null)
         {
             var stageArguments = new List<string> { "add", "-A" };
@@ -386,7 +475,7 @@ public sealed class GitService(AuditLog audit)
                 stageArguments.AddRange(pathspecs);
             }
 
-            var stage = await RunGitAsync(path, stageArguments, TimeSpan.FromMinutes(1), token);
+            var stage = await RunStageWithLongPathRecoveryAsync(path, stageArguments, progress, token);
             await audit.WriteAsync("git_stage", new
             {
                 success = stage.Success,
@@ -408,14 +497,14 @@ public sealed class GitService(AuditLog audit)
             var normalArguments = IgnoredFileSavePolicy.BuildStageArguments(stagePlan.NormalFiles, force: false);
             if (normalArguments.Count > 0)
             {
-                var normalStage = await RunGitAsync(path, normalArguments, TimeSpan.FromMinutes(1), token);
+                var normalStage = await RunStageWithLongPathRecoveryAsync(path, normalArguments, progress, token);
                 if (!normalStage.Success) return new(false, "Staging failed: " + normalStage.Output);
             }
 
             var forcedArguments = IgnoredFileSavePolicy.BuildStageArguments(stagePlan.ApprovedIgnoredFiles, force: true);
             if (forcedArguments.Count > 0)
             {
-                var forcedStage = await RunGitAsync(path, forcedArguments, TimeSpan.FromMinutes(1), token);
+                var forcedStage = await RunStageWithLongPathRecoveryAsync(path, forcedArguments, progress, token);
                 if (!forcedStage.Success) return new(false, "Force-track staging failed: " + forcedStage.Output);
             }
 
@@ -428,6 +517,7 @@ public sealed class GitService(AuditLog audit)
             });
         }
 
+        progress?.Report(new(GuardianActivityKind.SaveCreatingCheckpoint, "Creating local checkpoint..."));
         var commit = await RunGitAsync(path, ["commit", "-m", message], TimeSpan.FromMinutes(2), token);
         if (!commit.Success)
         {
@@ -452,6 +542,60 @@ public sealed class GitService(AuditLog audit)
               (skippedCount > 0 ? $"○ {skippedCount} ignored project file{(skippedCount == 1 ? "" : "s")} skipped\r\n" : "") +
               $"\r\n{value}";
         return new(true, summary, value, savedCount, skippedCount);
+    }
+
+    internal async Task<CommandResult> RunStageWithLongPathRecoveryAsync(
+        string path,
+        IReadOnlyList<string> arguments,
+        IProgress<GuardianActivityEvent>? progress,
+        CancellationToken token,
+        bool? isWindowsOverride = null,
+        Func<Task<CommandResult>>? runStageOverride = null,
+        Func<Task<RepositoryLongPathResult>>? ensureOverride = null)
+    {
+        async Task<CommandResult> Stage() => runStageOverride is null
+            ? await RunGitAsync(path, arguments, TimeSpan.FromMinutes(1), token)
+            : await runStageOverride();
+
+        var first = await Stage();
+        if (!(isWindowsOverride ?? OperatingSystem.IsWindows()) || !IsLongPathFailure(first)) return first;
+
+        var started = Stopwatch.StartNew();
+        progress?.Report(new(GuardianActivityKind.LongPathRetrying,
+            "Staging encountered a Windows long-path error. Rechecking repository support..."));
+        await audit.WriteAsync("staging_longpath_retry", new
+        {
+            repository = Path.GetFileName(Path.GetFullPath(path))
+        });
+        if (ensureOverride is null)
+            await EnsureRepositoryLongPathsCoreAsync(path, true, progress, token,
+                command => RunGitAsync(path, command, TimeSpan.FromSeconds(20), token), forceRecheck: true);
+        else
+            await ensureOverride();
+
+        progress?.Report(new(GuardianActivityKind.LongPathRetrying, "Retrying staging once..."));
+        var retry = await Stage();
+        if (retry.Success)
+        {
+            progress?.Report(new(GuardianActivityKind.LongPathRetrySucceeded, "Staging completed."));
+            await audit.WriteAsync("staging_longpath_retry_succeeded", new
+            {
+                repository = Path.GetFileName(Path.GetFullPath(path)),
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+        }
+        else
+        {
+            progress?.Report(new(GuardianActivityKind.LongPathRetryFailed,
+                "Staging still failed after enabling long-path support.\r\n" + retry.Output));
+            await audit.WriteAsync("staging_longpath_retry_failed", new
+            {
+                repository = Path.GetFileName(Path.GetFullPath(path)),
+                elapsedMilliseconds = started.ElapsedMilliseconds,
+                error = retry.Output
+            });
+        }
+        return retry;
     }
 
     /* ==========================================================================

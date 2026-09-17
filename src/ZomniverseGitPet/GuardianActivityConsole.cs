@@ -53,7 +53,11 @@ internal sealed class GuardianActivityConsole : IDisposable
             GuardianActivityKind.Success or GuardianActivityKind.OperationCompleted or GuardianActivityKind.FileCompleted
                 => GuardianTheme.Healthy,
             GuardianActivityKind.Warning or GuardianActivityKind.Cancelled => GuardianTheme.Changes,
-            GuardianActivityKind.Error => GuardianTheme.Warning,
+            GuardianActivityKind.LongPathEnabling or GuardianActivityKind.LongPathRetrying => GuardianTheme.Changes,
+            GuardianActivityKind.SaveStaging or GuardianActivityKind.SaveCreatingCheckpoint => GuardianTheme.Info,
+            GuardianActivityKind.LongPathAlreadyEnabled or GuardianActivityKind.LongPathRetrySucceeded => GuardianTheme.Healthy,
+            GuardianActivityKind.Error or GuardianActivityKind.LongPathConfigurationFailed or GuardianActivityKind.LongPathRetryFailed
+                => GuardianTheme.Warning,
             _ => _output.ForeColor
         };
 
@@ -63,7 +67,11 @@ internal sealed class GuardianActivityConsole : IDisposable
             GuardianActivityKind.FileCompleted => "✓ ",
             GuardianActivityKind.Success or GuardianActivityKind.OperationCompleted => "✓ ",
             GuardianActivityKind.Warning => "⚠ ",
-            GuardianActivityKind.Error => "✕ ",
+            GuardianActivityKind.LongPathChecking => "○ ",
+            GuardianActivityKind.LongPathAlreadyEnabled or GuardianActivityKind.LongPathRetrySucceeded => "✓ ",
+            GuardianActivityKind.LongPathEnabling or GuardianActivityKind.LongPathRetrying => "○ ",
+            GuardianActivityKind.SaveStaging or GuardianActivityKind.SaveCreatingCheckpoint => "◌ ",
+            GuardianActivityKind.Error or GuardianActivityKind.LongPathConfigurationFailed or GuardianActivityKind.LongPathRetryFailed => "✕ ",
             GuardianActivityKind.Cancelled => "■ ",
             GuardianActivityKind.PhaseStarted => "◌ ",
             _ => ""
@@ -110,6 +118,8 @@ internal sealed class GuardianActivityConsole : IDisposable
 
     private void AppendColored(string text, Color color)
     {
+        if (NeedsLineSeparator(_output.Text))
+            _output.AppendText(Environment.NewLine);
         _output.SelectionStart = _output.TextLength;
         _output.SelectionLength = 0;
         _output.SelectionColor = color;
@@ -118,6 +128,9 @@ internal sealed class GuardianActivityConsole : IDisposable
         _output.SelectionStart = _output.TextLength;
         _output.ScrollToCaret();
     }
+
+    internal static bool NeedsLineSeparator(string existingText) =>
+        existingText.Length > 0 && existingText[^1] is not ('\r' or '\n');
 
     public void Dispose() => _timer.Dispose();
 }

@@ -14,12 +14,17 @@ public sealed class PetForm : Form
     private readonly PetChromeButton _close;
     private readonly System.Windows.Forms.Timer _incomingAnimationTimer = new() { Interval = 130 };
     private readonly System.Windows.Forms.Timer _incomingHoldTimer = new() { Interval = 6500 };
+    private readonly System.Windows.Forms.Timer _operationAnimationTimer = new() { Interval = 260 };
+    private readonly System.Windows.Forms.Timer _operationHoldTimer = new() { Interval = 2200 };
     private Rectangle _normalFoxBounds = new(40, 0, 160, 160);
     private Point _dragOffset;
     private bool _dragging;
     private Image _stateImage;
     private string _stateMessage = "● CHECKING\nRepository status";
     private bool _incomingAlertActive;
+    private SaveOperationVisualState _saveOperationState =
+        new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
+    private bool _operationAnimationFrame;
 
     /* ==========================================================================
        PATCH: PERSISTENT PET GUIDANCE STATE
@@ -148,6 +153,8 @@ public sealed class PetForm : Form
 
         _incomingAnimationTimer.Tick += (_, _) => AdvanceIncomingAnimation();
         _incomingHoldTimer.Tick += (_, _) => EndIncomingUpdateAlert();
+        _operationAnimationTimer.Tick += (_, _) => AdvanceOperationAnimation();
+        _operationHoldTimer.Tick += (_, _) => EndOperationHold();
 
         FormClosing += (_, e) =>
         {
@@ -186,6 +193,20 @@ public sealed class PetForm : Form
     {
         SetPetState(_assets.Warning, "● GIT NEEDS ATTENTION\nOpen Guardian");
         _tray.Text = error.Length > 60 ? error[..60] : error;
+    }
+
+    public void SetSaveOperationState(SaveOperationVisualState state)
+    {
+        _saveOperationState = state;
+        _operationHoldTimer.Stop();
+        if (state.IsActive) _operationAnimationTimer.Start();
+        else _operationAnimationTimer.Stop();
+
+        if (_incomingAlertActive || _guidanceHoldActive) return;
+        RenderSaveOperationState();
+        if (state.Phase is SaveOperationPhase.Completed or SaveOperationPhase.Warning or
+            SaveOperationPhase.Failed or SaveOperationPhase.Cancelled)
+            _operationHoldTimer.Start();
     }
 
     /* ========================================================================== 
@@ -242,9 +263,13 @@ public sealed class PetForm : Form
         _guidanceHoldActive = false;
         if (_incomingAlertActive) return;
 
-        _fox.Image = _stateImage;
-        _bubble.SetMessage(_stateMessage);
-        LayoutPet();
+        if (_saveOperationState.Phase != SaveOperationPhase.Idle) RenderSaveOperationState();
+        else
+        {
+            _fox.Image = _stateImage;
+            _bubble.SetMessage(_stateMessage);
+            LayoutPet();
+        }
     }
 
     protected override void Dispose(bool disposing)
@@ -256,6 +281,8 @@ public sealed class PetForm : Form
             _incomingHoldTimer.Stop();
             _incomingAnimationTimer.Dispose();
             _incomingHoldTimer.Dispose();
+            _operationAnimationTimer.Dispose();
+            _operationHoldTimer.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
             _toolTip.Dispose();
@@ -292,16 +319,72 @@ public sealed class PetForm : Form
            REASON:
            Stop status refreshes from immediately replacing ignored-file instructions.
            ========================================================================== */
-        if (_incomingAlertActive || _guidanceHoldActive) return;
+        if (_incomingAlertActive || _guidanceHoldActive || _saveOperationState.Phase != SaveOperationPhase.Idle) return;
 
         _fox.Image = image;
         _bubble.SetMessage(message);
         LayoutPet();
     }
 
+    private void AdvanceOperationAnimation()
+    {
+        if (!_saveOperationState.IsActive || _incomingAlertActive || _guidanceHoldActive)
+        {
+            _operationAnimationTimer.Stop();
+            return;
+        }
+        _operationAnimationFrame = !_operationAnimationFrame;
+        RenderSaveOperationState();
+    }
+
+    private void RenderSaveOperationState()
+    {
+        var phase = _saveOperationState.Phase;
+        var image = phase switch
+        {
+            SaveOperationPhase.Preparing or SaveOperationPhase.CheckingPathSupport =>
+                _operationAnimationFrame ? _assets.ReviewReady : _assets.Idle,
+            SaveOperationPhase.Staging or SaveOperationPhase.CreatingCheckpoint =>
+                _operationAnimationFrame ? _assets.ReviewReady : _assets.Happy,
+            SaveOperationPhase.Completed => _assets.Happy,
+            SaveOperationPhase.Warning or SaveOperationPhase.Failed => _assets.Warning,
+            SaveOperationPhase.Cancelled => _assets.Idle,
+            _ => _stateImage
+        };
+        var heading = phase switch
+        {
+            SaveOperationPhase.Preparing => "● THINKING",
+            SaveOperationPhase.CheckingPathSupport => "● CHECKING PATHS",
+            SaveOperationPhase.Staging => "● WORKING",
+            SaveOperationPhase.CreatingCheckpoint => "● PACKING SAVE",
+            SaveOperationPhase.Completed => "● SAVED ✓",
+            SaveOperationPhase.Warning => "● SAVE NEEDS ATTENTION",
+            SaveOperationPhase.Failed => "● SAVE FAILED",
+            SaveOperationPhase.Cancelled => "● SAVE CANCELLED",
+            _ => ""
+        };
+        _fox.Image = image;
+        _bubble.SetMessage(phase == SaveOperationPhase.Idle
+            ? _stateMessage
+            : heading + "\n" + _saveOperationState.Message);
+        LayoutPet();
+    }
+
+    private void EndOperationHold()
+    {
+        _operationHoldTimer.Stop();
+        _operationAnimationTimer.Stop();
+        _saveOperationState = new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
+        if (_incomingAlertActive || _guidanceHoldActive) return;
+        _fox.Image = _stateImage;
+        _bubble.SetMessage(_stateMessage);
+        LayoutPet();
+    }
+
     private void OnGuardianSyncStateChanged(object? sender, EventArgs e)
     {
         if (IsDisposed) return;
+        if (_saveOperationState.IsActive) return;
         if (InvokeRequired)
         {
             if (!IsHandleCreated) return;
@@ -387,9 +470,13 @@ public sealed class PetForm : Form
         if (!_incomingAlertActive) return;
 
         _incomingAlertActive = false;
-        _fox.Image = _stateImage;
-        _bubble.SetMessage(_stateMessage);
-        LayoutPet();
+        if (_saveOperationState.Phase != SaveOperationPhase.Idle) RenderSaveOperationState();
+        else
+        {
+            _fox.Image = _stateImage;
+            _bubble.SetMessage(_stateMessage);
+            LayoutPet();
+        }
     }
 
     private void LayoutPet()
