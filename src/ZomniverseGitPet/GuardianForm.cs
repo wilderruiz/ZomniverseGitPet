@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace ZomniverseGitPet;
 
 public sealed class GuardianForm : Form
@@ -32,6 +34,8 @@ public sealed class GuardianForm : Form
     private readonly Label _emptyState = new();
     private readonly RichTextBox _output = new();
     private readonly Label _activityState = new();
+    private readonly Label _activityElapsed = new();
+    private GuardianActivityConsole? _activityConsole;
     private readonly CheckBox _automatic = new();
     private readonly FileComparisonPanel _comparisonPanel = new();
     private Panel? _activityPanel;
@@ -646,7 +650,15 @@ public sealed class GuardianForm : Form
         _activityState.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
         _activityState.TextAlign = ContentAlignment.MiddleRight;
 
+        _activityElapsed.Dock = DockStyle.Right;
+        _activityElapsed.Width = 260;
+        _activityElapsed.Text = "00 hr 00 min 00 sec 000 ms";
+        _activityElapsed.ForeColor = GuardianTheme.MutedInk;
+        _activityElapsed.Font = new Font("Cascadia Mono", 8.5f);
+        _activityElapsed.TextAlign = ContentAlignment.MiddleRight;
+
         header.Controls.Add(_activityState);
+        header.Controls.Add(_activityElapsed);
         header.Controls.Add(title);
 
         _output.Dock = DockStyle.Fill;
@@ -657,6 +669,7 @@ public sealed class GuardianForm : Form
         _output.BorderStyle = BorderStyle.None;
         _output.Padding = new Padding(12);
         _output.Text = "Guardian ready. Click a changed file to open the side-by-side File Review.";
+        _activityConsole = new GuardianActivityConsole(_output, _activityElapsed, _activityState);
 
         _toolTips.SetToolTip(_output,
             "Guardian Activity\n\nResults from Tests, Save, Get, Send, History, and Health appear here.\n" +
@@ -878,7 +891,7 @@ public sealed class GuardianForm : Form
         if (!_status.Healthy)
         {
             ShowActivityPanel();
-            _output.Text = _status.Error;
+            ReportActivity(_status.Error, GuardianActivityKind.Error);
             SetActivityState("● ATTENTION", GuardianTheme.Warning);
         }
     }
@@ -968,7 +981,7 @@ public sealed class GuardianForm : Form
         _commitLabel.Text = "LATEST  Repository refresh problem";
         _watchingLabel.Text = "Repository needs attention";
         ShowActivityPanel();
-        _output.Text = message;
+        ReportActivity(message, GuardianActivityKind.Warning);
         SetActivityState("● ATTENTION", GuardianTheme.Warning);
     }
 
@@ -1015,7 +1028,8 @@ public sealed class GuardianForm : Form
         if (_files.SelectedRows.Count == 0)
         {
             ShowActivityPanel();
-            _output.Text = "Select a changed file first. Clicking a row opens its Before / Now review automatically.";
+            ReportActivity("Select a changed file first. Clicking a row opens its Before / Now review automatically.",
+                GuardianActivityKind.Warning);
             return;
         }
 
@@ -1167,9 +1181,10 @@ public sealed class GuardianForm : Form
             using var setup = new ProjectTestsForm(projectName, repositoryPath, commands);
             if (setup.ShowDialog(this) != DialogResult.OK)
             {
-                _output.Text = commands.Count == 0
+                ReportActivity(commands.Count == 0
                     ? "Tests cancelled. No test commands were saved for this project."
-                    : "Test configuration cancelled. Existing project test commands were kept.";
+                    : "Test configuration cancelled. Existing project test commands were kept.",
+                    GuardianActivityKind.Cancelled);
                 return;
             }
 
@@ -1184,15 +1199,16 @@ public sealed class GuardianForm : Form
 
             if (commands.Count == 0)
             {
-                _output.Text = "No test commands are saved for this project.";
+                ReportActivity("No test commands are saved for this project.", GuardianActivityKind.Warning);
                 return;
             }
 
             if (!setup.RunAfterSave)
             {
-                _output.Text =
+                ReportActivity(
                     $"Saved {commands.Count} test command{(commands.Count == 1 ? "" : "s")} for this project.\n\n" +
-                    "Press Tests to run them. Hold Shift while clicking Tests whenever you want to edit this list.";
+                    "Press Tests to run them. Hold Shift while clicking Tests whenever you want to edit this list.",
+                    GuardianActivityKind.Success);
                 return;
             }
         }
@@ -1205,12 +1221,14 @@ public sealed class GuardianForm : Form
             completed++;
             text.AppendLine($"TEST {completed}/{commands.Count}");
             text.AppendLine("> " + command);
-            _output.Text = text.ToString();
+            ReportActivity($"TEST {completed}/{commands.Count}\n> {command}");
 
             var result = await _git.RunTestCommandAsync(repositoryPath, command, token);
             if (!string.IsNullOrWhiteSpace(result.Output)) text.AppendLine(result.Output);
             text.AppendLine(result.Success ? "✓ PASS" : $"✕ FAIL  (exit {result.ExitCode})").AppendLine();
-            _output.Text = text.ToString();
+            ReportActivity((string.IsNullOrWhiteSpace(result.Output) ? "" : result.Output + "\n") +
+                (result.Success ? "✓ PASS" : $"✕ FAIL  (exit {result.ExitCode})"),
+                result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
 
             if (!result.Success)
             {
@@ -1222,7 +1240,10 @@ public sealed class GuardianForm : Form
         text.Insert(0, allPassed
             ? $"TESTS PASSED ✓  ({completed}/{commands.Count})\n\n"
             : $"TESTS STOPPED ✕  ({completed}/{commands.Count})\n\n");
-        _output.Text = text.ToString();
+        ReportActivity(allPassed
+                ? $"TESTS PASSED ✓  ({completed}/{commands.Count})"
+                : $"TESTS STOPPED ✕  ({completed}/{commands.Count})",
+            allPassed ? GuardianActivityKind.Success : GuardianActivityKind.Error);
         await _audit.WriteAsync("manual_project_tests", new
         {
             repository = repositoryPath,
@@ -1237,22 +1258,25 @@ public sealed class GuardianForm : Form
         if (!HasRepository()) return;
 
         _status = await _git.GetStatusAsync(_config.RepositoryPath!, token);
-        var preflight = await _git.GetSavePreflightAsync(_config.RepositoryPath!, token);
+        var progress = new Progress<GuardianActivityEvent>(activity => _activityConsole?.Append(activity));
+        var preflight = await _git.GetSavePreflightAsync(
+            _config.RepositoryPath!, token, progress, _status);
         if (!_status.Healthy || !preflight.Success)
         {
-            _output.Text = _status.Healthy ? preflight.Error : _status.Error;
+            ReportActivity(_status.Healthy ? preflight.Error : _status.Error, GuardianActivityKind.Error);
             return;
         }
         if (preflight.NormalChangedFiles.Count == 0 && preflight.IgnoredChangedFiles.Count == 0)
         {
-            _output.Text = "Everything is already saved locally.";
+            ReportActivity("Everything is already saved locally.", GuardianActivityKind.Success);
             return;
         }
 
         var suspicious = GitService.FindSuspiciousPaths(_status.Files, _config.SuspiciousPathPatterns);
         if (suspicious.Count > 0)
         {
-            _output.Text = "Save blocked because suspicious paths are present:\n\n" + string.Join("\n", suspicious);
+            ReportActivity("Save blocked because suspicious paths are present:\n\n" +
+                string.Join("\n", suspicious), GuardianActivityKind.Warning);
             await _audit.WriteAsync("checkpoint_blocked_suspicious_paths", new { files = suspicious });
             return;
         }
@@ -1366,9 +1390,10 @@ public sealed class GuardianForm : Form
 
         var message = $"checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}";
         var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, stagePlan, token);
-        _output.Text = result.Success
-            ? "Changes saved locally ✓\n\n" + result.Message
-            : result.Message;
+        ReportActivity(result.Success
+                ? "Changes saved locally ✓\n\n" + result.Message
+                : result.Message,
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
 
             /*
             PATCH: THEMED SAVE RESULT
@@ -1410,7 +1435,8 @@ public sealed class GuardianForm : Form
         using var identity = new GitIdentityForm(projectName, currentName, currentEmail);
         if (identity.ShowDialog(this) != DialogResult.OK)
         {
-            _output.Text = "Save cancelled. Git still needs an author name and email before it can save a local version.";
+            ReportActivity("Save cancelled. Git still needs an author name and email before it can save a local version.",
+                GuardianActivityKind.Cancelled);
             return false;
         }
 
@@ -1423,7 +1449,7 @@ public sealed class GuardianForm : Form
 
         if (!save.Success)
         {
-            _output.Text = save.Output;
+            ReportActivity(save.Output, GuardianActivityKind.Error);
             MessageBox.Show(
                 this,
                 "GitPet could not save the Git identity. No changes were saved.\n\n" + save.Output,
@@ -1433,9 +1459,9 @@ public sealed class GuardianForm : Form
             return false;
         }
 
-        _output.Text = identity.UseGlobal
+        ReportActivity(identity.UseGlobal
             ? "Git identity saved for Git projects on this PC. Saving changes..."
-            : "Git identity saved for this project. Saving changes...";
+            : "Git identity saved for this project. Saving changes...", GuardianActivityKind.Success);
         return true;
     }
 
@@ -1447,16 +1473,18 @@ public sealed class GuardianForm : Form
         var status = await _git.GetStatusAsync(repositoryPath, token);
         if (!status.Healthy)
         {
-            _output.Text = "Get unavailable because Git could not read the current project state.\n\n" + status.Error;
+            ReportActivity("Get unavailable because Git could not read the current project state.\n\n" + status.Error,
+                GuardianActivityKind.Error);
             return;
         }
 
         if (status.Files.Count > 0)
         {
             var countText = FriendlyGitState.Count(status.Files.Count, "unsaved change");
-            _output.Text =
+            ReportActivity(
                 $"Get blocked safely: {countText} detected.\n\n" +
-                "Save the current work before getting online updates so the two versions are not accidentally mixed.";
+                "Save the current work before getting online updates so the two versions are not accidentally mixed.",
+                GuardianActivityKind.Warning);
             MessageBox.Show(
                 this,
                 $"GitPet found {countText}.\n\n" +
@@ -1472,16 +1500,17 @@ public sealed class GuardianForm : Form
         var branch = branchResult.Success ? branchResult.Output.Trim() : "";
         if (string.IsNullOrWhiteSpace(branch))
         {
-            _output.Text = "Get unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            ReportActivity("Get unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).",
+                GuardianActivityKind.Error);
             return;
         }
 
         var originResult = await _git.GetOriginUrlAsync(repositoryPath, token);
         if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
         {
-            _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
+            ReportActivity(string.IsNullOrWhiteSpace(originResult.Output)
                 ? "Get unavailable: no readable origin remote is configured."
-                : originResult.Output;
+                : originResult.Output, GuardianActivityKind.Error);
             return;
         }
 
@@ -1498,17 +1527,18 @@ public sealed class GuardianForm : Form
 
         if (answer != DialogResult.Yes)
         {
-            _output.Text = "Get cancelled. Nothing was changed.";
+            ReportActivity("Get cancelled. Nothing was changed.", GuardianActivityKind.Cancelled);
             return;
         }
 
-        _output.Text = $"Getting updates from origin/{branch} with fast-forward-only safety...";
+        ReportActivity($"Getting updates from origin/{branch} with fast-forward-only safety...");
         var result = await _git.PullFromOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
 
-        _output.Text = result.Success
+        ReportActivity(result.Success
             ? $"Updates received ✓\norigin/{branch} → local {branch}\n\n{details}"
-            : $"Get stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.";
+            : $"Get stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.",
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
 
         MessageBox.Show(
             this,
@@ -1530,7 +1560,8 @@ public sealed class GuardianForm : Form
         var status = await _git.GetStatusAsync(repositoryPath, token);
         if (!status.Healthy)
         {
-            _output.Text = "Send unavailable because Git could not read the current project state.\n\n" + status.Error;
+            ReportActivity("Send unavailable because Git could not read the current project state.\n\n" + status.Error,
+                GuardianActivityKind.Error);
             return;
         }
 
@@ -1538,7 +1569,8 @@ public sealed class GuardianForm : Form
         if (readiness == SendReadiness.SaveFirst)
         {
             var countText = FriendlyGitState.Count(status.Files.Count, "unsaved change");
-            _output.Text = $"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\nSave them first, then use Send.";
+            ReportActivity($"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\nSave them first, then use Send.",
+                GuardianActivityKind.Warning);
             MessageBox.Show(
                 this,
                 $"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\n\nSave them first, then use Send.",
@@ -1550,7 +1582,7 @@ public sealed class GuardianForm : Form
 
         if (readiness == SendReadiness.AlreadyUpToDate)
         {
-            _output.Text = "Everything saved is already online.\n\nThere is nothing new to send.";
+            ReportActivity("Everything saved is already online.\n\nThere is nothing new to send.", GuardianActivityKind.Success);
             MessageBox.Show(
                 this,
                 "Everything saved is already online.\n\nThere is nothing new to send.",
@@ -1564,16 +1596,17 @@ public sealed class GuardianForm : Form
         var branch = branchResult.Success ? branchResult.Output.Trim() : "";
         if (string.IsNullOrWhiteSpace(branch))
         {
-            _output.Text = "Send unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            ReportActivity("Send unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).",
+                GuardianActivityKind.Error);
             return;
         }
 
         var originResult = await _git.GetOriginUrlAsync(repositoryPath, token);
         if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
         {
-            _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
+            ReportActivity(string.IsNullOrWhiteSpace(originResult.Output)
                 ? "Send unavailable: no readable origin remote is configured."
-                : originResult.Output;
+                : originResult.Output, GuardianActivityKind.Error);
             return;
         }
 
@@ -1613,17 +1646,18 @@ public sealed class GuardianForm : Form
 
         if (answer != DialogResult.Yes)
         {
-            _output.Text = "Send cancelled. Nothing was sent online.";
+            ReportActivity("Send cancelled. Nothing was sent online.", GuardianActivityKind.Cancelled);
             return;
         }
 
-        _output.Text = $"Sending saved updates to origin/{branch}...";
+        ReportActivity($"Sending saved updates to origin/{branch}...");
         var result = await _git.PushToOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
 
-        _output.Text = result.Success
+        ReportActivity(result.Success
             ? $"Send completed ✓\norigin/{branch}\n\n{details}"
-            : $"Send failed.\norigin/{branch}\n\n{details}";
+            : $"Send failed.\norigin/{branch}\n\n{details}",
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
 
         /*
         PATCH: THEMED SEND RESULT
@@ -1665,7 +1699,7 @@ public sealed class GuardianForm : Form
     {
         if (!HasRepository()) return;
         var result = await _git.GetRecentCommitsAsync(_config.RepositoryPath!, token);
-        _output.Text = result.Output;
+        ReportActivity(result.Output, result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
     });
 
     private async Task HealthCheckAsync() => await RunOperationAsync("Running Git health check...", async token =>
@@ -1673,9 +1707,10 @@ public sealed class GuardianForm : Form
         if (!HasRepository()) return;
 
         var result = await _git.HealthCheckAsync(_config.RepositoryPath!, token);
-        _output.Text = result.Success
+        ReportActivity(result.Success
             ? "git fsck passed.\n\n" + result.Output
-            : "git fsck failed.\n\n" + result.Output;
+            : "git fsck failed.\n\n" + result.Output,
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
 
         await _audit.WriteAsync("health_check", new { success = result.Success, result.TimedOut });
     });
@@ -1685,7 +1720,7 @@ public sealed class GuardianForm : Form
         if (!string.IsNullOrWhiteSpace(_config.RepositoryPath)) return true;
 
         ShowActivityPanel();
-        _output.Text = "Open Projects and choose a Git project first.";
+        ReportActivity("Open Projects and choose a Git project first.", GuardianActivityKind.Warning);
         return false;
     }
 
@@ -1700,19 +1735,34 @@ public sealed class GuardianForm : Form
 
         _cancelButton.Visible = true;
         SetActivityState("● WORKING", GuardianTheme.Changes);
-        _output.Text = message;
+        var firstOperationEntry = _activityConsole?.EntryCount ?? 0;
+        _activityConsole?.Begin(message);
+        var operationTimer = Stopwatch.StartNew();
+        var outcome = "success";
+        await _audit.WriteAsync("operation_started", new { message });
 
         try
         {
             await action(_operation.Token);
+            var hasErrors = _activityConsole?.HasKindSince(firstOperationEntry, GuardianActivityKind.Error) == true;
+            var hasWarnings = _activityConsole?.HasKindSince(firstOperationEntry, GuardianActivityKind.Warning) == true;
+            var finalKind = hasErrors
+                ? GuardianActivityKind.Error
+                : hasWarnings ? GuardianActivityKind.Warning : GuardianActivityKind.OperationCompleted;
+            outcome = hasErrors ? "failed" : hasWarnings ? "warning" : "success";
+            _activityConsole?.Finish(finalKind,
+                $"Operation finished in {FormatElapsed(operationTimer.Elapsed)}" +
+                (hasErrors ? " with errors." : hasWarnings ? " with warnings." : "."));
         }
         catch (OperationCanceledException)
         {
-            _output.Text = "Operation cancelled.";
+            outcome = "cancelled";
+            _activityConsole?.Finish(GuardianActivityKind.Cancelled, "Operation cancelled.");
         }
         catch (Exception ex)
         {
-            _output.Text = ex.Message;
+            outcome = "failed";
+            _activityConsole?.Finish(GuardianActivityKind.Error, ex.Message);
             await _audit.WriteAsync("operation_error", new { error = ex.Message });
         }
         finally
@@ -1723,8 +1773,20 @@ public sealed class GuardianForm : Form
 
             _operation.Dispose();
             _operation = null;
+            await _audit.WriteAsync("operation_completed", new
+            {
+                message,
+                outcome,
+                elapsedMilliseconds = operationTimer.ElapsedMilliseconds
+            });
         }
     }
+
+    private static string FormatElapsed(TimeSpan elapsed) =>
+        $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}.{elapsed.Milliseconds:000}";
+
+    private void ReportActivity(string message, GuardianActivityKind kind = GuardianActivityKind.Information) =>
+        _activityConsole?.AppendMessage(message, kind);
 
     private void ShowActivityPanel()
     {

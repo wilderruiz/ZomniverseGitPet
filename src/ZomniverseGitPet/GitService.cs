@@ -7,6 +7,9 @@ namespace ZomniverseGitPet;
 public sealed class GitService(AuditLog audit)
 {
     private readonly SemaphoreSlim _gitGate = new(1, 1);
+    internal int GitProcessLaunchCount { get; private set; }
+    private readonly List<string> _launchedGitSubcommands = [];
+    internal IReadOnlyList<string> LaunchedGitSubcommands => _launchedGitSubcommands;
 
     public async Task<CommandResult> RunGitAsync(
         string repositoryPath,
@@ -18,14 +21,18 @@ public sealed class GitService(AuditLog audit)
         await _gitGate.WaitAsync(cancellationToken);
         try
         {
+            var started = Stopwatch.StartNew();
+            GitProcessLaunchCount++;
+            _launchedGitSubcommands.Add(GetGitSubcommand(args));
             var result = await RunProcessAsync("git.exe", args, repositoryPath,
                 timeout ?? TimeSpan.FromSeconds(30), cancellationToken);
             await audit.WriteAsync("git_operation", new
             {
-                operation = args.FirstOrDefault() ?? "unknown",
+                operation = GetGitSubcommand(args),
                 success = result.Success,
                 result.ExitCode,
-                result.TimedOut
+                result.TimedOut,
+                elapsedMilliseconds = started.ElapsedMilliseconds
             });
             return result;
         }
@@ -33,6 +40,48 @@ public sealed class GitService(AuditLog audit)
         {
             _gitGate.Release();
         }
+    }
+
+    private async Task<CommandResult> RunGitWithInputAsync(
+        string repositoryPath,
+        IEnumerable<string> arguments,
+        string standardInput,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var args = arguments.ToArray();
+        await _gitGate.WaitAsync(cancellationToken);
+        try
+        {
+            var started = Stopwatch.StartNew();
+            GitProcessLaunchCount++;
+            _launchedGitSubcommands.Add(GetGitSubcommand(args));
+            var result = await RunProcessAsync("git.exe", args, repositoryPath, timeout,
+                cancellationToken, standardInput);
+            await audit.WriteAsync("git_operation", new
+            {
+                operation = GetGitSubcommand(args),
+                success = result.Success,
+                result.ExitCode,
+                result.TimedOut,
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+            return result;
+        }
+        finally
+        {
+            _gitGate.Release();
+        }
+    }
+
+    private static string GetGitSubcommand(IReadOnlyList<string> arguments)
+    {
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (arguments[index] == "-c") { index++; continue; }
+            if (!arguments[index].StartsWith('-')) return arguments[index];
+        }
+        return arguments.FirstOrDefault() ?? "unknown";
     }
 
     public async Task<RepositoryStatus> GetStatusAsync(string repositoryPath, CancellationToken token = default)
@@ -413,9 +462,13 @@ public sealed class GitService(AuditLog audit)
        ========================================================================== */
     public async Task<SavePreflightResult> GetSavePreflightAsync(
         string path,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        IProgress<GuardianActivityEvent>? progress = null,
+        RepositoryStatus? knownStatus = null)
     {
-        var status = await GetStatusAsync(path, token);
+        var started = Stopwatch.StartNew();
+        progress?.Report(new(GuardianActivityKind.PhaseStarted, "Reading project changes..."));
+        var status = knownStatus ?? await GetStatusAsync(path, token);
         if (!status.Healthy) return new(false, [], [], status.Error);
 
         var normal = status.Files.Select(file => NormalizeGitRelativePath(file.Path))
@@ -435,20 +488,53 @@ public sealed class GitService(AuditLog audit)
         var ignoredList = await RunGitAsync(path, arguments, TimeSpan.FromMinutes(1), token);
         if (!ignoredList.Success) return new(false, normal, [], "Ignored-file preflight failed: " + ignoredList.Output);
 
-        var ignored = new List<IgnoredProjectFile>();
-        foreach (var candidate in ignoredList.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var normalized = NormalizeGitRelativePath(candidate);
-            if (normalized.Length == 0 || Directory.Exists(Path.Combine(path, normalized.Replace('/', Path.DirectorySeparatorChar))))
-                continue;
+        var candidates = ignoredList.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Select(NormalizeGitRelativePath)
+            .Where(candidate => candidate.Length > 0 &&
+                !Directory.Exists(Path.Combine(path, candidate.Replace('/', Path.DirectorySeparatorChar))))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        progress?.Report(new(GuardianActivityKind.PhaseStarted,
+            $"Checking ignore rules for {candidates.Length} files...", Total: candidates.Length));
+        foreach (var candidate in candidates)
+            progress?.Report(new(GuardianActivityKind.FilePending, "Pending", candidate, Total: candidates.Length));
 
-            var provenance = await RunGitAsync(path,
-                ["-c", "core.quotePath=false", "check-ignore", "-v", "--", normalized],
-                TimeSpan.FromSeconds(20), token);
-            if (provenance.ExitCode != 0) continue;
-            var item = IgnoredFileSavePolicy.ParseCheckIgnore(provenance.Output);
-            if (item is not null) ignored.Add(item);
+        IReadOnlyList<IgnoredProjectFile> ignored = [];
+        if (candidates.Length > 0)
+        {
+            var input = string.Join('\0', candidates) + '\0';
+            var provenance = await RunGitWithInputAsync(path,
+                ["-c", "core.quotePath=false", "check-ignore", "-v", "-z", "--stdin"],
+                input, TimeSpan.FromMinutes(1), token);
+            if (provenance.ExitCode != 0)
+            {
+                var message = "Ignored-file provenance failed: " + provenance.Output;
+                progress?.Report(new(GuardianActivityKind.Error, message));
+                return new(false, normal, [], message);
+            }
+            if (!IgnoredFileSavePolicy.TryParseCheckIgnoreBatch(provenance.Output, out ignored, out var parseError))
+            {
+                progress?.Report(new(GuardianActivityKind.Error, parseError));
+                return new(false, normal, [], parseError);
+            }
+
+            var completed = 0;
+            foreach (var item in ignored)
+            {
+                completed++;
+                progress?.Report(new(GuardianActivityKind.FileCompleted, "Ignored rule found",
+                    item.Path, completed, candidates.Length));
+            }
         }
+
+        await audit.WriteAsync("save_preflight", new
+        {
+            success = true,
+            normalFiles = normal.Length,
+            ignoredCandidates = candidates.Length,
+            ignoredFiles = ignored.Count,
+            elapsedMilliseconds = started.ElapsedMilliseconds
+        });
 
         return new(true, normal, ignored
             .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
@@ -530,7 +616,7 @@ public sealed class GitService(AuditLog audit)
 
     private static async Task<CommandResult> RunProcessAsync(
         string fileName, IEnumerable<string> arguments, string workingDirectory,
-        TimeSpan timeout, CancellationToken cancellationToken)
+        TimeSpan timeout, CancellationToken cancellationToken, string? standardInput = null)
     {
         using var process = new Process
         {
@@ -541,6 +627,9 @@ public sealed class GitService(AuditLog audit)
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = standardInput is not null,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
                 CreateNoWindow = true
             }
         };
@@ -551,9 +640,13 @@ public sealed class GitService(AuditLog audit)
             process.Start();
             var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
             var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+            var stdin = standardInput is null
+                ? Task.CompletedTask
+                : WriteStandardInputAsync(process, standardInput, cancellationToken);
             using var timeoutSource = new CancellationTokenSource(timeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
             await process.WaitForExitAsync(linked.Token);
+            await stdin;
             var output = JoinOutput(await stdout, await stderr);
             return new(process.ExitCode, output);
         }
@@ -567,6 +660,15 @@ public sealed class GitService(AuditLog audit)
         {
             return new(-1, ex.Message);
         }
+    }
+
+    private static async Task WriteStandardInputAsync(
+        Process process, string input, CancellationToken cancellationToken)
+    {
+        var bytes = Encoding.UTF8.GetBytes(input);
+        await process.StandardInput.BaseStream.WriteAsync(bytes, cancellationToken);
+        await process.StandardInput.BaseStream.FlushAsync(cancellationToken);
+        process.StandardInput.Close();
     }
 
     private static string JoinOutput(string stdout, string stderr)

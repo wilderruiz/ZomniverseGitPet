@@ -8,6 +8,46 @@ namespace ZomniverseGitPet;
    ========================================================================== */
 public static class IgnoredFileSavePolicy
 {
+    public static bool TryParseCheckIgnoreBatch(
+        string output,
+        out IReadOnlyList<IgnoredProjectFile> items,
+        out string error)
+    {
+        items = [];
+        error = "";
+        if (string.IsNullOrEmpty(output)) return true;
+
+        var fields = output.Split('\0');
+        var fieldCount = fields.Length;
+        if (fields[^1].Length == 0) fieldCount--;
+        if (fieldCount % 4 != 0)
+        {
+            error = $"Git returned malformed ignored-file provenance ({fieldCount} fields; expected groups of 4).";
+            return false;
+        }
+
+        var parsed = new List<IgnoredProjectFile>(fieldCount / 4);
+        for (var index = 0; index < fieldCount; index += 4)
+        {
+            if (string.IsNullOrWhiteSpace(fields[index]) ||
+                string.IsNullOrWhiteSpace(fields[index + 2]) ||
+                string.IsNullOrWhiteSpace(fields[index + 3]))
+            {
+                error = $"Git returned incomplete ignored-file provenance at record {(index / 4) + 1}.";
+                return false;
+            }
+
+            parsed.Add(new IgnoredProjectFile(
+                Normalize(fields[index + 3]),
+                fields[index],
+                int.TryParse(fields[index + 1], out var line) && line > 0 ? line : null,
+                fields[index + 2]));
+        }
+
+        items = parsed;
+        return true;
+    }
+
     public static IgnoredProjectFile? ParseCheckIgnore(string output)
     {
         var fields = output.Split('\0', StringSplitOptions.RemoveEmptyEntries);

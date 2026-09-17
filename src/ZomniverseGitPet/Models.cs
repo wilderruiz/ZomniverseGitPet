@@ -38,6 +38,28 @@ public sealed record SavePreflightResult(
     IReadOnlyList<IgnoredProjectFile> IgnoredChangedFiles,
     string Error = "");
 
+public enum GuardianActivityKind
+{
+    OperationStarted,
+    PhaseStarted,
+    FilePending,
+    FileCompleted,
+    Information,
+    Success,
+    Warning,
+    Error,
+    Cancelled,
+    OperationCompleted
+}
+
+public sealed record GuardianActivityEvent(
+    GuardianActivityKind Kind,
+    string Message,
+    string? Path = null,
+    int Completed = 0,
+    int Total = 0,
+    TimeSpan? Elapsed = null);
+
 public sealed record SaveStagePlan(
     IReadOnlyList<string> NormalFiles,
     IReadOnlyList<string> ApprovedIgnoredFiles,

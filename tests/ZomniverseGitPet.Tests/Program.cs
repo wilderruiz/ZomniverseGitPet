@@ -601,6 +601,8 @@ await CheckAsync("Git-native preflight reports all ignore sources before staging
     finally { TryDelete(root); }
 });
 
+await SavePreflightBatchRegression.RunAsync();
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
