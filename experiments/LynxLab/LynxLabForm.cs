@@ -123,9 +123,6 @@ internal sealed class LynxLabForm : Form
             Orientation = Orientation.Vertical,
             BorderStyle = BorderStyle.None,
             SplitterWidth = 7,
-            SplitterDistance = 720,
-            Panel1MinSize = 300,
-            Panel2MinSize = 240,
             BackColor = Color.FromArgb(0x1B, 0x28, 0x34),
             Margin = Padding.Empty
         };
@@ -134,6 +131,17 @@ internal sealed class LynxLabForm : Form
         split.Panel2.Padding = Padding.Empty;
         split.Panel1.Controls.Add(BuildPreviewPanel());
         split.Panel2.Controls.Add(BuildControlPanel());
+
+        void ApplyInitialSplitter()
+        {
+            var available = split.ClientSize.Width - split.SplitterWidth;
+            if (available < 360) return;
+
+            var desired = (int)Math.Round(available * 0.68);
+            split.SplitterDistance = Math.Clamp(desired, 180, available - 180);
+        }
+
+        split.HandleCreated += (_, _) => BeginInvoke(ApplyInitialSplitter);
 
         return split;
     }
