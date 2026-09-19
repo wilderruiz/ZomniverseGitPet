@@ -26,6 +26,11 @@ if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
 
 $releaseDirectory = Join-Path $env:LOCALAPPDATA 'ZomniverseGitPet\DEV'
 $releaseExecutable = Join-Path $releaseDirectory 'DEV-ZomniverseGitPet.exe'
+$sourceIcon = Join-Path $repositoryRoot 'src\ZomniverseGitPet\Assets\App\ZomniverseGitPet-v2.ico'
+$releaseIcon = Join-Path $releaseDirectory 'DEV-ZGitPet-v2.ico'
+$shortcutTarget = '%LOCALAPPDATA%\ZomniverseGitPet\DEV\DEV-ZomniverseGitPet.exe'
+$shortcutWorkingDirectory = '%LOCALAPPDATA%\ZomniverseGitPet\DEV'
+$shortcutIcon = '%LOCALAPPDATA%\ZomniverseGitPet\DEV\DEV-ZGitPet-v2.ico,0'
 
 <#
 PATCH: FUTURE-PROOF DEV SHORTCUT
@@ -34,6 +39,13 @@ Create a permanent DEV launcher and remove legacy ambiguity.
 #>
 $startMenuPrograms = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $devShortcut = Join-Path $startMenuPrograms 'DEV-ZGitPet.lnk'
+$desktopDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+$desktopShortcut = if ([string]::IsNullOrWhiteSpace($desktopDirectory)) {
+    $null
+}
+else {
+    Join-Path $desktopDirectory 'DEV-ZGitPet.lnk'
+}
 
 # Previous DEV runtime locations lived beside the Dropbox repository.
 # Clean only these known historical DEV artifacts after the safe local copy succeeds.
@@ -44,6 +56,10 @@ $legacyDevArtifacts = @(
 
 if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
     throw "ZomniverseGitPet project was not found at: $projectPath"
+}
+
+if (-not (Test-Path -LiteralPath $sourceIcon -PathType Leaf)) {
+    throw "The corrected DEV icon was not found at: $sourceIcon"
 }
 
 Write-Host 'Publishing ZomniverseGitPet DEV build (Release, win-x64, self-contained, single-file)...'
@@ -64,28 +80,40 @@ if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
 New-Item -ItemType Directory -Force -Path $releaseDirectory | Out-Null
 try {
     Copy-Item -LiteralPath $publishedExecutable -Destination $releaseExecutable -Force
+    Copy-Item -LiteralPath $sourceIcon -Destination $releaseIcon -Force
 }
 catch [System.IO.IOException] {
-    throw "The DEV-ZomniverseGitPet.exe build is still running or locked. Exit DEV-ZGitPet, or end DEV-ZomniverseGitPet.exe in Task Manager, then run this script again. Target: $releaseExecutable"
+    throw "The DEV deployment is still running or locked. Exit DEV-ZGitPet, or end DEV-ZomniverseGitPet.exe in Task Manager, then run this script again. Target: $releaseDirectory"
 }
 
 if (-not (Test-Path -LiteralPath $releaseExecutable -PathType Leaf)) {
     throw "The published DEV executable could not be placed at: $releaseExecutable"
 }
 
-# Always recreate the shortcut so it follows the machine-local DEV runtime location.
+if (-not (Test-Path -LiteralPath $releaseIcon -PathType Leaf)) {
+    throw "The corrected DEV icon could not be placed at: $releaseIcon"
+}
+
+# Always recreate the shortcuts so they use the versioned DEV icon cache identity.
 try {
     New-Item -ItemType Directory -Force -Path $startMenuPrograms | Out-Null
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($devShortcut)
-    $shortcut.TargetPath = $releaseExecutable
-    $shortcut.WorkingDirectory = $releaseDirectory
-    $shortcut.IconLocation = "$releaseExecutable,0"
-    $shortcut.Description = 'ZomniverseGitPet development build'
-    $shortcut.Save()
+    $shortcutPaths = @($devShortcut)
+    if (-not [string]::IsNullOrWhiteSpace($desktopShortcut)) {
+        $shortcutPaths += $desktopShortcut
+    }
+
+    foreach ($shortcutPath in $shortcutPaths) {
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = $shortcutTarget
+        $shortcut.WorkingDirectory = $shortcutWorkingDirectory
+        $shortcut.IconLocation = $shortcutIcon
+        $shortcut.Description = 'DEV-ZGitPet - local development build'
+        $shortcut.Save()
+    }
 }
 catch {
-    Write-Warning "DEV build succeeded, but the Start Menu shortcut could not be refreshed: $($_.Exception.Message)"
+    Write-Warning "DEV build succeeded, but its shortcuts could not be refreshed: $($_.Exception.Message)"
 }
 
 foreach ($legacyDevExecutable in $legacyDevArtifacts) {
@@ -112,3 +140,8 @@ Write-Host $finalExecutable
 Write-Host ''
 Write-Host 'Start Menu shortcut: DEV-ZGitPet'
 Write-Host $devShortcut
+if (-not [string]::IsNullOrWhiteSpace($desktopShortcut)) {
+    Write-Host ''
+    Write-Host 'Desktop shortcut: DEV-ZGitPet'
+    Write-Host $desktopShortcut
+}
