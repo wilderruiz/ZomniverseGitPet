@@ -84,10 +84,10 @@ I:\Dropbox\WORK_LAPTOP\Programming\ZomniverseGitPet_Releases\current\ZomniverseG
 
 powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
 
-# Recommended before publishing publicly
-
-Recommended before publishing publicly:
+# For a public release, use:
 
 dotnet build ZomniverseGitPet.sln -c Release
 dotnet run --project tests\ZomniverseGitPet.Tests\ZomniverseGitPet.Tests.csproj -c Release
-powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
+
+* Then run the newly generated installer to update the installed release.
