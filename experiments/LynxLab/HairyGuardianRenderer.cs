@@ -31,32 +31,37 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         var accent = ResolveStateColor(palette, state);
         var colors = GuardianColors.FromPalette(palette, accent);
 
-        DrawGroundGlow(graphics, colors);
-        DrawTail(graphics, colors);
-        DrawBody(graphics, colors);
-        DrawHead(graphics, colors);
-        DrawFace(graphics, colors, state);
-        DrawCollar(graphics, colors);
-        DrawStateSignal(graphics, colors, state);
+        try
+        {
+            DrawGroundGlow(graphics, colors);
+            DrawTail(graphics, colors);
+            DrawBody(graphics, colors);
+            DrawHead(graphics, colors);
+            DrawFace(graphics, colors, state);
+            DrawCollar(graphics, colors);
+            DrawStateSignal(graphics, colors, state);
 
-        if (debugOverlay)
-            DrawDebug(graphics);
-
-        graphics.Restore(saved);
+            if (debugOverlay)
+                DrawDebug(graphics);
+        }
+        finally
+        {
+            graphics.Restore(saved);
+        }
     }
 
     private static void DrawGroundGlow(Graphics g, GuardianColors c)
     {
-        using var path = new GraphicsPath();
-        path.AddEllipse(23, 143, 114, 10);
+        // Keep this deliberately simple. PathGradientBrush is surprisingly fragile
+        // across GDI+ configurations and previously caused the lab to terminate
+        // during the first paint on some Windows machines.
+        using var outer = new SolidBrush(Color.FromArgb(18, c.Accent));
+        using var middle = new SolidBrush(Color.FromArgb(28, c.Accent));
+        using var inner = new SolidBrush(Color.FromArgb(40, c.Accent));
 
-        using var brush = new PathGradientBrush(path)
-        {
-            CenterColor = Color.FromArgb(80, c.Accent),
-            SurroundColors = [Color.FromArgb(0, c.Accent)]
-        };
-
-        g.FillPath(brush, path);
+        g.FillEllipse(outer, 23, 143, 114, 10);
+        g.FillEllipse(middle, 35, 145, 90, 6);
+        g.FillEllipse(inner, 52, 146, 56, 4);
     }
 
     private static void DrawTail(Graphics g, GuardianColors c)

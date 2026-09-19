@@ -75,6 +75,21 @@ internal sealed class LynxCanvas : Control
             side,
             side);
 
-        _renderer.Draw(e.Graphics, bounds, _palette, _state, _debugOverlay);
+        try
+        {
+            _renderer.Draw(e.Graphics, bounds, _palette, _state, _debugOverlay);
+        }
+        catch (Exception ex)
+        {
+            LabCrashLog.Write("Main viewport renderer", ex);
+
+            using var brush = new SolidBrush(Color.FromArgb(0xF2, 0x75, 0x86));
+            using var font = new Font("Segoe UI", 9f, FontStyle.Bold);
+            e.Graphics.DrawString(
+                "Renderer error — see LynxLab crash log",
+                font,
+                brush,
+                new PointF(14, 14));
+        }
     }
 }

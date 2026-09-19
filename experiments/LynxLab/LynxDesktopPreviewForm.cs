@@ -76,12 +76,28 @@ internal sealed class LynxDesktopPreviewForm : Form
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
         DrawBubble(e.Graphics);
-        _renderer.Draw(
-            e.Graphics,
-            new Rectangle(40, 78, 160, 160),
-            _palette,
-            _state,
-            _debugOverlay);
+
+        try
+        {
+            _renderer.Draw(
+                e.Graphics,
+                new Rectangle(40, 78, 160, 160),
+                _palette,
+                _state,
+                _debugOverlay);
+        }
+        catch (Exception ex)
+        {
+            LabCrashLog.Write("Desktop preview renderer", ex);
+
+            using var brush = new SolidBrush(Color.FromArgb(0xF2, 0x75, 0x86));
+            using var font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            e.Graphics.DrawString(
+                "renderer error",
+                font,
+                brush,
+                new PointF(58, 122));
+        }
     }
 
     private void DrawBubble(Graphics g)
