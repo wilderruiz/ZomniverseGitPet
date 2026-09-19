@@ -198,10 +198,20 @@ internal static class Program
         }
         catch
         {
-            // Compatibility with an older running GitPet build whose pipe was
-            // one-way only. It can still be activated, but cannot perform a
-            // channel handoff until that installed/DEV copy is rebuilt.
+            // A pre-handoff GitPet build exposes the original one-way pipe. Activate it
+            // for compatibility, but make the failed channel negotiation visible so a
+            // DEV/release switch never appears to do nothing.
             TryActivateLegacyInstance(pipeName);
+
+            MessageBox.Show(
+                "Another GitPet copy is already running, but it uses the older single-instance protocol.\r\n\r\n" +
+                $"Safe switching to {ApplicationIdentity.ForChannel(requestedChannel).DisplayName} requires both " +
+                "DEV-ZGitPet and the installed ZGitPet release to be rebuilt/updated from the current code.\r\n\r\n" +
+                "The running copy was left open and this launch was cancelled.",
+                "GitPet channel switch unavailable",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+
             return ExistingInstanceResponse.LegacyActivated;
         }
     }

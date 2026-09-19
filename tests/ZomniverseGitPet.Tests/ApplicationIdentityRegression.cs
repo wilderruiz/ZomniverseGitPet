@@ -43,6 +43,20 @@ internal static class ApplicationIdentityRegression
         if (response != ExistingInstanceResponse.SwitchApproved)
             throw new InvalidOperationException("Application identity regression: handoff response did not round-trip.");
 
+        var devIconPath = AppIconProvider.GetExternalIconPath(
+            dev,
+            @"C:\Users\Test\AppData\Local\ZomniverseGitPet\DEV\DEV-ZomniverseGitPet.exe");
+        if (devIconPath is null ||
+            !devIconPath.EndsWith(@"DEV\DEV-ZGitPet-v2.ico", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Application identity regression: DEV external icon lineage failed.");
+
+        var releaseIconPath = AppIconProvider.GetExternalIconPath(
+            installed,
+            @"C:\Users\Test\AppData\Local\Programs\ZomniverseGitPet\ZomniverseGitPet.exe");
+        if (releaseIconPath is null ||
+            !releaseIconPath.EndsWith(@"ZomniverseGitPet\ZGitPet-Release-v3.ico", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Application identity regression: release external icon lineage failed.");
+
         Console.WriteLine("Application identity regression passed (DEV/release/portable + global handoff protocol).");
     }
 }
