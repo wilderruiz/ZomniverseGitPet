@@ -55,7 +55,87 @@ h1{font-size:29px;margin:8px 0 8px;letter-spacing:-.02em}
 .preview-row{display:grid;grid-template-columns:240px 1fr;gap:24px;align-items:center}
 .preview-window{width:240px;height:246px;position:relative;filter:drop-shadow(0 18px 28px rgba(0,0,0,.5))}
 .preview-window .bubble{left:6px;right:6px;top:0}
-.preview-window .lynx{top:76px}
+.preview-window .lynx{
+  top:76px;
+  --look-x:0px;
+  --look-y:0px;
+  --tilt:0deg;
+  transform-origin:80px 116px;
+  animation:lynxIdle 6.4s cubic-bezier(.42,0,.25,1) infinite;
+  will-change:transform,filter;
+}
+.preview-window .lynx .eye{
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:opticScan 7.6s ease-in-out infinite;
+}
+.preview-window .lynx .core{
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:coreIdle 3.8s ease-in-out infinite;
+}
+.preview-window::after{
+  content:"";
+  position:absolute;
+  left:38px;
+  right:38px;
+  top:78px;
+  height:150px;
+  pointer-events:none;
+  opacity:0;
+  background:linear-gradient(180deg,transparent 0%,color-mix(in srgb,var(--accent) 24%,transparent) 48%,transparent 54%);
+  mix-blend-mode:screen;
+  transform:translateY(-70px);
+}
+.preview-window.signal::after{animation:statusSweep .7s cubic-bezier(.2,.7,.25,1)}
+.preview-window.signal .lynx{animation:lynxAcknowledge .52s ease-out,lynxIdle 6.4s cubic-bezier(.42,0,.25,1) .52s infinite}
+.preview-window.attention .lynx .core{animation:coreAttention 1.15s ease-in-out infinite}
+.preview-window.changes .lynx .core{animation:coreChanges 2.2s ease-in-out infinite}
+.preview-window.clean .lynx .core{animation:coreIdle 3.8s ease-in-out infinite}
+.motion-toggle{margin-left:8px}
+@keyframes lynxIdle{
+  0%,100%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) + 0px)) rotate(var(--tilt)) scale(1)}
+  48%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) + 1.6px)) rotate(var(--tilt)) scale(1.004)}
+  56%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) + 1.2px)) rotate(var(--tilt)) scale(1.002)}
+}
+@keyframes opticScan{
+  0%,72%,100%{opacity:1;filter:drop-shadow(0 0 0 transparent);transform:translateX(0)}
+  76%{opacity:.72;filter:drop-shadow(0 0 2px var(--eye));transform:translateX(-1px)}
+  80%{opacity:1;filter:drop-shadow(0 0 4px var(--eye));transform:translateX(1px)}
+  84%{opacity:.88;filter:drop-shadow(0 0 2px var(--eye));transform:translateX(0)}
+}
+@keyframes coreIdle{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 1px var(--accent));opacity:.86}
+  50%{transform:scale(1.15);filter:drop-shadow(0 0 4px var(--accent));opacity:1}
+}
+@keyframes coreAttention{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 2px #f27586);opacity:.76}
+  48%{transform:scale(1.35);filter:drop-shadow(0 0 7px #f27586);opacity:1}
+}
+@keyframes coreChanges{
+  0%,20%,100%{transform:scale(1);filter:drop-shadow(0 0 1px var(--accent));opacity:.78}
+  8%,32%{transform:scale(1.28);filter:drop-shadow(0 0 6px var(--accent));opacity:1}
+}
+@keyframes statusSweep{
+  0%{opacity:0;transform:translateY(-72px)}
+  18%{opacity:.72}
+  80%{opacity:.28}
+  100%{opacity:0;transform:translateY(72px)}
+}
+@keyframes lynxAcknowledge{
+  0%{transform:translateX(-50%) translate(var(--look-x),var(--look-y)) rotate(var(--tilt)) scale(1)}
+  45%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) - 2px)) rotate(var(--tilt)) scale(1.018);filter:drop-shadow(0 0 9px color-mix(in srgb,var(--accent) 42%,transparent))}
+  100%{transform:translateX(-50%) translate(var(--look-x),var(--look-y)) rotate(var(--tilt)) scale(1)}
+}
+.preview-window.motion-paused .lynx,
+.preview-window.motion-paused .lynx .eye,
+.preview-window.motion-paused .lynx .core{animation-play-state:paused}
+@media(prefers-reduced-motion:reduce){
+  .preview-window .lynx,
+  .preview-window .lynx .eye,
+  .preview-window .lynx .core,
+  .preview-window.signal::after{animation:none!important}
+}
 .preview-copy h3{margin:0 0 7px;font-size:21px}
 .preview-copy p{margin:0 0 14px;color:#8b99aa;line-height:1.5;max-width:680px}
 .specs{display:flex;gap:8px;flex-wrap:wrap}
@@ -84,6 +164,8 @@ h1{font-size:29px;margin:8px 0 8px;letter-spacing:-.02em}
     <button class="active" data-state="attention">Attention</button>
     <button data-state="changes">Changes</button>
     <button data-state="clean">Clean</button>
+    <button class="motion-toggle active" id="motionToggle" type="button" aria-pressed="true">Motion on</button>
+    <button id="signalButton" type="button">Trigger signal</button>
     <div class="selected-label">Selected palette: <b id="selectedName">CYAN / TEAL</b></div>
   </div>
 
@@ -286,7 +368,7 @@ h1{font-size:29px;margin:8px 0 8px;letter-spacing:-.02em}
   <section class="preview">
     <h2>SELECTED LYNX — DESKTOP SCALE</h2>
     <div class="preview-row">
-      <div class="preview-window cyan" id="previewWindow">
+      <div class="preview-window cyan attention" id="previewWindow">
         <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
         <svg class="lynx" viewBox="0 0 160 160" aria-label="Selected Lynx Scout">
           <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
@@ -310,6 +392,9 @@ h1{font-size:29px;margin:8px 0 8px;letter-spacing:-.02em}
           <span class="spec">160 × 160 guardian</span>
           <span class="spec">dark graphite body</span>
           <span class="spec">accent color only</span>
+          <span class="spec">ambient sentinel motion</span>
+          <span class="spec">pointer-aware gaze</span>
+          <span class="spec">state signal flash</span>
         </div>
       </div>
     </div>
@@ -324,6 +409,14 @@ const states={
 };
 let activeState='attention';
 
+function flashSignal(){
+  const host=document.getElementById('previewWindow');
+  host.classList.remove('signal');
+  void host.offsetWidth;
+  host.classList.add('signal');
+  window.setTimeout(()=>host.classList.remove('signal'),760);
+}
+
 function applyState(){
   const [title,sub,color]=states[activeState];
   document.querySelectorAll('.bubble').forEach(b=>{
@@ -331,12 +424,17 @@ function applyState(){
     b.querySelector('.sub').textContent=sub;
     b.style.borderColor=color;
   });
+
+  const host=document.getElementById('previewWindow');
+  host.classList.remove('attention','changes','clean');
+  host.classList.add(activeState);
 }
 document.querySelectorAll('[data-state]').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('[data-state]').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   activeState=b.dataset.state;
   applyState();
+  flashSignal();
 }));
 
 function selectCard(card){
@@ -353,8 +451,43 @@ function selectCard(card){
   applyState();
 }
 
-document.querySelectorAll('.select').forEach(btn=>btn.addEventListener('click',()=>selectCard(btn.closest('.card'))));
+document.querySelectorAll('.select').forEach(btn=>btn.addEventListener('click',()=>{
+  selectCard(btn.closest('.card'));
+  flashSignal();
+}));
+
+const preview=document.getElementById('previewWindow');
+const previewLynx=preview.querySelector('.lynx');
+
+preview.addEventListener('pointermove',event=>{
+  if(preview.classList.contains('motion-paused')) return;
+  const rect=preview.getBoundingClientRect();
+  const x=(event.clientX-rect.left)/rect.width-.5;
+  const y=(event.clientY-rect.top)/rect.height-.5;
+  previewLynx.style.setProperty('--look-x',(x*2.4).toFixed(2)+'px');
+  previewLynx.style.setProperty('--look-y',(y*1.5).toFixed(2)+'px');
+  previewLynx.style.setProperty('--tilt',(x*2.2).toFixed(2)+'deg');
+});
+
+preview.addEventListener('pointerleave',()=>{
+  previewLynx.style.setProperty('--look-x','0px');
+  previewLynx.style.setProperty('--look-y','0px');
+  previewLynx.style.setProperty('--tilt','0deg');
+});
+
+preview.addEventListener('click',flashSignal);
+document.getElementById('signalButton').addEventListener('click',flashSignal);
+
+document.getElementById('motionToggle').addEventListener('click',event=>{
+  const button=event.currentTarget;
+  const paused=preview.classList.toggle('motion-paused');
+  button.classList.toggle('active',!paused);
+  button.setAttribute('aria-pressed',String(!paused));
+  button.textContent=paused?'Motion off':'Motion on';
+});
+
 applyState();
+window.setTimeout(flashSignal,450);
 </script>
 </body>
 </html>
