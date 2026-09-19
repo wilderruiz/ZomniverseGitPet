@@ -34,6 +34,24 @@ internal sealed class GuardianActivityConsole : IDisposable
         UpdateElapsed();
     }
 
+    public void ResetForProjectContext(string message)
+    {
+        _timer.Stop();
+        _stopwatch.Reset();
+        _history.Clear();
+        _output.Clear();
+        _elapsedLabel.Text = "00 hr 00 min 00 sec 000 ms";
+        _elapsedLabel.ForeColor = GuardianTheme.MutedInk;
+        _stateLabel.Text = "● SWITCHING";
+        _stateLabel.Width = 120;
+        _stateLabel.ForeColor = GuardianTheme.Changes;
+
+        if (string.IsNullOrWhiteSpace(message)) return;
+        var normalized = message.TrimEnd();
+        _history.Add(new(GuardianActivityKind.Information, normalized));
+        AppendColored("○ " + normalized + Environment.NewLine, GuardianTheme.Info);
+    }
+
     public void Append(GuardianActivityEvent activity)
     {
         _history.Add(activity);
@@ -140,4 +158,5 @@ internal sealed class GuardianActivityHistory
     private readonly List<GuardianActivityEvent> _entries = [];
     public IReadOnlyList<GuardianActivityEvent> Entries => _entries;
     public void Add(GuardianActivityEvent activity) => _entries.Add(activity);
+    public void Clear() => _entries.Clear();
 }

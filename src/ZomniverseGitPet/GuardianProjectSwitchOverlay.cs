@@ -47,7 +47,6 @@ internal static class GuardianProjectSwitchOverlayHost
     {
         private readonly GuardianForm _guardian;
         private readonly GuardianProjectSwitchOverlay _overlay;
-        private readonly RichTextBox? _activity;
         private readonly Dictionary<Control, bool> _enabledStates = [];
         private ProjectSwitchPhase? _lastPhase;
         private bool _disposed;
@@ -55,9 +54,7 @@ internal static class GuardianProjectSwitchOverlayHost
         public Session(GuardianForm guardian, string projectName)
         {
             _guardian = guardian;
-            _activity = EnumerateControls(guardian)
-                .OfType<RichTextBox>()
-                .FirstOrDefault(box => box.ReadOnly && box.BackColor.ToArgb() == GuardianTheme.Console.ToArgb());
+            _guardian.BeginProjectSwitchActivity(projectName);
 
             foreach (Control control in guardian.Controls)
             {
@@ -75,7 +72,6 @@ internal static class GuardianProjectSwitchOverlayHost
             _overlay.BringToFront();
             _overlay.Focus();
 
-            AppendActivity($"○ Switching to {projectName}...", GuardianTheme.Info);
             ProjectSwitchRuntime.Changed += OnChanged;
         }
 
@@ -101,7 +97,7 @@ internal static class GuardianProjectSwitchOverlayHost
             switch (state.Phase)
             {
                 case ProjectSwitchPhase.Preparing:
-                    AppendActivity("○ Preparing project...", GuardianTheme.Info);
+                    _guardian.ReportProjectSwitchActivity("○ Preparing project...");
                     break;
                 case ProjectSwitchPhase.VerifyingRepository:
                 case ProjectSwitchPhase.LoadingRepository:
@@ -109,36 +105,28 @@ internal static class GuardianProjectSwitchOverlayHost
                 case ProjectSwitchPhase.ActivatingProject:
                 case ProjectSwitchPhase.LoadingRemoteState:
                 case ProjectSwitchPhase.PreparingWorkboard:
-                    AppendActivity("○ " + state.Message, GuardianTheme.Info);
+                    _guardian.ReportProjectSwitchActivity("○ " + state.Message);
                     break;
                 case ProjectSwitchPhase.Completed:
-                    AppendActivity("✓ Project ready", GuardianTheme.Healthy);
+                    _guardian.ReportProjectSwitchActivity("Project ready", GuardianActivityKind.Success);
                     if (state.Elapsed is TimeSpan elapsed)
-                        AppendActivity($"✓ Switched in {FormatElapsed(elapsed)}", GuardianTheme.Healthy);
+                        _guardian.ReportProjectSwitchActivity(
+                            $"Switched in {FormatElapsed(elapsed)}",
+                            GuardianActivityKind.Success);
                     break;
                 case ProjectSwitchPhase.Failed:
-                    AppendActivity("✕ PROJECT COULD NOT BE OPENED", GuardianTheme.Warning);
+                    _guardian.ReportProjectSwitchActivity(
+                        $"PROJECT COULD NOT BE OPENED: {state.ProjectName}",
+                        GuardianActivityKind.Error);
                     if (!string.IsNullOrWhiteSpace(state.Error))
-                        AppendActivity("✕ " + state.Error, GuardianTheme.Warning);
+                        _guardian.ReportProjectSwitchActivity(state.Error, GuardianActivityKind.Error);
                     break;
                 case ProjectSwitchPhase.Cancelled:
-                    AppendActivity("■ Project switch cancelled.", GuardianTheme.Changes);
+                    _guardian.ReportProjectSwitchActivity(
+                        "Project switch cancelled.",
+                        GuardianActivityKind.Cancelled);
                     break;
             }
-        }
-
-        private void AppendActivity(string text, Color color)
-        {
-            if (_activity is null || _activity.IsDisposed) return;
-            if (_activity.TextLength > 0 && _activity.Text[^1] is not ('\r' or '\n'))
-                _activity.AppendText(Environment.NewLine);
-            _activity.SelectionStart = _activity.TextLength;
-            _activity.SelectionLength = 0;
-            _activity.SelectionColor = color;
-            _activity.AppendText(text + Environment.NewLine);
-            _activity.SelectionColor = _activity.ForeColor;
-            _activity.SelectionStart = _activity.TextLength;
-            _activity.ScrollToCaret();
         }
 
         public void Dispose()
@@ -170,13 +158,7 @@ internal static class GuardianProjectSwitchOverlayHost
     private static string FormatElapsed(TimeSpan elapsed) =>
         $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}.{elapsed.Milliseconds:000}";
 
-    private static IEnumerable<Control> EnumerateControls(Control root)
-    {
-        foreach (Control child in root.Controls)
-        {
-            yield return child;
-            foreach (var descendant in EnumerateControls(child))
-                yield return descendant;
-        }
-    }
+
+}
+
 }

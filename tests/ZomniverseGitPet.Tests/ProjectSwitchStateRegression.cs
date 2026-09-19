@@ -51,6 +51,18 @@ internal static class ProjectSwitchStateRegression
                 ProjectSwitchRuntime.Current.Error != "simulated failure")
                 throw new InvalidOperationException("Failed project switch did not unlock cleanly.");
 
+            var damagedHead = GitService.DescribeRepositoryReadFailure("fatal: bad object HEAD");
+            if (!damagedHead.Contains("missing or unreadable", StringComparison.OrdinalIgnoreCase) ||
+                !damagedHead.Contains("will not activate", StringComparison.OrdinalIgnoreCase) ||
+                !damagedHead.Contains("fatal: bad object HEAD", StringComparison.Ordinal))
+                throw new InvalidOperationException("Damaged HEAD diagnostics are not actionable.");
+
+            var history = new GuardianActivityHistory();
+            history.Add(new GuardianActivityEvent(GuardianActivityKind.Error, "old project error"));
+            history.Clear();
+            if (history.Entries.Count != 0)
+                throw new InvalidOperationException("Project-context activity reset retained stale history.");
+
             Console.WriteLine("Project switching visual-state regression passed.");
         }
         finally

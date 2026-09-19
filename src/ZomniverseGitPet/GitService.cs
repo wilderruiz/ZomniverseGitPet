@@ -178,6 +178,30 @@ public sealed class GitService(AuditLog audit)
         return ParsePorcelainV2(result.Output);
     }
 
+    public Task<CommandResult> ValidateRepositoryStateAsync(
+        string repositoryPath,
+        CancellationToken token = default) =>
+        RunGitAsync(
+            repositoryPath,
+            ["status", "--porcelain=v2", "--branch", "--untracked-files=no"],
+            TimeSpan.FromSeconds(20),
+            token);
+
+    internal static string DescribeRepositoryReadFailure(string? output)
+    {
+        var details = string.IsNullOrWhiteSpace(output)
+            ? "Git could not read the repository state."
+            : output.Trim();
+
+        if (!details.Contains("bad object HEAD", StringComparison.OrdinalIgnoreCase))
+            return details;
+
+        return "Git cannot read this project's HEAD. HEAD refers to a Git object that is missing or unreadable " +
+               "in this repository. GitPet will not activate or modify the project while that metadata is incomplete.\r\n\r\n" +
+               "Restore the repository's .git object data from a known-good copy, or re-clone/recreate the repository, " +
+               "then try opening the project again.\r\n\r\nGit reported:\r\n" + details;
+    }
+
     public Task<CommandResult> GetGitVersionAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["--version"], cancellationToken: token);
 

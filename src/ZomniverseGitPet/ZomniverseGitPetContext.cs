@@ -706,6 +706,16 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                     $"Saved root: {project.RepositoryRoot}\r\nCurrent root: {actualRoot}\r\n\r\n" +
                     "Forget and add the project again so GitPet can rebuild its scope safely.");
 
+            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.LoadingRepository, "Validating Git state...");
+            _pet.SetOperationState(new SaveOperationVisualState(
+                SaveOperationPhase.CheckingPathSupport,
+                "Validating Git state...",
+                DateTimeOffset.UtcNow));
+            var repositoryState = await _git.ValidateRepositoryStateAsync(project.RepositoryRoot, _lifetime.Token);
+            if (!repositoryState.Success)
+                throw new InvalidOperationException(
+                    GitService.DescribeRepositoryReadFailure(repositoryState.Output));
+
             var scopeCount = project.TrackEverything ? 0 : project.ScopeEntries.Count;
             ProjectSwitchRuntime.Transition(
                 ProjectSwitchPhase.LoadingScope,
@@ -720,14 +730,15 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             ResetProjectState();
             activated = true;
 
-            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.LoadingRepository, "Checking Git state...");
+            ProjectSwitchRuntime.Transition(ProjectSwitchPhase.ActivatingProject, "Checking project state...");
             _pet.SetOperationState(new SaveOperationVisualState(
                 SaveOperationPhase.Staging,
-                "Checking Git state...",
+                "Checking project state...",
                 DateTimeOffset.UtcNow));
             var status = await _git.GetStatusAsync(project.RepositoryRoot, _lifetime.Token);
             if (!status.Healthy)
-                throw new InvalidOperationException(status.Error);
+                throw new InvalidOperationException(
+                    GitService.DescribeRepositoryReadFailure(status.Error));
 
             ProjectSwitchRuntime.Transition(ProjectSwitchPhase.LoadingRemoteState, "Checking online updates...");
             await GuardianSyncState.RefreshAsync(true, _lifetime.Token);

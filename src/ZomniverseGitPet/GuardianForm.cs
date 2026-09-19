@@ -66,6 +66,7 @@ public sealed class GuardianForm : Form
     private bool _refreshInProgress;
     private bool _exitRequested;
     private string? _reviewedPath;
+    private string? _lastRepositoryStatusError;
 
     public GuardianForm(
         AppConfig config,
@@ -908,8 +909,17 @@ public sealed class GuardianForm : Form
         if (!_status.Healthy)
         {
             ShowActivityPanel();
-            ReportActivity(_status.Error, GuardianActivityKind.Error);
+            var friendlyError = GitService.DescribeRepositoryReadFailure(_status.Error);
+            if (!string.Equals(_lastRepositoryStatusError, friendlyError, StringComparison.Ordinal))
+            {
+                ReportActivity(friendlyError, GuardianActivityKind.Error);
+                _lastRepositoryStatusError = friendlyError;
+            }
             SetActivityState("● ATTENTION", GuardianTheme.Warning);
+        }
+        else
+        {
+            _lastRepositoryStatusError = null;
         }
     }
 
@@ -998,7 +1008,13 @@ public sealed class GuardianForm : Form
         _commitLabel.Text = "LATEST  Repository refresh problem";
         _watchingLabel.Text = "Repository needs attention";
         ShowActivityPanel();
-        ReportActivity(message, GuardianActivityKind.Warning);
+
+        var friendlyError = GitService.DescribeRepositoryReadFailure(message);
+        if (!string.Equals(_lastRepositoryStatusError, friendlyError, StringComparison.Ordinal))
+        {
+            ReportActivity(friendlyError, GuardianActivityKind.Warning);
+            _lastRepositoryStatusError = friendlyError;
+        }
         SetActivityState("● ATTENTION", GuardianTheme.Warning);
     }
 
@@ -1879,6 +1895,29 @@ public sealed class GuardianForm : Form
 
     private void ReportActivity(string message, GuardianActivityKind kind = GuardianActivityKind.Information) =>
         _activityConsole?.AppendMessage(message, kind);
+
+    internal void BeginProjectSwitchActivity(string projectName)
+    {
+        ShowActivityPanel();
+        _lastRepositoryStatusError = null;
+        _activityConsole?.ResetForProjectContext($"Switching to {projectName}...");
+        SetActivityState("● SWITCHING", GuardianTheme.Changes);
+    }
+
+    internal void ReportProjectSwitchActivity(
+        string message,
+        GuardianActivityKind kind = GuardianActivityKind.Information)
+    {
+        ShowActivityPanel();
+        ReportActivity(message, kind);
+
+        if (kind == GuardianActivityKind.Error)
+            SetActivityState("● SWITCH FAILED", GuardianTheme.Warning);
+        else if (kind == GuardianActivityKind.Success || kind == GuardianActivityKind.Cancelled)
+            SetActivityState("● READY", GuardianTheme.Healthy);
+        else
+            SetActivityState("● SWITCHING", GuardianTheme.Changes);
+    }
 
     private void HandleSaveProgress(GuardianActivityEvent activity)
     {
