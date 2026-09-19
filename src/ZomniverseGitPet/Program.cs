@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Security.Principal;
+using System.Text;
 
 namespace ZomniverseGitPet;
 
@@ -11,14 +12,41 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         SplitContainerSafety.InstallForApplication();
 
+        var identity = ApplicationIdentity.Current;
+        ApplicationIdentity.ApplyWindowsAppUserModelId(identity);
+
         var userId = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
-        var instanceName = "ZomniverseGitPet-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(userId)))[..16];
+        var instanceName = ApplicationIdentity.BuildGlobalInstanceName(userId);
         using var mutex = new Mutex(true, instanceName, out var ownsMutex);
-        if (!ownsMutex)
+        var mutexOwned = ownsMutex;
+
+        if (!mutexOwned)
         {
-            TryActivateExisting(instanceName);
-            return;
+            var response = RequestExistingInstance(instanceName, identity.Channel);
+            if (response != ExistingInstanceResponse.SwitchApproved)
+                return;
+
+            try
+            {
+                mutexOwned = mutex.WaitOne(TimeSpan.FromSeconds(15));
+            }
+            catch (AbandonedMutexException)
+            {
+                // The previous GitPet process ended before explicitly releasing the
+                // mutex. Windows still grants ownership to this waiting process.
+                mutexOwned = true;
+            }
+
+            if (!mutexOwned)
+            {
+                MessageBox.Show(
+                    $"The running GitPet copy did not close in time. {identity.DisplayName} was not started.\r\n\r\n" +
+                    "Close the existing GitPet normally, then try again.",
+                    "GitPet switch did not complete",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
         }
 
         try
@@ -100,7 +128,13 @@ internal static class Program
 
             startupSplash.SetStage("Starting GitPet");
             using var updater = new ApplicationUpdateCoordinator(audit);
-            using var context = new ZomniverseGitPetContext(instanceName, config, configStore, git, audit);
+            using var context = new ZomniverseGitPetContext(
+                instanceName,
+                identity,
+                config,
+                configStore,
+                git,
+                audit);
 
             /*
             PATCH: INSTALLED RELEASE UPDATE WATCHER
@@ -114,11 +148,65 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "ZomniverseGitPet could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(
+                ex.Message,
+                $"{identity.DisplayName} could not start",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            if (mutexOwned)
+            {
+                try { mutex.ReleaseMutex(); }
+                catch (ApplicationException) { }
+            }
         }
     }
 
-    private static void TryActivateExisting(string pipeName)
+    private static ExistingInstanceResponse RequestExistingInstance(
+        string pipeName,
+        ApplicationChannel requestedChannel)
+    {
+        try
+        {
+            using var pipe = new NamedPipeClientStream(
+                ".",
+                pipeName,
+                PipeDirection.InOut,
+                PipeOptions.None);
+            pipe.Connect(1500);
+
+            using var writer = new StreamWriter(
+                pipe,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                1024,
+                leaveOpen: true)
+            {
+                AutoFlush = true
+            };
+            using var reader = new StreamReader(
+                pipe,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true,
+                1024,
+                leaveOpen: true);
+
+            writer.WriteLine(ApplicationInstanceProtocol.BuildActivationRequest(requestedChannel));
+            var response = reader.ReadLine();
+            return ApplicationInstanceProtocol.ParseResponse(response);
+        }
+        catch
+        {
+            // Compatibility with an older running GitPet build whose pipe was
+            // one-way only. It can still be activated, but cannot perform a
+            // channel handoff until that installed/DEV copy is rebuilt.
+            TryActivateLegacyInstance(pipeName);
+            return ExistingInstanceResponse.LegacyActivated;
+        }
+    }
+
+    private static void TryActivateLegacyInstance(string pipeName)
     {
         try
         {
@@ -126,6 +214,8 @@ internal static class Program
             pipe.Connect(800);
             pipe.WriteByte(1);
         }
-        catch { }
+        catch
+        {
+        }
     }
 }

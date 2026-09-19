@@ -47,7 +47,8 @@ public sealed class PetForm : Form
 
     public PetForm(Action showGuardian, Func<Task> chooseRepository, Action exit)
     {
-        Text = "ZomniverseGitPet";
+        var applicationIdentity = ApplicationIdentity.Current;
+        Text = applicationIdentity.DisplayName;
         Icon = AppIconProvider.Icon;
         AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size(240, 246);
@@ -134,7 +135,7 @@ public sealed class PetForm : Form
         _tray = new NotifyIcon
         {
             Icon = AppIconProvider.Icon,
-            Text = "ZomniverseGitPet",
+            Text = applicationIdentity.DisplayName,
             Visible = true,
             ContextMenuStrip = menu
         };

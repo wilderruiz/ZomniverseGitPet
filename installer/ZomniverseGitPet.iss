@@ -18,6 +18,7 @@
 #define MyAppPublisher "Wilder Ruiz"
 #define MyAppUrl "https://github.com/wilderruiz/ZomniverseGitPet"
 #define MyAppExeName "ZomniverseGitPet.exe"
+#define MyAppUserModelId "Zomniverse.ZGitPet.Release"
 
 [Setup]
 AppId={{98A22D79-31D2-4D97-93A9-D0619CF24A5D}
@@ -60,8 +61,8 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "ZGitPet - installed release"; AppUserModelID: "{#MyAppUserModelId}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "ZGitPet - installed release"; AppUserModelID: "{#MyAppUserModelId}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent

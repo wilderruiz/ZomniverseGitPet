@@ -82,23 +82,18 @@ public sealed class GuardianForm : Form
         _chooseRepository = chooseRepository;
 
         /* ==========================================================================
-           PATCH: DEVELOPMENT WINDOW TITLE
+           PATCH: CHANNEL-AWARE WINDOW TITLE
            FUNCTION:
-           Detects the development executable name and displays a distinct
-           Guardian title without changing the installed release title.
+           Use the same central DEV / release / portable identity as taskbar
+           grouping, tray labeling, and single-instance handoff.
 
-           DATE.TIME ADDED: 2026-09-10 20:19 +03:00
+           DATE.TIME ADDED: 2026-09-19 22:53 +03:00
 
            REASON:
-           Visually distinguish the development application from the signed release.
+           Prevent window identity from drifting away from the active application channel.
            ========================================================================== */
 
-        var isDevelopmentBuild = Path.GetFileName(Application.ExecutablePath)
-            .StartsWith("DEV-", StringComparison.OrdinalIgnoreCase);
-
-        Text = isDevelopmentBuild
-            ? "DEV-ZGitPet Guardian"
-            : "ZomniverseGitPet Guardian";
+        Text = ApplicationIdentity.Current.GuardianTitle;
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(920, 670);
