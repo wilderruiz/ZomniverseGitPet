@@ -5,6 +5,7 @@ namespace ZomniverseGitPet;
 
 public sealed class ZomniverseGitPetContext : ApplicationContext
 {
+    private readonly ApplicationIdentityInfo _identity;
     private readonly AppConfig _config;
     private readonly ConfigStore _configStore;
     private readonly GitService _git;
@@ -21,8 +22,15 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     private DateTimeOffset _lastChangeAt = DateTimeOffset.UtcNow;
     private bool _automaticCheckpointRunning;
 
-    public ZomniverseGitPetContext(string pipeName, AppConfig config, ConfigStore configStore, GitService git, AuditLog audit)
+    public ZomniverseGitPetContext(
+        string pipeName,
+        ApplicationIdentityInfo identity,
+        AppConfig config,
+        ConfigStore configStore,
+        GitService git,
+        AuditLog audit)
     {
+        _identity = identity;
         _config = config;
         _configStore = configStore;
         _git = git;
@@ -958,21 +966,156 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
     }
 
+    /* ==========================================================================
+       PATCH: SAFE DEV / RELEASE CHANNEL HANDOFF
+       DATE.TIME: 2026-09-19 22:45 +03:00
+       Same-channel launches activate the existing window. Cross-channel launches
+       ask the running copy for permission before it exits and hands off the mutex.
+       ========================================================================== */
     private async Task ListenForActivationAsync(string pipeName, CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {
             try
             {
-                await using var server = new NamedPipeServerStream(pipeName, PipeDirection.In, 1,
-                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                await using var server = new NamedPipeServerStream(
+                    pipeName,
+                    PipeDirection.InOut,
+                    1,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous);
+
                 await server.WaitForConnectionAsync(token);
-                _pet.BeginInvoke(ShowGuardian);
+
+                using var reader = new StreamReader(
+                    server,
+                    System.Text.Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: true,
+                    1024,
+                    leaveOpen: true);
+                using var writer = new StreamWriter(
+                    server,
+                    new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                    1024,
+                    leaveOpen: true)
+                {
+                    AutoFlush = true
+                };
+
+                var request = await reader.ReadLineAsync(token);
+                if (!ApplicationInstanceProtocol.TryParseActivationRequest(request, out var requestedChannel))
+                {
+                    // Preserve compatibility with the original one-byte activation protocol.
+                    _pet.BeginInvoke(ShowGuardian);
+                    continue;
+                }
+
+                var response = await ResolveActivationRequestAsync(requestedChannel, token);
+                await _audit.WriteAsync("application_channel_activation", new
+                {
+                    running = _identity.Channel.ToString(),
+                    requested = requestedChannel.ToString(),
+                    result = response.ToString()
+                });
+
+                await writer.WriteLineAsync(ApplicationInstanceProtocol.BuildResponse(response));
+                await writer.FlushAsync();
+
+                if (response == ExistingInstanceResponse.SwitchApproved)
+                {
+                    // Reply first so the waiting target executable knows it may take
+                    // ownership only after this process releases the global mutex.
+                    _pet.BeginInvoke(ExitApplication);
+                    return;
+                }
             }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex) { await _audit.WriteAsync("activation_listener_error", new { error = ex.Message }); }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                await _audit.WriteAsync("activation_listener_error", new { error = ex.Message });
+            }
         }
     }
+
+    private Task<ExistingInstanceResponse> ResolveActivationRequestAsync(
+        ApplicationChannel requestedChannel,
+        CancellationToken token)
+    {
+        if (requestedChannel == _identity.Channel)
+        {
+            _pet.BeginInvoke(ShowGuardian);
+            return Task.FromResult(ExistingInstanceResponse.Activated);
+        }
+
+        var completion = new TaskCompletionSource<ExistingInstanceResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void Prompt()
+        {
+            try
+            {
+                if (ChannelSwitchIsBusy())
+                {
+                    ShowGuardian();
+                    using var busy = new GuardianConfirmDialog(
+                        "Switch GitPet",
+                        "SWITCH WAITING",
+                        $"{_identity.DisplayName} is currently busy with a GitPet operation.\r\n\r\n" +
+                        "Finish or cancel that operation, then open the other GitPet channel again.\r\n\r\n" +
+                        "The running application has not been closed.",
+                        "OK",
+                        "",
+                        showCancel: false,
+                        dialogSize: new Size(680, 360));
+                    busy.ShowDialog(DialogOwner);
+                    completion.TrySetResult(ExistingInstanceResponse.SwitchBusy);
+                    return;
+                }
+
+                var target = ApplicationIdentity.ForChannel(requestedChannel);
+                using var confirm = new GuardianConfirmDialog(
+                    "Switch GitPet",
+                    $"SWITCH TO {target.DisplayName.ToUpperInvariant()}?",
+                    $"{_identity.DisplayName} ({_identity.Description}) is currently running.\r\n\r\n" +
+                    $"Switch to {target.DisplayName} ({target.Description})?\r\n\r\n" +
+                    $"{_identity.DisplayName} will close cleanly first. The new copy will start only after " +
+                    "the current process has fully released GitPet's single-instance lock.",
+                    $"Switch to {target.DisplayName}",
+                    "Cancel",
+                    showCancel: true,
+                    dialogSize: new Size(720, 410),
+                    confirmWidth: 190);
+
+                var result = confirm.ShowDialog(DialogOwner);
+                completion.TrySetResult(result == DialogResult.Yes
+                    ? ExistingInstanceResponse.SwitchApproved
+                    : ExistingInstanceResponse.SwitchDeclined);
+            }
+            catch
+            {
+                completion.TrySetResult(ExistingInstanceResponse.SwitchDeclined);
+            }
+        }
+
+        try
+        {
+            _pet.BeginInvoke(Prompt);
+        }
+        catch
+        {
+            completion.TrySetResult(ExistingInstanceResponse.SwitchDeclined);
+        }
+
+        return completion.Task.WaitAsync(token);
+    }
+
+    private bool ChannelSwitchIsBusy() =>
+        _automaticCheckpointRunning ||
+        ProjectSwitchRuntime.IsSwitching ||
+        (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian));
 
     private void ExitApplication()
     {

@@ -18,6 +18,7 @@
 #define MyAppPublisher "Wilder Ruiz"
 #define MyAppUrl "https://github.com/wilderruiz/ZomniverseGitPet"
 #define MyAppExeName "ZomniverseGitPet.exe"
+#define MyAppUserModelId "Zomniverse.ZGitPet.Release"
 
 [Setup]
 AppId={{98A22D79-31D2-4D97-93A9-D0619CF24A5D}
