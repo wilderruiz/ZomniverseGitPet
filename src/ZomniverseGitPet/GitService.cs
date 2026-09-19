@@ -197,7 +197,8 @@ public sealed class GitService(AuditLog audit)
             return details;
 
         return "Git cannot read this project's HEAD. HEAD refers to a Git object that is missing or unreadable " +
-               "in this repository. GitPet will not activate or modify the project while that metadata is incomplete.\r\n\r\n" +
+               "in this repository. GitPet will treat the repository as unhealthy and will not perform Git-changing " +
+               "operations while that metadata is incomplete.\r\n\r\n" +
                "Restore the repository's .git object data from a known-good copy, or re-clone/recreate the repository, " +
                "then try opening the project again.\r\n\r\nGit reported:\r\n" + details;
     }
