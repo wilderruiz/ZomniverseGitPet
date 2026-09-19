@@ -2,7 +2,7 @@ namespace LynxLab;
 
 internal sealed class LynxLabForm : Form
 {
-    private readonly ILynxRenderer _renderer = new GdiLynxRenderer();
+    private readonly ILynxRenderer _renderer = new HairyGuardianRenderer();
     private readonly LynxCanvas _canvas;
     private readonly LynxDesktopPreviewForm _desktopPreview;
     private readonly Label _stateValue;
@@ -29,7 +29,7 @@ internal sealed class LynxLabForm : Form
 
         _desktopPreview = new LynxDesktopPreviewForm(_renderer);
         _stateValue = ValueLabel("Idle");
-        _paletteValue = ValueLabel(LynxPalette.All[0].Name);
+        _paletteValue = ValueLabel(LynxPalette.All[4].Name);
         _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
         _debugToggle = LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
@@ -84,7 +84,7 @@ internal sealed class LynxLabForm : Form
 
         var kicker = new Label
         {
-            Text = "EXPERIMENTS / LYNX LAB / PHASE 0",
+            Text = "EXPERIMENTS / LYNX LAB / LIVE GUARDIAN",
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 4),
             ForeColor = Color.FromArgb(0x79, 0xD8, 0xCA),
@@ -102,7 +102,7 @@ internal sealed class LynxLabForm : Form
 
         var subtitle = new Label
         {
-            Text = "Isolated from production GitPet · 160×160 Lynx · 240×246 desktop preview",
+            Text = "Isolated from production GitPet · live Hairy Guardian · 240×246 desktop preview",
             AutoSize = true,
             MaximumSize = new Size(900, 0),
             Margin = new Padding(0, 0, 0, 0),
@@ -224,7 +224,8 @@ internal sealed class LynxLabForm : Form
             BackColor = Color.FromArgb(0x15, 0x1E, 0x27),
             ForeColor = ForeColor,
             FlatStyle = FlatStyle.Flat,
-            DataSource = LynxPalette.All.ToList()
+            DataSource = LynxPalette.All.ToList(),
+            SelectedIndex = 4
         };
         palette.SelectedIndexChanged += (_, _) =>
         {
@@ -279,7 +280,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Phase 0 proves the lab shell, state controls, palette switching, transparent desktop host and debug geometry. Direct2D comes later.",
+            Text = "The approved Hairy Guardian is now rendered live from vector geometry. Palette changes preserve the purple identity while state accents remain testable. Direct2D comes later.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);

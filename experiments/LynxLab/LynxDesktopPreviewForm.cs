@@ -5,7 +5,7 @@ namespace LynxLab;
 internal sealed class LynxDesktopPreviewForm : Form
 {
     private readonly ILynxRenderer _renderer;
-    private LynxPalette _palette = LynxPalette.All[0];
+    private LynxPalette _palette = LynxPalette.All[4];
     private LynxVisualState _state = LynxVisualState.Idle;
     private bool _debugOverlay;
     private Point _dragOrigin;

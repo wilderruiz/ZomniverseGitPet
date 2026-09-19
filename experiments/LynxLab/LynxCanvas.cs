@@ -10,7 +10,7 @@ internal sealed class LynxCanvas : Control
     public LynxCanvas(ILynxRenderer renderer)
     {
         _renderer = renderer;
-        _palette = LynxPalette.All[0];
+        _palette = LynxPalette.All[4];
 
         DoubleBuffered = true;
         ResizeRedraw = true;

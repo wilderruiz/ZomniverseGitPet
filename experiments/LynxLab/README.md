@@ -2,8 +2,9 @@
 
 Lynx Lab is the isolated Windows test host for the next ZGitPet desktop guardian.
 
-Phase 0 deliberately uses only WinForms/GDI+ so the laboratory itself can be
-validated before Direct2D/DirectComposition or animation dependencies are added.
+The lab currently uses WinForms/GDI+ to render the approved Hairy Guardian as
+live vector geometry. The reference artwork is not used as a runtime bitmap.
+Direct2D/DirectComposition can replace the backend later without changing the lab controls.
 
 ## Run
 
@@ -36,3 +37,21 @@ powershell -ExecutionPolicy Bypass -File scripts\run-lynx-lab.ps1
 
 The renderer is behind `ILynxRenderer`; the intended next backend can therefore
 be Direct2D/DirectComposition without changing the lab controls.
+
+
+## Current live mascot baseline
+
+The default renderer is `HairyGuardianRenderer`.
+
+It preserves the approved direction:
+
+- bright purple head with darker purple body and paws
+- fluffy dark tail with purple highlights
+- white muzzle and chest
+- expressive glossy eyes
+- dark armored collar
+- glowing shield/check emblem
+- state-specific visual signals for Save, Get, Send and Conflict
+- palette selection changes undertones while preserving the purple GitPet identity
+
+The older `GdiLynxRenderer` remains in the project as a comparison/fallback renderer.
