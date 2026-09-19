@@ -714,6 +714,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             var repositoryState = await _git.ValidateRepositoryStateAsync(project.RepositoryRoot, _lifetime.Token);
             if (!repositoryState.Success)
                 throw new InvalidOperationException(
+                    "GitPet did not activate this project.\r\n\r\n" +
                     GitService.DescribeRepositoryReadFailure(repositoryState.Output));
 
             var scopeCount = project.TrackEverything ? 0 : project.ScopeEntries.Count;
