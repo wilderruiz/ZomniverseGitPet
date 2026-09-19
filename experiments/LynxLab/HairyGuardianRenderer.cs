@@ -309,7 +309,7 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         }
 
         using var nose = new GraphicsPath();
-        nose.AddPolygon([P(74, 71), P(86, 71), P(80, 78)]);
+        nose.AddPolygon([Pt(74, 71), Pt(86, 71), Pt(80, 78)]);
         using var noseBrush = new SolidBrush(Color.FromArgb(26, 17, 43));
         g.FillPath(noseBrush, nose);
 
@@ -320,8 +320,8 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         };
 
         g.DrawLine(mouthPen, 80, 77, 80, 82);
-        g.DrawBezier(mouthPen, P(80, 82), P(76, 82), P(74, 85), P(72, 87));
-        g.DrawBezier(mouthPen, P(80, 82), P(84, 82), P(86, 85), P(88, 87));
+        g.DrawBezier(mouthPen, Pt(80, 82), Pt(76, 82), Pt(74, 85), Pt(72, 87));
+        g.DrawBezier(mouthPen, Pt(80, 82), Pt(84, 82), Pt(86, 85), Pt(88, 87));
     }
 
     private static void DrawEye(
@@ -422,7 +422,7 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
             LineJoin = LineJoin.Round
         };
 
-        g.DrawLines(checkPen, [P(74.5f, 113), P(78.7f, 117), P(86, 108.5f)]);
+        g.DrawLines(checkPen, [Pt(74.5f, 113), Pt(78.7f, 117), Pt(86, 108.5f)]);
     }
 
     private static void DrawStateSignal(
@@ -455,12 +455,12 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
                 StartCap = LineCap.Round,
                 EndCap = LineCap.Round
             };
-            g.DrawLines(savePen, [P(70, 33), P(76, 39), P(90, 24)]);
+            g.DrawLines(savePen, [Pt(70, 33), Pt(76, 39), Pt(90, 24)]);
         }
         else if (state == LynxVisualState.Conflict)
         {
             using var warnBrush = new SolidBrush(Color.FromArgb(225, c.Accent));
-            g.FillPolygon(warnBrush, [P(80, 27), P(73, 40), P(87, 40)]);
+            g.FillPolygon(warnBrush, [Pt(80, 27), Pt(73, 40), Pt(87, 40)]);
             using var markPen = new Pen(Color.FromArgb(30, 20, 15), 1.4f);
             g.DrawLine(markPen, 80, 31, 80, 36);
             g.FillEllipse(Brushes.Black, 79.2f, 37.2f, 1.6f, 1.6f);
@@ -540,6 +540,8 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
 
         return path;
     }
+
+    private static PointF Pt(float x, float y) => new(x, y);
 
     private static PathPart P(float x, float y) =>
         new(PathPartKind.Move, new PointF(x, y), default, default);
