@@ -53,7 +53,7 @@ internal static class ProjectSwitchStateRegression
 
             var damagedHead = GitService.DescribeRepositoryReadFailure("fatal: bad object HEAD");
             if (!damagedHead.Contains("missing or unreadable", StringComparison.OrdinalIgnoreCase) ||
-                !damagedHead.Contains("will not activate", StringComparison.OrdinalIgnoreCase) ||
+                !damagedHead.Contains("repository as unhealthy", StringComparison.OrdinalIgnoreCase) ||
                 !damagedHead.Contains("fatal: bad object HEAD", StringComparison.Ordinal))
                 throw new InvalidOperationException("Damaged HEAD diagnostics are not actionable.");
 
