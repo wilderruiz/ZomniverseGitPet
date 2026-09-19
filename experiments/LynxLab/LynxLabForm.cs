@@ -15,16 +15,16 @@ internal sealed class LynxLabForm : Form
     {
         Text = "Lynx Lab — Phase 0";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(820, 600);
-        Size = new Size(980, 680);
+        MinimumSize = new Size(700, 500);
+        Size = new Size(1100, 760);
         BackColor = Color.FromArgb(0x09, 0x0D, 0x12);
         ForeColor = Color.FromArgb(0xE8, 0xEE, 0xF5);
         Font = new Font("Segoe UI", 9f);
+        AutoScaleMode = AutoScaleMode.Dpi;
 
         _canvas = new LynxCanvas(_renderer)
         {
-            Dock = DockStyle.Fill,
-            Margin = new Padding(18)
+            Dock = DockStyle.Fill
         };
 
         _desktopPreview = new LynxDesktopPreviewForm(_renderer);
@@ -45,63 +45,97 @@ internal sealed class LynxLabForm : Form
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
+            ColumnCount = 1,
             RowCount = 2,
-            Padding = new Padding(22),
+            Padding = new Padding(22, 20, 22, 22),
             BackColor = BackColor
         };
 
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 66));
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        root.Controls.Add(BuildHeader(), 0, 0);
-        root.SetColumnSpan(root.GetControlFromPosition(0, 0)!, 2);
-        root.Controls.Add(BuildPreviewPanel(), 0, 1);
-        root.Controls.Add(BuildControlPanel(), 1, 1);
+        var header = BuildHeader();
+        var workbench = BuildWorkbench();
+
+        root.Controls.Add(header, 0, 0);
+        root.Controls.Add(workbench, 0, 1);
 
         return root;
     }
 
     private Control BuildHeader()
     {
-        var panel = new Panel
+        var header = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = new Padding(0, 0, 0, 16),
             BackColor = BackColor
         };
+
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var kicker = new Label
         {
             Text = "EXPERIMENTS / LYNX LAB / PHASE 0",
             AutoSize = true,
+            Margin = new Padding(0, 0, 0, 4),
             ForeColor = Color.FromArgb(0x79, 0xD8, 0xCA),
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-            Location = new Point(0, 5)
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
         };
 
         var title = new Label
         {
             Text = "Functional test host",
             AutoSize = true,
+            Margin = new Padding(0, 0, 0, 4),
             ForeColor = ForeColor,
-            Font = new Font("Segoe UI", 18f, FontStyle.Bold),
-            Location = new Point(0, 28)
+            Font = new Font("Segoe UI", 18f, FontStyle.Bold)
         };
 
         var subtitle = new Label
         {
             Text = "Isolated from production GitPet · 160×160 Lynx · 240×246 desktop preview",
             AutoSize = true,
-            ForeColor = Color.FromArgb(0x8D, 0x9A, 0xAA),
-            Location = new Point(2, 63)
+            MaximumSize = new Size(900, 0),
+            Margin = new Padding(0, 0, 0, 0),
+            ForeColor = Color.FromArgb(0x8D, 0x9A, 0xAA)
         };
 
-        panel.Controls.Add(kicker);
-        panel.Controls.Add(title);
-        panel.Controls.Add(subtitle);
-        return panel;
+        header.Controls.Add(kicker, 0, 0);
+        header.Controls.Add(title, 0, 1);
+        header.Controls.Add(subtitle, 0, 2);
+        return header;
+    }
+
+    private Control BuildWorkbench()
+    {
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            BorderStyle = BorderStyle.None,
+            SplitterWidth = 7,
+            SplitterDistance = 720,
+            Panel1MinSize = 300,
+            Panel2MinSize = 240,
+            BackColor = Color.FromArgb(0x1B, 0x28, 0x34),
+            Margin = Padding.Empty
+        };
+
+        split.Panel1.Padding = Padding.Empty;
+        split.Panel2.Padding = Padding.Empty;
+        split.Panel1.Controls.Add(BuildPreviewPanel());
+        split.Panel2.Controls.Add(BuildControlPanel());
+
+        return split;
     }
 
     private Control BuildPreviewPanel()
@@ -109,30 +143,36 @@ internal sealed class LynxLabForm : Form
         var shell = new Panel
         {
             Dock = DockStyle.Fill,
-            Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(1),
             BackColor = Color.FromArgb(0x26, 0x33, 0x42)
         };
 
-        var inner = new Panel
+        var inner = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(22),
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(16),
             BackColor = Color.FromArgb(0x0F, 0x16, 0x1E)
         };
+
+        inner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        inner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var caption = new Label
         {
             Dock = DockStyle.Top,
-            Height = 42,
+            AutoSize = true,
+            Margin = new Padding(2, 2, 2, 12),
             Text = "LAB VIEWPORT  ·  " + _renderer.Name,
             ForeColor = Color.FromArgb(0x87, 0x97, 0xA9),
             Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
         };
 
-        inner.Controls.Add(_canvas);
-        inner.Controls.Add(caption);
+        inner.Controls.Add(caption, 0, 0);
+        inner.Controls.Add(_canvas, 0, 1);
         shell.Controls.Add(inner);
         return shell;
     }
@@ -142,7 +182,7 @@ internal sealed class LynxLabForm : Form
         var shell = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(16),
+            Padding = new Padding(14),
             BackColor = Color.FromArgb(0x11, 0x18, 0x20)
         };
 
@@ -152,7 +192,8 @@ internal sealed class LynxLabForm : Form
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoScroll = true,
-            BackColor = shell.BackColor
+            BackColor = shell.BackColor,
+            Padding = new Padding(0, 0, 4, 0)
         };
 
         stack.Controls.Add(SectionLabel("SIMULATED GIT STATE"));
@@ -171,7 +212,6 @@ internal sealed class LynxLabForm : Form
         var palette = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 250,
             Height = 32,
             BackColor = Color.FromArgb(0x15, 0x1E, 0x27),
             ForeColor = ForeColor,
@@ -187,6 +227,7 @@ internal sealed class LynxLabForm : Form
 
         stack.Controls.Add(Spacer());
         stack.Controls.Add(SectionLabel("VIEW"));
+
         _desktopPreviewToggle.CheckedChanged += (_, _) =>
         {
             if (_desktopPreviewToggle.Checked)
@@ -227,16 +268,34 @@ internal sealed class LynxLabForm : Form
 
         var note = new Label
         {
-            AutoSize = false,
-            Width = 250,
-            Height = 72,
-            Margin = new Padding(0, 16, 0, 0),
+            AutoSize = true,
+            MaximumSize = new Size(420, 0),
+            Margin = new Padding(0, 16, 0, 10),
             Text = "Phase 0 proves the lab shell, state controls, palette switching, transparent desktop host and debug geometry. Direct2D comes later.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
 
+        void ResizeInspectorRows()
+        {
+            var scrollbar = stack.VerticalScroll.Visible ? SystemInformation.VerticalScrollBarWidth : 0;
+            var available = Math.Max(180, stack.ClientSize.Width - scrollbar - stack.Padding.Horizontal - 8);
+
+            foreach (Control control in stack.Controls)
+            {
+                control.Width = available;
+
+                if (control is Label label && ReferenceEquals(label, note))
+                    label.MaximumSize = new Size(available, 0);
+            }
+        }
+
+        stack.ClientSizeChanged += (_, _) => ResizeInspectorRows();
+        stack.ControlAdded += (_, _) => ResizeInspectorRows();
+
         shell.Controls.Add(stack);
+
+        shell.HandleCreated += (_, _) => BeginInvoke(ResizeInspectorRows);
         return shell;
     }
 
@@ -259,7 +318,6 @@ internal sealed class LynxLabForm : Form
         {
             Text = text,
             AutoSize = false,
-            Width = 250,
             Height = 28,
             Margin = new Padding(0, 4, 0, 5),
             ForeColor = Color.FromArgb(0x79, 0xD8, 0xCA),
@@ -271,7 +329,6 @@ internal sealed class LynxLabForm : Form
         new()
         {
             Text = text,
-            Width = 250,
             Height = 34,
             Margin = new Padding(0, 0, 0, 6),
             FlatStyle = FlatStyle.Flat,
@@ -285,7 +342,6 @@ internal sealed class LynxLabForm : Form
             Text = text,
             Checked = isChecked,
             AutoSize = false,
-            Width = 250,
             Height = 30,
             ForeColor = Color.FromArgb(0xBF, 0xCB, 0xD7)
         };
@@ -294,8 +350,9 @@ internal sealed class LynxLabForm : Form
         new()
         {
             Text = text,
-            AutoSize = true,
-            ForeColor = Color.FromArgb(0xDF, 0xE7, 0xEF)
+            AutoEllipsis = true,
+            ForeColor = Color.FromArgb(0xDF, 0xE7, 0xEF),
+            TextAlign = ContentAlignment.MiddleLeft
         };
 
     private static Control KeyValueRow(string key, string value) =>
@@ -305,11 +362,11 @@ internal sealed class LynxLabForm : Form
     {
         var row = new TableLayoutPanel
         {
-            Width = 250,
             Height = 26,
             ColumnCount = 2,
             Margin = Padding.Empty
         };
+
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
 
@@ -317,18 +374,16 @@ internal sealed class LynxLabForm : Form
         {
             Text = key,
             Dock = DockStyle.Fill,
+            AutoEllipsis = true,
             ForeColor = Color.FromArgb(0x72, 0x82, 0x94),
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
 
         value.Dock = DockStyle.Fill;
-        if (value is Label label)
-            label.TextAlign = ContentAlignment.MiddleLeft;
-
         row.Controls.Add(value, 1, 0);
         return row;
     }
 
     private static Control Spacer() =>
-        new Panel { Width = 250, Height = 12, Margin = Padding.Empty };
+        new Panel { Height = 12, Margin = Padding.Empty };
 }

@@ -23,6 +23,9 @@ powershell -ExecutionPolicy Bypass -File scripts\run-lynx-lab.ps1
 
 - Lab launches independently from ZGitPet.
 - Main viewport renders the Lynx at vector quality.
+- The viewport and inspector are separated by a draggable splitter.
+- Inspector controls resize with the available width and scroll vertically when needed.
+- The main window can be resized without controls overlapping or forcing the canvas size.
 - All Git-state simulation buttons change the visual state.
 - All eight dark palettes can be selected.
 - Debug geometry can be toggled.

@@ -15,7 +15,7 @@ internal sealed class LynxCanvas : Control
         DoubleBuffered = true;
         ResizeRedraw = true;
         BackColor = Color.FromArgb(0x0B, 0x10, 0x16);
-        MinimumSize = new Size(200, 200);
+        MinimumSize = Size.Empty;
     }
 
     public ILynxRenderer Renderer
@@ -62,8 +62,12 @@ internal sealed class LynxCanvas : Control
     {
         base.OnPaint(e);
 
-        var side = Math.Min(ClientSize.Width - 28, ClientSize.Height - 28);
-        side = Math.Max(1, side);
+        if (ClientSize.Width <= 4 || ClientSize.Height <= 4)
+            return;
+
+        var side = Math.Min(ClientSize.Width - 20, ClientSize.Height - 20);
+        if (side <= 0)
+            return;
 
         var bounds = new Rectangle(
             (ClientSize.Width - side) / 2,
