@@ -22,7 +22,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     private DateTimeOffset _lastChangeAt = DateTimeOffset.UtcNow;
     private bool _automaticCheckpointRunning;
 
-    public ZomniverseGitPetContext(
+    internal ZomniverseGitPetContext(
         string pipeName,
         ApplicationIdentityInfo identity,
         AppConfig config,
