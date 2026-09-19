@@ -160,5 +160,3 @@ internal static class GuardianProjectSwitchOverlayHost
 
 
 }
-
-}
