@@ -9,11 +9,24 @@ namespace ZomniverseGitPet;
    DATE.TIME: 2026-09-11 20:22 +03:00
    Publish only the selected logical-project scope.
    ========================================================================== */
+internal sealed class StandaloneProjectBranchState
+{
+    public string LastPublishedSourceCommit { get; set; } = "";
+    public string LastPublishedFingerprint { get; set; } = "";
+    public DateTimeOffset? LastPublishedUtc { get; set; }
+}
+
 internal sealed class StandaloneProjectPublishingEntry
 {
     public string ProjectId { get; set; } = "";
     public string RemoteUrl { get; set; } = "";
     public string RepositoryLabel { get; set; } = "";
+    public string Branch { get; set; } = "main";
+    public Dictionary<string, StandaloneProjectBranchState> BranchStates { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // Legacy single-branch mirror. Old standalone-publishing.json records migrate
+    // into BranchStates["main"], while existing callers keep working unchanged.
     public string LastPublishedSourceCommit { get; set; } = "";
     public string LastPublishedFingerprint { get; set; } = "";
     public DateTimeOffset? LastPublishedUtc { get; set; }
@@ -117,6 +130,8 @@ internal static class StandaloneProjectPublishing
 
             if (!RemoteEquals(entry.RemoteUrl, remoteUrl))
             {
+                entry.Branch = "main";
+                entry.BranchStates = new Dictionary<string, StandaloneProjectBranchState>(StringComparer.OrdinalIgnoreCase);
                 entry.LastPublishedSourceCommit = "";
                 entry.LastPublishedFingerprint = "";
                 entry.LastPublishedUtc = null;
@@ -124,10 +139,95 @@ internal static class StandaloneProjectPublishing
 
             entry.RemoteUrl = remoteUrl.Trim();
             entry.RepositoryLabel = repositoryLabel;
+            NormalizeEntry(entry);
             SaveEntriesUnsafe(entries);
             return Clone(entry);
         }
     }
+
+    public static StandaloneProjectPublishingEntry SetBranch(AppConfig config, string branch)
+    {
+        var project = config.GetActiveProject()
+            ?? throw new InvalidOperationException("Choose a GitPet project before selecting a standalone branch.");
+        var normalizedBranch = NormalizeBranchName(branch);
+        if (!IsSafeBranchName(normalizedBranch))
+            throw new ArgumentException("The standalone branch name is not a safe Git branch name.", nameof(branch));
+
+        lock (StoreGate)
+        {
+            var entries = LoadEntriesUnsafe();
+            var entry = entries.FirstOrDefault(item =>
+                string.Equals(item.ProjectId, project.Id, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException("Connect this GitPet project to its own online repository first.");
+
+            entry.Branch = normalizedBranch;
+            ProjectActiveBranchState(entry);
+            SaveEntriesUnsafe(entries);
+            return Clone(entry);
+        }
+    }
+
+    public static async Task<IReadOnlyList<string>> ListRemoteBranchesAsync(
+        AppConfig config,
+        GitService git,
+        string repositoryRoot,
+        CancellationToken token = default)
+    {
+        var link = GetLink(config);
+        if (link is null || !IsLogicalProject(config, repositoryRoot)) return [];
+
+        var result = await git.RunGitAsync(
+            repositoryRoot,
+            ["ls-remote", "--heads", link.RemoteUrl],
+            TimeSpan.FromSeconds(30),
+            token);
+        if (!result.Success) return [];
+
+        return ParseRemoteBranches(result.Output);
+    }
+
+    internal static IReadOnlyList<string> ParseRemoteBranches(string output) =>
+        (output ?? "")
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line =>
+            {
+                var marker = line.IndexOf("refs/heads/", StringComparison.Ordinal);
+                return marker < 0 ? "" : line[(marker + "refs/heads/".Length)..].Trim();
+            })
+            .Where(IsSafeBranchName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name.Equals("main", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    internal static bool IsSafeBranchName(string? branch)
+    {
+        var value = NormalizeBranchName(branch);
+        if (value.Length == 0 || value.Length > 255) return false;
+        if (value.StartsWith("-", StringComparison.Ordinal) ||
+            value.StartsWith(".", StringComparison.Ordinal) ||
+            value.EndsWith(".", StringComparison.Ordinal) ||
+            value.EndsWith("/", StringComparison.Ordinal) ||
+            value.EndsWith(".lock", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("..", StringComparison.Ordinal) ||
+            value.Contains("//", StringComparison.Ordinal) ||
+            value.Contains("@{", StringComparison.Ordinal))
+            return false;
+
+        foreach (var ch in value)
+        {
+            if (char.IsControl(ch) || char.IsWhiteSpace(ch) ||
+                ch is '~' or '^' or ':' or '?' or '*' or '[' or '\\')
+                return false;
+        }
+        return true;
+    }
+
+    internal static string NormalizeBranchName(string? branch) =>
+        string.IsNullOrWhiteSpace(branch) ? "main" : branch.Trim();
+
+    internal static string RemoteTrackingRef(string branch) =>
+        "refs/remotes/origin/" + NormalizeBranchName(branch);
 
     public static void MarkPublished(
         AppConfig config,
@@ -144,25 +244,40 @@ internal static class StandaloneProjectPublishing
                 string.Equals(item.ProjectId, project.Id, StringComparison.OrdinalIgnoreCase));
             if (entry is null) return;
 
-            entry.LastPublishedSourceCommit = sourceCommit;
-            entry.LastPublishedFingerprint = fingerprint;
-            entry.LastPublishedUtc = DateTimeOffset.UtcNow;
+            NormalizeEntry(entry);
+            var state = GetOrCreateBranchState(entry, entry.Branch);
+            state.LastPublishedSourceCommit = sourceCommit;
+            state.LastPublishedFingerprint = fingerprint;
+            state.LastPublishedUtc = DateTimeOffset.UtcNow;
+            ProjectActiveBranchState(entry);
             SaveEntriesUnsafe(entries);
         }
     }
 
-    public static string GetWorkspacePath(RecentRepositoryEntry project)
+    public static string GetWorkspacePath(RecentRepositoryEntry project) =>
+        GetWorkspacePath(project, "main");
+
+    public static string GetWorkspacePath(RecentRepositoryEntry project, string branch)
     {
         var safeId = new string((project.Id ?? "project")
             .Where(character => char.IsLetterOrDigit(character) || character is '-' or '_')
             .ToArray());
         if (string.IsNullOrWhiteSpace(safeId)) safeId = "project";
 
-        return Path.Combine(
+        var root = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ZomniverseGitPet",
             "Publishing",
             safeId);
+
+        var normalizedBranch = NormalizeBranchName(branch);
+        if (normalizedBranch.Equals("main", StringComparison.OrdinalIgnoreCase))
+            return root;
+
+        var branchKey = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(normalizedBranch)))
+            .ToLowerInvariant()[..16];
+        return Path.Combine(root, "branches", branchKey);
     }
 
     public static async Task<StandaloneProjectSnapshot?> BuildSnapshotAsync(
@@ -266,7 +381,7 @@ internal static class StandaloneProjectPublishing
             string.IsNullOrWhiteSpace(link.LastPublishedFingerprint))
         {
             return new(false,
-                "This project-only online repository already has a main branch, but this local GitPet project has no publishing baseline yet.\r\n\r\n" +
+                $"The project-only online repository already has branch '{link.Branch}', but this local GitPet project has no publishing baseline for that branch yet.\r\n\r\n" +
                 "Use Get first so GitPet can establish the project-only baseline without overwriting online work.",
                 RemoteUrl: link.RemoteUrl);
         }
@@ -288,11 +403,11 @@ internal static class StandaloneProjectPublishing
             return new(true,
                 "Everything in this logical project is already published.",
                 snapshot.Files.Count,
-                GetWorkspacePath(project),
+                GetWorkspacePath(project, link.Branch),
                 link.RemoteUrl);
         }
 
-        var workspace = GetWorkspacePath(project);
+        var workspace = GetWorkspacePath(project, link.Branch);
         try
         {
             Directory.CreateDirectory(workspace);
@@ -379,7 +494,7 @@ internal static class StandaloneProjectPublishing
 
             var push = await git.RunGitAsync(
                 workspace,
-                ["push", "-u", "origin", "main"],
+                ["push", "-u", "origin", $"HEAD:refs/heads/{link.Branch}"],
                 TimeSpan.FromMinutes(5), token);
             if (!push.Success)
                 return Failure(
@@ -401,7 +516,7 @@ internal static class StandaloneProjectPublishing
 
             return new(true,
                 $"Published {snapshot.Files.Count} project file{(snapshot.Files.Count == 1 ? "" : "s")} from the selected GitPet scope.\r\n\r\n" +
-                "The larger parent repository was not sent.",
+                $"The larger parent repository was not sent. Standalone branch: {link.Branch}.",
                 snapshot.Files.Count,
                 workspace,
                 link.RemoteUrl,
@@ -438,13 +553,13 @@ internal static class StandaloneProjectPublishing
         if (project is null || link is null || !IsLogicalProject(config, repositoryRoot))
             return new(false, false, [], "No standalone project remote is connected.");
 
-        var workspace = GetWorkspacePath(project);
+        var workspace = GetWorkspacePath(project, link.Branch);
         var gitDirectory = Path.Combine(workspace, ".git");
         if (!Directory.Exists(gitDirectory))
         {
             var probe = await git.RunGitAsync(
                 repositoryRoot,
-                ["ls-remote", "--heads", link.RemoteUrl, "refs/heads/main"],
+                ["ls-remote", "--heads", link.RemoteUrl, $"refs/heads/{link.Branch}"],
                 TimeSpan.FromSeconds(30),
                 token);
             return new(
@@ -470,7 +585,7 @@ internal static class StandaloneProjectPublishing
         {
             var fetch = await git.RunGitAsync(
                 workspace,
-                ["fetch", "--quiet", "--prune", "origin", "main"],
+                ["fetch", "--quiet", "--prune", "origin", link.Branch],
                 TimeSpan.FromMinutes(2),
                 token);
             if (!fetch.Success)
@@ -479,7 +594,7 @@ internal static class StandaloneProjectPublishing
 
         var remoteHead = await git.RunGitAsync(
             workspace,
-            ["rev-parse", "--verify", "-q", "refs/remotes/origin/main"],
+            ["rev-parse", "--verify", "-q", RemoteTrackingRef(link.Branch)],
             TimeSpan.FromSeconds(10),
             token);
         if (!remoteHead.Success)
@@ -495,7 +610,7 @@ internal static class StandaloneProjectPublishing
 
         var diff = await git.RunGitAsync(
             workspace,
-            ["diff", "--name-status", "--find-renames", "HEAD", "refs/remotes/origin/main"],
+            ["diff", "--name-status", "--find-renames", "HEAD", RemoteTrackingRef(link.Branch)],
             TimeSpan.FromSeconds(20),
             token);
         if (!diff.Success)
@@ -546,7 +661,7 @@ internal static class StandaloneProjectPublishing
         if (snapshot is null || snapshot.Files.Count == 0)
             return new(false, "The selected project scope does not contain any tracked files in the latest saved version.");
 
-        var workspace = GetWorkspacePath(project);
+        var workspace = GetWorkspacePath(project, link.Branch);
         var stagingRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ZomniverseGitPet",
@@ -660,7 +775,7 @@ internal static class StandaloneProjectPublishing
 
             var fetch = await git.RunGitAsync(
                 workspace,
-                ["fetch", "--prune", "origin", "main"],
+                ["fetch", "--prune", "origin", link.Branch],
                 TimeSpan.FromMinutes(5),
                 token);
             if (!fetch.Success)
@@ -668,15 +783,15 @@ internal static class StandaloneProjectPublishing
 
             var remoteHead = await git.RunGitAsync(
                 workspace,
-                ["rev-parse", "--verify", "refs/remotes/origin/main"],
+                ["rev-parse", "--verify", RemoteTrackingRef(link.Branch)],
                 TimeSpan.FromSeconds(12),
                 token);
             if (!remoteHead.Success)
-                return ReceiveFailure("The standalone repository does not have a readable main branch.", remoteHead, workspace, link.RemoteUrl);
+                return ReceiveFailure($"The standalone repository does not have a readable '{link.Branch}' branch.", remoteHead, workspace, link.RemoteUrl);
 
             var diff = await git.RunGitAsync(
                 workspace,
-                ["diff", "--name-status", "--find-renames", "HEAD", "refs/remotes/origin/main"],
+                ["diff", "--name-status", "--find-renames", "HEAD", RemoteTrackingRef(link.Branch)],
                 TimeSpan.FromSeconds(30),
                 token);
             if (!diff.Success)
@@ -717,7 +832,7 @@ internal static class StandaloneProjectPublishing
 
             var resetRemote = await git.RunGitAsync(
                 workspace,
-                ["reset", "--hard", "refs/remotes/origin/main"],
+                ["reset", "--hard", RemoteTrackingRef(link.Branch)],
                 TimeSpan.FromMinutes(1),
                 token);
             if (!resetRemote.Success)
@@ -780,7 +895,7 @@ internal static class StandaloneProjectPublishing
             });
 
             return new(true,
-                $"Received {changes.Count} project-only change{(changes.Count == 1 ? "" : "s")} from {link.RepositoryLabel}.\r\n\r\n" +
+                $"Received {changes.Count} project-only change{(changes.Count == 1 ? "" : "s")} from {link.RepositoryLabel} / {link.Branch}.\r\n\r\n" +
                 "They were copied only into this project's configured scope and remain UNSAVED locally so you can review them before Save.",
                 changes.Count,
                 workspace,
@@ -916,7 +1031,9 @@ internal static class StandaloneProjectPublishing
             var path = StorePath;
             if (!File.Exists(path)) return [];
             var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<List<StandaloneProjectPublishingEntry>>(json) ?? [];
+            var entries = JsonSerializer.Deserialize<List<StandaloneProjectPublishingEntry>>(json) ?? [];
+            foreach (var entry in entries) NormalizeEntry(entry);
+            return entries;
         }
         catch
         {
@@ -926,6 +1043,7 @@ internal static class StandaloneProjectPublishing
 
     private static void SaveEntriesUnsafe(List<StandaloneProjectPublishingEntry> entries)
     {
+        foreach (var entry in entries) NormalizeEntry(entry);
         var path = StorePath;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + ".tmp";
@@ -938,15 +1056,77 @@ internal static class StandaloneProjectPublishing
         "ZomniverseGitPet",
         "standalone-publishing.json");
 
-    private static StandaloneProjectPublishingEntry Clone(StandaloneProjectPublishingEntry entry) => new()
+    private static StandaloneProjectPublishingEntry Clone(StandaloneProjectPublishingEntry entry)
     {
-        ProjectId = entry.ProjectId,
-        RemoteUrl = entry.RemoteUrl,
-        RepositoryLabel = entry.RepositoryLabel,
-        LastPublishedSourceCommit = entry.LastPublishedSourceCommit,
-        LastPublishedFingerprint = entry.LastPublishedFingerprint,
-        LastPublishedUtc = entry.LastPublishedUtc
-    };
+        NormalizeEntry(entry);
+        return new StandaloneProjectPublishingEntry
+        {
+            ProjectId = entry.ProjectId,
+            RemoteUrl = entry.RemoteUrl,
+            RepositoryLabel = entry.RepositoryLabel,
+            Branch = entry.Branch,
+            BranchStates = entry.BranchStates.ToDictionary(
+                pair => pair.Key,
+                pair => new StandaloneProjectBranchState
+                {
+                    LastPublishedSourceCommit = pair.Value.LastPublishedSourceCommit,
+                    LastPublishedFingerprint = pair.Value.LastPublishedFingerprint,
+                    LastPublishedUtc = pair.Value.LastPublishedUtc
+                },
+                StringComparer.OrdinalIgnoreCase),
+            LastPublishedSourceCommit = entry.LastPublishedSourceCommit,
+            LastPublishedFingerprint = entry.LastPublishedFingerprint,
+            LastPublishedUtc = entry.LastPublishedUtc
+        };
+    }
+
+    private static void NormalizeEntry(StandaloneProjectPublishingEntry entry)
+    {
+        entry.Branch = NormalizeBranchName(entry.Branch);
+        if (!IsSafeBranchName(entry.Branch)) entry.Branch = "main";
+        entry.BranchStates ??= new Dictionary<string, StandaloneProjectBranchState>(StringComparer.OrdinalIgnoreCase);
+
+        if (entry.BranchStates.Comparer != StringComparer.OrdinalIgnoreCase)
+            entry.BranchStates = new Dictionary<string, StandaloneProjectBranchState>(
+                entry.BranchStates,
+                StringComparer.OrdinalIgnoreCase);
+
+        if (!entry.BranchStates.ContainsKey("main") &&
+            (!string.IsNullOrWhiteSpace(entry.LastPublishedSourceCommit) ||
+             !string.IsNullOrWhiteSpace(entry.LastPublishedFingerprint) ||
+             entry.LastPublishedUtc is not null))
+        {
+            entry.BranchStates["main"] = new StandaloneProjectBranchState
+            {
+                LastPublishedSourceCommit = entry.LastPublishedSourceCommit,
+                LastPublishedFingerprint = entry.LastPublishedFingerprint,
+                LastPublishedUtc = entry.LastPublishedUtc
+            };
+        }
+
+        ProjectActiveBranchState(entry);
+    }
+
+    private static StandaloneProjectBranchState GetOrCreateBranchState(
+        StandaloneProjectPublishingEntry entry,
+        string branch)
+    {
+        var normalized = NormalizeBranchName(branch);
+        if (!entry.BranchStates.TryGetValue(normalized, out var state))
+        {
+            state = new StandaloneProjectBranchState();
+            entry.BranchStates[normalized] = state;
+        }
+        return state;
+    }
+
+    private static void ProjectActiveBranchState(StandaloneProjectPublishingEntry entry)
+    {
+        var state = GetOrCreateBranchState(entry, entry.Branch);
+        entry.LastPublishedSourceCommit = state.LastPublishedSourceCommit;
+        entry.LastPublishedFingerprint = state.LastPublishedFingerprint;
+        entry.LastPublishedUtc = state.LastPublishedUtc;
+    }
 
     private static void CleanPublishingWorkspace(string workspace)
     {
