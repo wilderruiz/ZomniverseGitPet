@@ -53,11 +53,27 @@ Matched first by `ProjectId`; falls back to the `(RepositoryRoot, ProjectPath, P
 {
   "ProjectId": "<guid>",
   "RemoteUrl": "https://github.com/<owner>/<repo>.git",
-  "LastPublishedSourceCommit": "<sha>",
-  "LastPublishedFingerprint": "<sha256 of pathspecs + ls-tree output>",
-  "LastPublishedUtc": "2026-09-11T23:04:00Z"
+  "RepositoryLabel": "<owner>/<repo>",
+  "Branch": "feature/example",
+  "BranchStates": {
+    "main": {
+      "LastPublishedSourceCommit": "<sha>",
+      "LastPublishedFingerprint": "<sha256>",
+      "LastPublishedUtc": "2026-09-11T23:04:00Z"
+    },
+    "feature/example": {
+      "LastPublishedSourceCommit": "<sha>",
+      "LastPublishedFingerprint": "<sha256>",
+      "LastPublishedUtc": "2026-09-20T18:20:00Z"
+    }
+  },
+  "LastPublishedSourceCommit": "<active-branch mirror>",
+  "LastPublishedFingerprint": "<active-branch mirror>",
+  "LastPublishedUtc": "<active-branch mirror>"
 }
 ```
+
+Records written before branch support had only the three `LastPublished*` fields. On load, GitPet normalizes a missing/empty `Branch` to `main`, migrates that old baseline into `BranchStates["main"]`, and keeps the legacy fields as a mirror of the currently selected branch for compatibility.
 
 See [Publishing Architecture](../developer/PUBLISHING_ARCHITECTURE.md) for how the fingerprint is computed and used.
 
