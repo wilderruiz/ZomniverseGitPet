@@ -337,6 +337,96 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> GetCurrentBranchAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["branch", "--show-current"], cancellationToken: token);
 
+    public async Task<IReadOnlyList<RepositoryBranchOption>> ListRepositoryBranchesAsync(
+        string path,
+        bool refreshRemote = true,
+        CancellationToken token = default)
+    {
+        if (refreshRemote)
+        {
+            var origin = await GetOriginUrlAsync(path, token);
+            if (origin.Success && !string.IsNullOrWhiteSpace(origin.Output))
+            {
+                // Best-effort refresh. Local branch switching remains available if the
+                // network is temporarily unavailable.
+                await RunGitAsync(
+                    path,
+                    ["fetch", "--quiet", "--prune", "origin"],
+                    TimeSpan.FromMinutes(2),
+                    token);
+            }
+        }
+
+        var refs = await RunGitAsync(
+            path,
+            ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes/origin"],
+            TimeSpan.FromSeconds(20),
+            token);
+        return refs.Success ? ParseRepositoryBranches(refs.Output) : [];
+    }
+
+    public async Task<CommandResult> SwitchRepositoryBranchAsync(
+        string path,
+        RepositoryBranchOption branch,
+        CancellationToken token = default)
+    {
+        var status = await GetStatusAsync(path, token);
+        if (!status.Healthy)
+            return new(-1, status.Error.Length == 0 ? "GitPet could not verify the repository before switching branches." : status.Error);
+        if (status.Files.Count > 0)
+            return new(-1, "Save or discard the current working-tree changes before switching branches.");
+
+        var current = await GetCurrentBranchAsync(path, token);
+        if (current.Success &&
+            current.Output.Trim().Equals(branch.Name, StringComparison.OrdinalIgnoreCase))
+            return new(0, $"Already on branch {branch.Name}.");
+
+        return await RunGitAsync(
+            path,
+            BuildRepositorySwitchArguments(branch),
+            TimeSpan.FromMinutes(1),
+            token);
+    }
+
+    internal static IReadOnlyList<RepositoryBranchOption> ParseRepositoryBranches(string output)
+    {
+        var branches = new Dictionary<string, RepositoryBranchOption>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raw in (output ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var reference = raw.Trim();
+            if (reference.StartsWith("refs/heads/", StringComparison.Ordinal))
+            {
+                var name = reference["refs/heads/".Length..];
+                if (name.Length == 0) continue;
+                branches[name] = branches.TryGetValue(name, out var existing)
+                    ? existing with { IsLocal = true }
+                    : new RepositoryBranchOption(name, true, false);
+                continue;
+            }
+
+            if (!reference.StartsWith("refs/remotes/origin/", StringComparison.Ordinal)) continue;
+            var remoteName = reference["refs/remotes/origin/".Length..];
+            if (remoteName.Length == 0 ||
+                remoteName.Equals("HEAD", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            branches[remoteName] = branches.TryGetValue(remoteName, out var remoteExisting)
+                ? remoteExisting with { IsRemote = true }
+                : new RepositoryBranchOption(remoteName, false, true);
+        }
+
+        return branches.Values
+            .OrderBy(branch => branch.Name.Equals("main", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    internal static string[] BuildRepositorySwitchArguments(RepositoryBranchOption branch) =>
+        branch.IsLocal
+            ? ["switch", branch.Name]
+            : ["switch", "--track", "-c", branch.Name, $"origin/{branch.Name}"];
+
     public async Task<CommandResult> GetOriginUrlAsync(string path, CancellationToken token = default)
     {
         var existing = await RunGitAsync(path, ["remote", "get-url", "origin"], cancellationToken: token);
