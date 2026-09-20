@@ -38,7 +38,9 @@ git pull --ff-only origin <current-branch>
 
 Fast-forward-only means GitPet will never create an automatic merge commit on your behalf. If local and remote history have diverged, Get stops and offers [Reconciliation](RECONCILIATION.md) instead of guessing how to combine them.
 
-For a **scoped logical project with a standalone remote**, Get uses a different safety path: GitPet fetches the project-only remote into its isolated project workspace, checks that every incoming path still belongs to the configured project scope, and copies only those project files back into the source working tree as unsaved changes. It does not pull standalone history into the parent repository.
+For a **scoped logical project with a standalone remote**, Get uses a different safety path: GitPet fetches the project's **selected standalone branch** into a branch-specific isolated workspace, checks that every incoming path still belongs to the configured project scope, and copies only those project files back into the source working tree as unsaved changes. It does not pull standalone history into the parent repository or switch the parent repository branch.
+
+Scoped projects also show a **Branch ▾** action. It lists existing branches from the standalone remote. Branch switching is blocked while the project has unsaved changes, saved updates waiting to Send, incoming updates waiting to Get, reconciliation state, or another Git operation in progress.
 
 ## Send ↑
 
@@ -59,4 +61,4 @@ git push origin <current-branch>
 
 GitPet never force-pushes, never stages or commits anything as a side effect of Send, and never invents a remote repository for you — see [Connecting to GitHub](GITHUB_CONNECTION.md) if there's no remote yet.
 
-If the project you're sending is a [logical project](LOGICAL_PROJECTS.md) with a saved [allow list](ALLOW_LISTS.md), Send is checked against that allow list first and can be blocked if they don't match exactly — see [Project Boundaries](../safety/PROJECT_BOUNDARIES.md).
+If the project you're sending is a [logical project](LOGICAL_PROJECTS.md), Send targets that project's selected standalone branch (never the parent repository branch). If the project has a saved [allow list](ALLOW_LISTS.md), Send is checked against that allow list first and can be blocked if they don't match exactly — see [Project Boundaries](../safety/PROJECT_BOUNDARIES.md).
