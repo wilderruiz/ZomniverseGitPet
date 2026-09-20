@@ -259,7 +259,7 @@ internal sealed class GuardianWorkboardService(GitService git)
                         change.Path,
                         string.IsNullOrWhiteSpace(change.PreviousPath)
                             ? "Project-only online change waiting for Get."
-                            : $"Project-only online change from {change.PreviousPath} waiting for Get.")))
+                            : $"Project-only online change from {change.PreviousPath} waiting for Get."))
                     .ToArray(),
                 MaxFileRows);
         }
