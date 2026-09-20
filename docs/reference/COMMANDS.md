@@ -12,6 +12,9 @@ The exact external commands GitPet runs, and where in the app each one comes fro
 | `git add -A -- <files>` | Save (normal files) | |
 | `git add -f -- <exact-path>` | Save (explicitly approved ignored file) | Never a directory or glob. |
 | `git commit -m "checkpoint: <timestamp>"` | Save | |
+| `git for-each-ref --format=%(refname) refs/heads refs/remotes/origin` | Repository branch dropdown | Lists local and origin branches. |
+| `git switch <branch>` | Repository branch dropdown | Switches to an existing local branch; working tree must be clean. |
+| `git switch --track -c <branch> origin/<branch>` | Repository branch dropdown | Creates a local tracking branch for an online-only origin branch. |
 | `git pull --ff-only origin <branch>` | Get | Never creates a merge commit. |
 | `git push origin <branch>` | Send | Never force-pushed. |
 | `git fetch --quiet origin` | Background sync polling | At least every 10 seconds. |
