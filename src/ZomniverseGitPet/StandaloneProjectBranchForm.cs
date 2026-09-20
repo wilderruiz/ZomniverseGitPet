@@ -42,7 +42,7 @@ internal sealed class StandaloneProjectBranchForm : Form
                 $"{repositoryLabel}\r\n" +
                 "Choose which existing standalone remote branch this logical project should Get from and Send to. " +
                 "The parent repository branch is not changed.",
-            ForeColor = GuardianTheme.Muted
+            ForeColor = GuardianTheme.MutedInk
         };
 
         _branches.DropDownStyle = ComboBoxStyle.DropDownList;
