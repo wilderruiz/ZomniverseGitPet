@@ -247,7 +247,7 @@ internal sealed class GuardianWorkboardService(GitService git)
                 git,
                 repositoryPath,
                 fetchRemote: false,
-                token);
+                token: token);
             getRows = LimitRows(
                 inspection.Changes
                     .Select(change => new GuardianWorkboardRow(
