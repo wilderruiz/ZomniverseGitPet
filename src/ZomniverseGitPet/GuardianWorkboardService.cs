@@ -258,8 +258,8 @@ internal sealed class GuardianWorkboardService(GitService git)
                         "MODIFIED",
                         change.Path,
                         string.IsNullOrWhiteSpace(change.PreviousPath)
-                            ? "Project-only online change waiting for Get."
-                            : $"Project-only online change from {change.PreviousPath} waiting for Get."))
+                            ? $"Project-only online change on {link!.Branch} waiting for Get."
+                            : $"Project-only online change from {change.PreviousPath} on {link!.Branch} waiting for Get."))
                     .ToArray(),
                 MaxFileRows);
         }
@@ -280,7 +280,7 @@ internal sealed class GuardianWorkboardService(GitService git)
                 new GuardianWorkboardRow(
                     "PROJECT",
                     $"{project?.DisplayName ?? "Logical project"} standalone snapshot",
-                    "GitPet will create/update an isolated project-only commit. The parent repository history is not sent.",
+                    $"GitPet will create/update an isolated project-only commit for {link!.Branch}. The parent repository history is not sent.",
                     IsCommit: true)
             }.Concat(LimitRows(fileRows, MaxFileRows)).ToArray();
         }
@@ -290,10 +290,10 @@ internal sealed class GuardianWorkboardService(GitService git)
             ? "No project-only online home is connected yet."
             : pending
                 ? "Send the saved local project snapshot first.\nGet stays blocked until local and standalone histories have one clear baseline."
-                : "Use Get ↓ to check the project-only online home.\nIncoming files are scope-checked and arrive as unsaved local changes for review.";
+                : $"Use Get ↓ to check standalone branch {link!.Branch}.\nIncoming files are scope-checked and arrive as unsaved local changes for review.";
         var sendEmpty = !hasRemote
             ? "Connect a project-only online home before sending.\nThe parent repository will not be used."
-            : "Everything in this selected project scope has already been sent.";
+            : $"Everything in this selected project scope has already been sent to {link!.Branch}.";
         var reconcileEmpty = !hasRemote
             ? "No standalone publishing history is connected yet."
             : pending && incoming
@@ -307,7 +307,7 @@ internal sealed class GuardianWorkboardService(GitService git)
                 new GuardianWorkboardRow(
                     "BOTH SIDES",
                     $"{project?.DisplayName ?? "Logical project"} standalone history",
-                    "Saved local project updates and project-only online updates both exist. Review the two sides before choosing how to proceed.")
+                    $"Saved local project updates and project-only online updates both exist on {link!.Branch}. Review the two sides before choosing how to proceed.")
             ];
         }
 
