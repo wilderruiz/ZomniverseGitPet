@@ -6,7 +6,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
 {
     private const float DesignSize = 160f;
 
-    public string Name => "Guardian V3 layered · armor pass";
+    public string Name => "Guardian V3 layered · fur polish";
 
     public void Draw(
         Graphics graphics,
@@ -26,6 +26,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             graphics.ScaleTransform(bounds.Width / DesignSize, bounds.Height / DesignSize);
 
             var colors = SilhouetteColors.FromPalette(palette);
+            var miniature = Math.Min(bounds.Width, bounds.Height) <= 180;
 
             DrawGroundReference(graphics, colors);
             DrawTail(graphics, colors);
@@ -33,11 +34,12 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             DrawHaunches(graphics, colors);
             DrawForelegs(graphics, colors);
             DrawChestFur(graphics);
+            DrawCollarArmor(graphics, palette, miniature);
             DrawEars(graphics, colors);
             DrawHead(graphics, colors);
             DrawFace(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
-            DrawCollarArmor(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
             DrawShield(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
+            DrawRimLighting(graphics, colors, miniature);
 
             if (debugOverlay)
                 DrawDebugGeometry(graphics);
@@ -69,7 +71,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             C(51, 132, 48, 139, 49, 143),
             Z());
 
-        using var fill = new SolidBrush(c.Tail);
+        using var fill = new LinearGradientBrush(new RectangleF(6, 53, 64, 94),
+            Mix(c.Tail, c.TailAccent, 0.42f), c.Tail, 35f);
         using var edge = Outline(c);
 
         g.FillPath(fill, tail);
@@ -98,10 +101,15 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             C(31, 143, 21, 136, 15, 121),
             Z());
 
-        using var accent = new SolidBrush(c.TailAccent);
+        using var accent = new LinearGradientBrush(new RectangleF(10, 55, 44, 89),
+            Mix(c.TailAccent, c.EarInner, 0.25f), Mix(c.TailAccent, c.Tail, 0.6f), 80f);
         g.FillPath(accent, upperTuft);
         g.FillPath(accent, middleSweep);
         g.FillPath(accent, lowerSweep);
+        using var fold = Path(M(49, 70), C(36, 86, 19, 106, 24, 123),
+            C(17, 112, 22, 91, 36, 79), C(41, 75, 45, 72, 49, 70), Z());
+        using var shade = new SolidBrush(Color.FromArgb(65, 12, 7, 25));
+        g.FillPath(shade, fold);
     }
 
     private static void DrawTorso(Graphics g, SilhouetteColors c)
@@ -119,7 +127,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             C(69, 76, 60, 79, 53, 84),
             Z());
 
-        using var fill = new SolidBrush(c.Body);
+        using var fill = new LinearGradientBrush(new RectangleF(42, 76, 76, 82),
+            Mix(c.Body, c.BodyAccent, 0.45f), c.Body, 65f);
         using var edge = Outline(c);
 
         g.FillPath(fill, torso);
@@ -179,7 +188,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             Z());
 
         using var actual = left ? leg : Mirror(leg);
-        using var fill = new SolidBrush(c.Limb);
+        using var fill = new LinearGradientBrush(new RectangleF(56, 99, 48, 55),
+            Mix(c.Limb, c.BodyAccent, 0.25f), c.Limb, 90f);
         using var edge = Outline(c);
 
         g.FillPath(fill, actual);
@@ -231,7 +241,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             C(39, 58, 40, 48, 46, 39),
             Z());
 
-        using var fill = new SolidBrush(c.Head);
+        using var fill = new LinearGradientBrush(new RectangleF(39, 20, 82, 78),
+            Mix(c.Head, c.EarInner, 0.22f), Mix(c.Head, c.Body, 0.25f), 55f);
         using var edge = Outline(c);
 
         g.FillPath(fill, head);
@@ -248,7 +259,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             Z());
 
         using var rightEar = Mirror(leftEar);
-        using var fill = new SolidBrush(c.Ear);
+        using var fill = new LinearGradientBrush(new RectangleF(40, 6, 80, 40),
+            Mix(c.Ear, c.Head, 0.3f), c.Ear, 90f);
         using var edge = Outline(c);
 
         g.FillPath(fill, leftEar);
@@ -285,8 +297,24 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             C(76, 133, 77, 122, 72, 114), L(73, 119),
             C(70, 115, 67, 110, 66, 102), L(64, 107),
             C(62, 103, 60, 97, 60, 89), Z());
-        using var white = new SolidBrush(Color.FromArgb(243, 239, 251));
+        using var white = new LinearGradientBrush(new RectangleF(60, 89, 40, 51),
+            Color.FromArgb(249, 245, 255), Color.FromArgb(184, 169, 209), 90f);
         g.FillPath(white, chest);
+        using var leftLock = Path(M(65, 103), C(68, 108, 74, 110, 78, 115),
+            L(75, 113), C(78, 119, 78, 124, 78, 129),
+            C(74, 123, 70, 118, 69, 111), L(68, 115),
+            C(66, 111, 65, 107, 65, 103), Z());
+        using var rightLock = Mirror(leftLock);
+        using var lockFill = new SolidBrush(Color.FromArgb(234, 226, 245));
+        g.FillPath(lockFill, leftLock);
+        g.FillPath(lockFill, rightLock);
+        using var centerLock = Path(M(72, 107), C(77, 110, 83, 110, 88, 107),
+            C(85, 113, 83, 119, 84, 123), L(81, 120),
+            C(82, 126, 81, 131, 80, 135),
+            C(78, 129, 77, 123, 76, 120), L(75, 123),
+            C(75, 116, 74, 111, 72, 107), Z());
+        using var centerFill = new SolidBrush(Color.FromArgb(251, 248, 255));
+        g.FillPath(centerFill, centerLock);
     }
 
     private static void DrawFace(Graphics g, LynxPalette palette, bool miniature)
@@ -300,7 +328,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             C(96, 91, 88, 94, 80, 95),
             C(72, 94, 64, 91, 56, 85),
             C(49, 81, 43, 74, 47, 66), Z());
-        using var white = new SolidBrush(Color.FromArgb(249, 246, 255));
+        using var white = new LinearGradientBrush(new RectangleF(45, 57, 70, 39),
+            Color.FromArgb(255, 253, 255), Color.FromArgb(222, 211, 237), 90f);
         g.FillPath(white, mask);
 
         DrawFaceEye(g, palette, miniature, false);
@@ -370,7 +399,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             M(57, 90), L(66, 95), L(80, 99), L(80, 108),
             L(65, 106), L(53, 100), L(55, 94), Z());
         using var rightPanel = Mirror(leftPanel);
-        using var armor = new SolidBrush(Mix(Color.FromArgb(30, 24, 42), palette.Fur, 0.08f));
+        using var armor = new LinearGradientBrush(new RectangleF(53, 90, 54, 18),
+            Mix(Color.FromArgb(62, 51, 79), palette.Fur, 0.08f), Color.FromArgb(20, 15, 30), 90f);
         using var edge = new Pen(Color.FromArgb(108, 87, 140), miniature ? 1.4f : 0.85f)
         {
             LineJoin = LineJoin.Bevel
@@ -399,6 +429,11 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
 
     private static void DrawShield(Graphics g, LynxPalette palette, bool miniature)
     {
+        var saved = g.Save();
+        try
+        {
+        // Seat the badge against the collar while retaining the exposed chest ruff.
+        g.TranslateTransform(0, -1.5f);
         using var shield = Path(
             M(80, 96), L(91, 101), L(89, 113),
             L(80, 121), L(71, 113), L(69, 101), Z());
@@ -409,7 +444,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         };
         // A single low-opacity edge accent keeps the emblem legible on white fur.
         g.DrawPath(halo, shield);
-        using var fill = new SolidBrush(Color.FromArgb(76, 37, 127));
+        using var fill = new LinearGradientBrush(new RectangleF(69, 96, 22, 25),
+            Color.FromArgb(112, 66, 167), Color.FromArgb(48, 23, 83), 65f);
         using var border = new Pen(Mix(Color.FromArgb(201, 166, 249), palette.Eye, 0.08f),
             miniature ? 1.8f : 1.25f)
         {
@@ -421,7 +457,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         using var inset = Path(
             M(80, 99), L(88, 103), L(86.5f, 111.5f),
             L(80, 117.5f), L(73.5f, 111.5f), L(72, 103), Z());
-        using var innerFill = new SolidBrush(Mix(Color.FromArgb(112, 53, 181), palette.Accent, 0.08f));
+        using var innerFill = new LinearGradientBrush(new RectangleF(72, 99, 16, 19),
+            Mix(Color.FromArgb(140, 76, 212), palette.Accent, 0.08f), Color.FromArgb(77, 33, 138), 90f);
         g.FillPath(innerFill, inset);
         if (!miniature)
         {
@@ -441,6 +478,35 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             new PointF(79, 111),
             new PointF(85, 104.5f)
         ]);
+        }
+        finally
+        {
+            g.Restore(saved);
+        }
+    }
+
+    private static void DrawRimLighting(Graphics g, SilhouetteColors c, bool miniature)
+    {
+        using var rim = new Pen(Color.FromArgb(miniature ? 115 : 145, c.EarInner),
+            miniature ? 1.15f : 0.8f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+        using var ear = Path(M(42, 29), C(42, 21, 44, 13, 48, 6),
+            C(52, 9, 56, 13, 59, 17));
+        using var temple = Path(M(47, 38), C(53, 30, 63, 25, 71, 22));
+        using var tail = Path(M(8, 108), C(8, 119, 12, 130, 22, 136));
+        g.DrawPath(rim, ear);
+        g.DrawPath(rim, temple);
+        g.DrawPath(rim, tail);
+        if (!miniature)
+        {
+            using var cheek = Path(M(42, 57), C(41, 61, 42, 64, 43, 67));
+            using var leg = Path(M(59, 117), C(59, 123, 59, 131, 60, 137));
+            g.DrawPath(rim, cheek);
+            g.DrawPath(rim, leg);
+        }
     }
 
     private static Pen Outline(SilhouetteColors c) =>
