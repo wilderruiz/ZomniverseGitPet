@@ -432,8 +432,18 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         var saved = g.Save();
         try
         {
-        // Seat the badge against the collar while retaining the exposed chest ruff.
-        g.TranslateTransform(0, -1.5f);
+            // Seat the badge against the collar while retaining the exposed chest ruff.
+            g.TranslateTransform(0, -1.5f);
+            DrawShieldBadge(g, palette, miniature);
+        }
+        finally
+        {
+            g.Restore(saved);
+        }
+    }
+
+    private static void DrawShieldBadge(Graphics g, LynxPalette palette, bool miniature)
+    {
         using var shield = Path(
             M(80, 96), L(91, 101), L(89, 113),
             L(80, 121), L(71, 113), L(69, 101), Z());
@@ -478,11 +488,6 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             new PointF(79, 111),
             new PointF(85, 104.5f)
         ]);
-        }
-        finally
-        {
-            g.Restore(saved);
-        }
     }
 
     private static void DrawRimLighting(Graphics g, SilhouetteColors c, bool miniature)
