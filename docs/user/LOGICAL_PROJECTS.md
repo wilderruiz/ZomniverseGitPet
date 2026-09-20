@@ -33,6 +33,7 @@ A project's scope does not have to be a single subfolder — it can be an arbitr
 - Its own saved test commands
 - Its own [Advanced Project Allow List](ALLOW_LISTS.md), if you save one
 - Its own standalone-publishing link, if you set one up (see [Publishing Architecture](../developer/PUBLISHING_ARCHITECTURE.md))
+- Its own selected standalone remote branch and branch-specific publish baselines
 
 What's shared: the underlying Git commit history, working tree, and `origin` remote (unless a project publishes standalone — below).
 
@@ -42,8 +43,9 @@ A whole-repository project uses the ordinary Git history for Get and Send.
 
 A scoped logical project uses its **standalone project remote** in both directions:
 
-- **Send** builds an isolated copy containing only that project's files and pushes the isolated project history to its linked remote.
-- **Get** fetches that same standalone remote into GitPet's isolated workspace, verifies every incoming changed path is inside the configured project scope, and then copies only those changed project files into the parent working tree.
+- **Branch ▾** chooses which existing branch of the standalone project remote this logical project follows. Changing it does **not** switch the parent repository branch.
+- **Send** builds an isolated copy containing only that project's files and pushes the isolated project history to the selected standalone branch.
+- **Get** fetches that same selected standalone branch into GitPet's isolated workspace, verifies every incoming changed path is inside the configured project scope, and then copies only those changed project files into the parent working tree.
 - Incoming Get files remain **unsaved local changes** so they can be reviewed before Save.
 - GitPet never pulls the standalone project's Git history into the parent repository.
 - If saved local project updates and incoming standalone updates both exist, Get and Send pause instead of guessing which side should win.
