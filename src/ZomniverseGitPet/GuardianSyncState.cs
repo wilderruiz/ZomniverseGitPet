@@ -122,17 +122,20 @@ internal static class GuardianSyncState
                     return;
                 }
 
-                var pending = await StandaloneProjectPublishing.HasPendingPublishAsync(
-                    config,
-                    git,
-                    repositoryPath,
-                    token);
                 var remoteInspection = await StandaloneProjectPublishing.InspectRemoteAsync(
                     config,
                     git,
                     repositoryPath,
                     fetchRemote,
                     token);
+                var snapshotDiffers = await StandaloneProjectPublishing.HasPendingPublishAsync(
+                    config,
+                    git,
+                    repositoryPath,
+                    token);
+                var pending = string.IsNullOrWhiteSpace(link.LastPublishedFingerprint)
+                    ? !remoteInspection.RemoteBranchExists && snapshotDiffers
+                    : snapshotDiffers;
 
                 Publish(new GuardianSyncSnapshot(
                     true,
