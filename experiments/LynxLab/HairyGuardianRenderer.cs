@@ -4,18 +4,17 @@ using System.Drawing.Imaging;
 namespace LynxLab;
 
 /*
- * Live vector interpretation of the approved "hairy guardian" direction.
- * No source bitmap is used at runtime. Every visible part is drawn as vector
- * geometry so later animation can move eyes, ears, tail, collar and body
- * independently.
+ * Live vector interpretation of the approved furry purple guardian.
+ * The mascot remains fully drawable geometry: head, ears, eyes, cheek fur,
+ * tail, body, collar and badge can all be animated independently later.
  */
 internal sealed class HairyGuardianRenderer : ILynxRenderer
 {
     private const float DesignSize = 160f;
     private const int MiniatureThreshold = 180;
-    private const int MiniatureOversample = 3;
+    private const int MiniatureOversample = 4;
 
-    public string Name => "Hairy Guardian · live GDI+ vector";
+    public string Name => "Hairy Guardian v2 · live GDI+ vector";
 
     public void Draw(
         Graphics graphics,
@@ -52,11 +51,11 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         try
         {
             DrawGroundGlow(graphics, colors);
-            DrawTail(graphics, colors);
-            DrawBody(graphics, colors);
-            DrawHead(graphics, colors);
-            DrawFace(graphics, colors, state);
-            DrawCollar(graphics, colors);
+            DrawTail(graphics, colors, miniature: false);
+            DrawBody(graphics, colors, miniature: false);
+            DrawHead(graphics, colors, miniature: false);
+            DrawFace(graphics, colors, state, miniature: false);
+            DrawCollar(graphics, colors, miniature: false);
             DrawStateSignal(graphics, colors, state);
 
             if (debugOverlay)
@@ -79,21 +78,25 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         var height = Math.Max(1, bounds.Height * MiniatureOversample);
 
         using var surface = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
-        using (var miniatureGraphics = Graphics.FromImage(surface))
+        using (var mini = Graphics.FromImage(surface))
         {
-            miniatureGraphics.Clear(Color.Transparent);
-            ConfigureQuality(miniatureGraphics);
-            miniatureGraphics.ScaleTransform(width / DesignSize, height / DesignSize);
+            mini.Clear(Color.Transparent);
+            ConfigureQuality(mini);
+            mini.ScaleTransform(width / DesignSize, height / DesignSize);
 
             var accent = ResolveStateColor(palette, state);
             var colors = GuardianColors.FromPalette(palette, accent);
 
-            DrawGroundGlow(miniatureGraphics, colors);
-            DrawMiniatureGuardian(miniatureGraphics, colors, state);
-            DrawStateSignal(miniatureGraphics, colors, state);
+            DrawGroundGlow(mini, colors);
+            DrawTail(mini, colors, miniature: true);
+            DrawBody(mini, colors, miniature: true);
+            DrawHead(mini, colors, miniature: true);
+            DrawFace(mini, colors, state, miniature: true);
+            DrawCollar(mini, colors, miniature: true);
+            DrawStateSignal(mini, colors, state);
 
             if (debugOverlay)
-                DrawDebug(miniatureGraphics);
+                DrawDebug(mini);
         }
 
         var saved = graphics.Save();
@@ -119,37 +122,34 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
 
     private static void DrawGroundGlow(Graphics g, GuardianColors c)
     {
-        // Keep this deliberately simple. PathGradientBrush is surprisingly fragile
-        // across GDI+ configurations and previously caused the lab to terminate
-        // during the first paint on some Windows machines.
         using var outer = new SolidBrush(Color.FromArgb(18, c.Accent));
         using var middle = new SolidBrush(Color.FromArgb(28, c.Accent));
-        using var inner = new SolidBrush(Color.FromArgb(40, c.Accent));
+        using var inner = new SolidBrush(Color.FromArgb(42, c.Accent));
 
-        g.FillEllipse(outer, 23, 143, 114, 10);
-        g.FillEllipse(middle, 35, 145, 90, 6);
-        g.FillEllipse(inner, 52, 146, 56, 4);
+        g.FillEllipse(outer, 21, 145, 118, 9);
+        g.FillEllipse(middle, 35, 147, 90, 5);
+        g.FillEllipse(inner, 54, 148, 52, 3);
     }
 
-    private static void DrawTail(Graphics g, GuardianColors c)
+    private static void DrawTail(Graphics g, GuardianColors c, bool miniature)
     {
+        // Large, layered, dark tail is a key part of the approved silhouette.
         using var tail = Path(
-            P(48, 144),
-            C(27, 146, 8, 132, 7, 108),
-            C(5, 89, 13, 73, 25, 66),
-            L(16, 64),
-            C(25, 55, 39, 53, 50, 61),
-            C(64, 72, 66, 92, 58, 107),
-            L(61, 116),
-            C(56, 130, 53, 139, 48, 144),
+            P(52, 145),
+            C(35, 148, 16, 139, 10, 122),
+            C(4, 105, 8, 86, 20, 72),
+            L(13, 70),
+            C(22, 60, 34, 55, 45, 59),
+            L(40, 52),
+            C(55, 55, 64, 69, 64, 84),
+            C(64, 101, 58, 118, 52, 145),
             Z());
 
         using var tailBrush = VerticalGradient(
-            new RectangleF(6, 53, 60, 94),
-            c.Darkest,
-            c.BodyDark);
-
-        using var edge = new Pen(c.Edge, 1.8f)
+            new RectangleF(6, 51, 61, 98),
+            c.BodyDark,
+            c.Darkest);
+        using var edge = new Pen(c.Edge, miniature ? 2.5f : 1.8f)
         {
             LineJoin = LineJoin.Round
         };
@@ -157,55 +157,71 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         g.FillPath(tailBrush, tail);
         g.DrawPath(edge, tail);
 
-        using var tailSweep = Path(
-            P(12, 109),
-            C(18, 89, 31, 74, 50, 70),
-            C(39, 70, 29, 78, 23, 91),
-            C(18, 100, 15, 106, 12, 109),
+        using var upperFlash = Path(
+            P(12, 107),
+            C(18, 84, 31, 67, 50, 63),
+            C(41, 61, 32, 66, 26, 75),
+            L(18, 88),
+            L(23, 83),
+            C(18, 94, 14, 102, 12, 107),
             Z());
 
-        using var sweepBrush = new SolidBrush(Color.FromArgb(175, c.PurpleMid));
-        g.FillPath(sweepBrush, tailSweep);
+        using var flashBrush = new SolidBrush(Color.FromArgb(miniature ? 205 : 175, c.PurpleBright));
+        g.FillPath(flashBrush, upperFlash);
 
         using var tailTip = Path(
-            P(18, 77),
-            C(28, 60, 42, 57, 52, 66),
-            C(41, 61, 31, 65, 24, 74),
-            L(16, 88),
-            L(20, 76),
+            P(18, 78),
+            C(25, 63, 37, 57, 48, 62),
+            C(39, 57, 30, 59, 23, 67),
+            L(15, 78),
+            L(20, 75),
             Z());
 
-        using var tipBrush = new SolidBrush(Color.FromArgb(220, c.PurpleLight));
+        using var tipBrush = new SolidBrush(Color.FromArgb(225, c.PurpleLight));
         g.FillPath(tipBrush, tailTip);
 
-        using var lowerSweep = Path(
-            P(16, 120),
-            C(24, 129, 36, 136, 49, 134),
-            L(42, 140),
-            C(29, 139, 20, 132, 16, 120),
-            Z());
-        using var lowerBrush = new SolidBrush(Color.FromArgb(115, c.PurpleMid));
-        g.FillPath(lowerBrush, lowerSweep);
+        if (!miniature)
+        {
+            using var lowerFlash = Path(
+                P(15, 122),
+                C(24, 133, 35, 138, 49, 136),
+                L(44, 142),
+                C(31, 143, 20, 136, 15, 122),
+                Z());
+            using var lowerBrush = new SolidBrush(Color.FromArgb(120, c.PurpleMid));
+            g.FillPath(lowerBrush, lowerFlash);
+
+            using var furCut = Path(
+                P(22, 96),
+                L(29, 88),
+                L(27, 99),
+                L(36, 91),
+                L(31, 105),
+                Z());
+            using var furCutBrush = new SolidBrush(Color.FromArgb(135, c.PurpleLight));
+            g.FillPath(furCutBrush, furCut);
+        }
     }
 
-    private static void DrawBody(Graphics g, GuardianColors c)
+    private static void DrawBody(Graphics g, GuardianColors c, bool miniature)
     {
+        // Less spherical than v1: narrower shoulders, heavier dark lower body.
         using var body = Path(
-            P(49, 87),
-            C(39, 101, 35, 123, 42, 141),
-            C(49, 154, 63, 157, 80, 157),
-            C(97, 157, 111, 154, 118, 141),
-            C(125, 123, 121, 101, 111, 87),
-            C(101, 79, 93, 77, 80, 77),
-            C(67, 77, 59, 79, 49, 87),
+            P(49, 88),
+            C(42, 99, 39, 113, 40, 129),
+            C(41, 143, 49, 152, 62, 156),
+            C(70, 159, 90, 159, 98, 156),
+            C(111, 152, 119, 143, 120, 129),
+            C(121, 113, 118, 99, 111, 88),
+            C(102, 80, 92, 78, 80, 78),
+            C(68, 78, 58, 80, 49, 88),
             Z());
 
         using var bodyBrush = VerticalGradient(
-            new RectangleF(38, 77, 84, 78),
+            new RectangleF(39, 77, 82, 82),
             c.Body,
             c.Darkest);
-
-        using var bodyEdge = new Pen(c.Edge, 1.8f)
+        using var bodyEdge = new Pen(c.Edge, miniature ? 2.3f : 1.7f)
         {
             LineJoin = LineJoin.Round
         };
@@ -213,37 +229,62 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         g.FillPath(bodyBrush, body);
         g.DrawPath(bodyEdge, body);
 
-        using var leftShoulder = Path(
-            P(47, 94),
-            C(55, 89, 65, 89, 71, 95),
-            C(63, 104, 58, 119, 59, 136),
-            L(51, 126),
-            L(54, 114),
-            L(47, 119),
-            C(44, 110, 44, 101, 47, 94),
+        DrawLeg(g, left: true, c, miniature);
+        DrawLeg(g, left: false, c, miniature);
+        DrawChest(g, c, miniature);
+        DrawPaw(g, new RectangleF(45, 135, 31, 20), c, miniature);
+        DrawPaw(g, new RectangleF(84, 135, 31, 20), c, miniature);
+    }
+
+    private static void DrawLeg(Graphics g, bool left, GuardianColors c, bool miniature)
+    {
+        using var leg = Path(
+            P(48, 101),
+            C(54, 94, 63, 91, 70, 96),
+            C(63, 107, 60, 121, 61, 137),
+            L(53, 128),
+            L(55, 117),
+            L(49, 121),
+            C(46, 114, 45, 107, 48, 101),
             Z());
 
-        using var rightShoulder = Mirror(leftShoulder, 80);
-        using var shoulderBrush = new SolidBrush(Color.FromArgb(150, c.PurpleMid));
+        using var path = left ? leg : Mirror(leg, 80);
+        using var brush = new SolidBrush(Color.FromArgb(miniature ? 190 : 150, c.PurpleMid));
+        g.FillPath(brush, path);
 
-        g.FillPath(shoulderBrush, leftShoulder);
-        g.FillPath(shoulderBrush, rightShoulder);
+        if (!miniature)
+        {
+            using var slash = Path(
+                P(50, 112),
+                L(57, 106),
+                L(55, 116),
+                L(64, 111),
+                L(58, 124),
+                Z());
+            using var slashPath = left ? slash : Mirror(slash, 80);
+            using var slashBrush = new SolidBrush(Color.FromArgb(170, c.PurpleLight));
+            g.FillPath(slashBrush, slashPath);
+        }
+    }
 
-        DrawPaw(g, new RectangleF(43, 132, 35, 23), c);
-        DrawPaw(g, new RectangleF(82, 132, 35, 23), c);
-
+    private static void DrawChest(Graphics g, GuardianColors c, bool miniature)
+    {
         using var chest = Path(
             P(59, 91),
             L(67, 99),
-            L(64, 105),
+            L(64, 104),
             L(72, 108),
-            L(68, 116),
-            L(76, 118),
-            L(80, 142),
-            L(84, 118),
-            L(92, 116),
+            L(68, 114),
+            L(75, 118),
+            L(72, 124),
+            L(79, 128),
+            L(80, 143),
+            L(81, 128),
+            L(88, 124),
+            L(85, 118),
+            L(92, 114),
             L(88, 108),
-            L(96, 105),
+            L(96, 104),
             L(93, 99),
             L(101, 91),
             C(93, 87, 87, 85, 80, 85),
@@ -251,111 +292,83 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
             Z());
 
         using var chestBrush = VerticalGradient(
-            new RectangleF(58, 85, 44, 58),
-            Color.FromArgb(252, 252, 255),
-            Color.FromArgb(210, 213, 230));
+            new RectangleF(58, 85, 44, 59),
+            Color.FromArgb(255, 255, 255),
+            Color.FromArgb(205, 208, 226));
 
         g.FillPath(chestBrush, chest);
+
+        if (!miniature)
+        {
+            using var shadow = new SolidBrush(Color.FromArgb(35, c.PurpleLight));
+            g.FillPolygon(shadow,
+            [
+                Pt(72, 108), Pt(80, 112), Pt(88, 108),
+                Pt(85, 118), Pt(80, 122), Pt(75, 118)
+            ]);
+        }
     }
 
-    private static void DrawPaw(Graphics g, RectangleF rect, GuardianColors c)
+    private static void DrawPaw(Graphics g, RectangleF rect, GuardianColors c, bool miniature)
     {
         using var paw = new GraphicsPath();
         paw.AddEllipse(rect);
 
         using var pawBrush = VerticalGradient(rect, c.BodyDark, c.Darkest);
-        using var edge = new Pen(Color.FromArgb(170, c.Edge), 1.2f);
+        using var edge = new Pen(Color.FromArgb(175, c.Edge), miniature ? 1.8f : 1.15f);
 
         g.FillPath(pawBrush, paw);
         g.DrawPath(edge, paw);
 
-        using var toePen = new Pen(Color.FromArgb(100, c.PurpleLight), 1.1f);
+        using var toePen = new Pen(Color.FromArgb(120, c.PurpleLight), miniature ? 1.5f : 1.05f);
         for (var i = 1; i <= 3; i++)
         {
             var x = rect.Left + rect.Width * (i / 4f);
             g.DrawArc(
                 toePen,
-                x - 3,
-                rect.Top + rect.Height * 0.47f,
-                6,
-                rect.Height * 0.36f,
+                x - 2.5f,
+                rect.Top + rect.Height * 0.48f,
+                5f,
+                rect.Height * 0.34f,
                 200,
                 140);
         }
     }
 
-    private static void DrawHead(Graphics g, GuardianColors c)
+    private static void DrawHead(Graphics g, GuardianColors c, bool miniature)
     {
-        using var leftEar = Path(
-            P(43, 49),
-            C(36, 38, 36, 20, 45, 4),
-            C(57, 13, 64, 24, 67, 38),
-            C(58, 41, 50, 45, 43, 49),
-            Z());
+        DrawEars(g, c, miniature);
 
-        using var rightEar = Mirror(leftEar, 80);
-
-        using var earBrush = VerticalGradient(
-            new RectangleF(35, 3, 52, 47),
-            c.PurpleMid,
-            c.BodyDark);
-
-        using var earEdge = new Pen(c.Edge, 1.8f)
-        {
-            LineJoin = LineJoin.Round
-        };
-
-        g.FillPath(earBrush, leftEar);
-        g.FillPath(earBrush, rightEar);
-        g.DrawPath(earEdge, leftEar);
-        g.DrawPath(earEdge, rightEar);
-
-        using var leftInner = Path(
-            P(44, 39),
-            C(42, 28, 45, 17, 48, 11),
-            C(55, 18, 59, 27, 61, 36),
-            L(55, 31),
-            L(57, 39),
-            L(50, 34),
-            L(48, 41),
-            Z());
-
-        using var rightInner = Mirror(leftInner, 80);
-        using var innerBrush = new SolidBrush(Color.FromArgb(225, c.PurpleLight));
-
-        g.FillPath(innerBrush, leftInner);
-        g.FillPath(innerBrush, rightInner);
-
+        // Wider across the temples, but noticeably narrower through the jaw.
         using var head = Path(
-            P(42, 39),
-            C(49, 27, 59, 22, 70, 19),
-            L(68, 15),
-            L(79, 18),
-            L(88, 14),
-            L(86, 19),
-            C(102, 21, 112, 27, 118, 39),
-            C(124, 48, 126, 59, 123, 70),
-            L(128, 76),
-            L(119, 77),
-            L(123, 84),
-            L(113, 83),
-            L(114, 91),
-            C(104, 100, 92, 104, 80, 104),
-            C(68, 104, 56, 100, 46, 91),
-            L(47, 83),
-            L(37, 84),
-            L(41, 77),
-            L(32, 76),
-            L(37, 70),
-            C(34, 59, 36, 48, 42, 39),
+            P(43, 39),
+            C(50, 28, 61, 22, 71, 19),
+            L(69, 15),
+            L(78, 18),
+            L(87, 14),
+            L(85, 19),
+            C(101, 21, 112, 28, 118, 39),
+            C(124, 48, 125, 58, 122, 68),
+            L(127, 74),
+            L(118, 75),
+            L(122, 81),
+            L(113, 80),
+            L(115, 87),
+            C(108, 96, 96, 102, 80, 104),
+            C(64, 102, 52, 96, 45, 87),
+            L(47, 80),
+            L(38, 81),
+            L(42, 75),
+            L(33, 74),
+            L(38, 68),
+            C(35, 58, 36, 48, 43, 39),
             Z());
 
         using var headBrush = VerticalGradient(
-            new RectangleF(34, 18, 92, 88),
+            new RectangleF(33, 18, 94, 87),
             c.PurpleBright,
             c.Body);
-
-        using var headEdge = new Pen(c.Edge, 2f)
+        using var headEdge = new Pen(c.Edge, miniature ? 2.4f : 1.85f)
         {
             LineJoin = LineJoin.Round
         };
@@ -363,23 +376,89 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         g.FillPath(headBrush, head);
         g.DrawPath(headEdge, head);
 
-        DrawCheekTufts(g, c);
+        DrawCheekFur(g, c, miniature);
+
+        if (!miniature)
+        {
+            using var templeShade = new SolidBrush(Color.FromArgb(42, c.Darkest));
+            using var leftShade = Path(
+                P(38, 54),
+                C(39, 45, 45, 36, 52, 31),
+                C(45, 43, 43, 55, 45, 67),
+                L(38, 68),
+                C(36, 63, 36, 58, 38, 54),
+                Z());
+            using var rightShade = Mirror(leftShade, 80);
+            g.FillPath(templeShade, leftShade);
+            g.FillPath(templeShade, rightShade);
+        }
     }
 
-    private static void DrawCheekTufts(Graphics g, GuardianColors c)
+    private static void DrawEars(Graphics g, GuardianColors c, bool miniature)
+    {
+        using var leftEar = Path(
+            P(44, 48),
+            C(37, 38, 37, 20, 46, 4),
+            C(57, 13, 64, 24, 67, 38),
+            C(59, 42, 51, 45, 44, 48),
+            Z());
+        using var rightEar = Mirror(leftEar, 80);
+
+        using var earBrush = VerticalGradient(
+            new RectangleF(36, 3, 52, 47),
+            c.PurpleMid,
+            c.BodyDark);
+        using var edge = new Pen(c.Edge, miniature ? 2.4f : 1.8f)
+        {
+            LineJoin = LineJoin.Round
+        };
+
+        g.FillPath(earBrush, leftEar);
+        g.FillPath(earBrush, rightEar);
+        g.DrawPath(edge, leftEar);
+        g.DrawPath(edge, rightEar);
+
+        using var leftInner = Path(
+            P(45, 39),
+            C(43, 29, 45, 18, 49, 11),
+            C(55, 18, 59, 28, 61, 36),
+            L(56, 32),
+            L(57, 39),
+            L(51, 34),
+            L(48, 41),
+            Z());
+        using var rightInner = Mirror(leftInner, 80);
+        using var innerBrush = new SolidBrush(Color.FromArgb(230, c.PurpleLight));
+
+        g.FillPath(innerBrush, leftInner);
+        g.FillPath(innerBrush, rightInner);
+
+        if (!miniature)
+        {
+            using var darkTuft = new SolidBrush(Color.FromArgb(130, c.Darkest));
+            g.FillPolygon(darkTuft, [Pt(49, 24), Pt(53, 29), Pt(51, 18), Pt(57, 28), Pt(55, 35)]);
+            g.FillPolygon(darkTuft, [Pt(111, 24), Pt(107, 29), Pt(109, 18), Pt(103, 28), Pt(105, 35)]);
+        }
+    }
+
+    private static void DrawCheekFur(Graphics g, GuardianColors c, bool miniature)
     {
         using var left = Path(
-            P(37, 63),
-            C(35, 71, 37, 82, 47, 91),
-            L(43, 82),
-            L(53, 85),
-            L(48, 76),
-            L(57, 78),
-            C(53, 68, 47, 64, 37, 63),
+            P(37, 62),
+            C(35, 70, 37, 77, 42, 84),
+            L(36, 83),
+            L(43, 90),
+            L(40, 92),
+            L(50, 96),
+            L(47, 87),
+            L(55, 89),
+            L(50, 79),
+            L(58, 81),
+            C(54, 70, 47, 64, 37, 62),
             Z());
 
         using var right = Mirror(left, 80);
-        using var brush = new SolidBrush(Color.FromArgb(155, c.PurpleLight));
+        using var brush = new SolidBrush(Color.FromArgb(miniature ? 165 : 145, c.PurpleLight));
 
         g.FillPath(brush, left);
         g.FillPath(brush, right);
@@ -388,34 +467,35 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
     private static void DrawFace(
         Graphics g,
         GuardianColors c,
-        LynxVisualState state)
+        LynxVisualState state,
+        bool miniature)
     {
-        using var muzzle = Path(
-            P(43, 63),
-            C(49, 54, 61, 51, 70, 56),
-            C(75, 59, 78, 63, 80, 68),
-            C(82, 63, 85, 59, 90, 56),
-            C(99, 51, 111, 54, 117, 63),
-            C(121, 72, 116, 83, 106, 89),
-            C(98, 94, 89, 96, 80, 96),
-            C(71, 96, 62, 94, 54, 89),
-            C(44, 83, 39, 72, 43, 63),
+        using var mask = Path(
+            P(43, 62),
+            C(49, 54, 60, 51, 69, 55),
+            C(74, 57, 78, 62, 80, 67),
+            C(82, 62, 86, 57, 91, 55),
+            C(100, 51, 111, 54, 117, 62),
+            C(121, 70, 117, 80, 109, 86),
+            C(101, 92, 91, 95, 80, 95),
+            C(69, 95, 59, 92, 51, 86),
+            C(43, 80, 39, 70, 43, 62),
             Z());
 
-        using var muzzleBrush = VerticalGradient(
+        using var maskBrush = VerticalGradient(
             new RectangleF(40, 50, 80, 46),
-            Color.FromArgb(255, 255, 255),
-            Color.FromArgb(222, 223, 238));
+            Color.White,
+            Color.FromArgb(220, 222, 239));
 
-        g.FillPath(muzzleBrush, muzzle);
+        g.FillPath(maskBrush, mask);
 
         var alert = state is LynxVisualState.Attention or LynxVisualState.Conflict;
-        DrawEye(g, 59, 57, c, alert, left: true);
-        DrawEye(g, 101, 57, c, alert, left: false);
+        DrawEye(g, 60, 58, c, alert, left: true, miniature);
+        DrawEye(g, 100, 58, c, alert, left: false, miniature);
 
         using var browPen = new Pen(
-            Color.FromArgb(alert ? 185 : 95, c.Darkest),
-            alert ? 2.2f : 1.5f)
+            Color.FromArgb(alert ? 210 : 145, c.Darkest),
+            miniature ? 2.0f : (alert ? 2.2f : 1.55f))
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round
@@ -423,32 +503,32 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
 
         if (alert)
         {
-            g.DrawLine(browPen, 48, 47, 67, 53);
-            g.DrawLine(browPen, 112, 47, 93, 53);
+            g.DrawLine(browPen, 49, 47, 66, 52);
+            g.DrawLine(browPen, 111, 47, 94, 52);
         }
         else
         {
-            g.DrawLine(browPen, 49, 48, 67, 53);
-            g.DrawLine(browPen, 111, 48, 93, 53);
+            g.DrawBezier(browPen, Pt(50, 48), Pt(54, 45), Pt(61, 45), Pt(66, 48));
+            g.DrawBezier(browPen, Pt(110, 48), Pt(106, 45), Pt(99, 45), Pt(94, 48));
         }
 
         using var nose = new GraphicsPath();
-        nose.AddBezier(Pt(73, 72), Pt(76, 69), Pt(84, 69), Pt(87, 72));
-        nose.AddBezier(Pt(87, 72), Pt(86, 77), Pt(82, 79), Pt(80, 79));
-        nose.AddBezier(Pt(80, 79), Pt(78, 79), Pt(74, 77), Pt(73, 72));
+        nose.AddBezier(Pt(74, 71), Pt(77, 69), Pt(83, 69), Pt(86, 71));
+        nose.AddBezier(Pt(86, 71), Pt(85, 75.5f), Pt(82, 78), Pt(80, 78));
+        nose.AddBezier(Pt(80, 78), Pt(78, 78), Pt(75, 75.5f), Pt(74, 71));
         nose.CloseFigure();
-        using var noseBrush = new SolidBrush(Color.FromArgb(26, 17, 43));
+        using var noseBrush = new SolidBrush(Color.FromArgb(25, 15, 40));
         g.FillPath(noseBrush, nose);
 
-        using var mouthPen = new Pen(Color.FromArgb(44, 27, 70), 2f)
+        using var mouthPen = new Pen(Color.FromArgb(45, 27, 72), miniature ? 2.0f : 1.8f)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round
         };
 
-        g.DrawLine(mouthPen, 80, 78, 80, 84);
-        g.DrawBezier(mouthPen, Pt(80, 84), Pt(76, 84), Pt(72, 87), Pt(69, 89));
-        g.DrawBezier(mouthPen, Pt(80, 84), Pt(84, 84), Pt(88, 87), Pt(91, 89));
+        g.DrawLine(mouthPen, 80, 78, 80, 83);
+        g.DrawBezier(mouthPen, Pt(80, 83), Pt(76, 83), Pt(72, 86), Pt(70, 88));
+        g.DrawBezier(mouthPen, Pt(80, 83), Pt(84, 83), Pt(88, 86), Pt(90, 88));
     }
 
     private static void DrawEye(
@@ -457,169 +537,171 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         float y,
         GuardianColors c,
         bool alert,
-        bool left)
+        bool left,
+        bool miniature)
     {
-        var width = alert ? 19f : 18f;
-        var height = alert ? 19f : 20f;
-        var rect = new RectangleF(x - width / 2f, y - height / 2f, width, height);
+        // Narrower almond eye replaces the round baby-eye look.
+        var halfWidth = miniature ? 8.0f : 7.4f;
+        var halfHeight = miniature ? 8.0f : 7.3f;
+        var topY = y - (alert ? 7.0f : 6.4f);
 
         using var eye = new GraphicsPath();
+
         if (left)
         {
-            eye.AddBezier(Pt(rect.Left, y - 5), Pt(x - 3, y - 12), Pt(x + 7, y - 9), Pt(rect.Right, y - 2));
-            eye.AddBezier(Pt(rect.Right, y - 2), Pt(x + 8, y + 8), Pt(x + 1, rect.Bottom), Pt(x - 3, rect.Bottom - 1));
-            eye.AddBezier(Pt(x - 3, rect.Bottom - 1), Pt(x - 9, y + 5), Pt(x - 10, y), Pt(rect.Left, y - 5));
+            eye.AddBezier(
+                Pt(x - halfWidth, y - 1),
+                Pt(x - 4.5f, topY - 2),
+                Pt(x + 4.8f, topY - 1.2f),
+                Pt(x + halfWidth, y - 1.5f));
+            eye.AddBezier(
+                Pt(x + halfWidth, y - 1.5f),
+                Pt(x + 6.6f, y + 6.2f),
+                Pt(x + 0.8f, y + halfHeight),
+                Pt(x - 2.8f, y + halfHeight - 0.5f));
+            eye.AddBezier(
+                Pt(x - 2.8f, y + halfHeight - 0.5f),
+                Pt(x - 7.2f, y + 4.2f),
+                Pt(x - 8.1f, y + 1.0f),
+                Pt(x - halfWidth, y - 1));
         }
         else
         {
-            eye.AddBezier(Pt(rect.Right, y - 5), Pt(x + 3, y - 12), Pt(x - 7, y - 9), Pt(rect.Left, y - 2));
-            eye.AddBezier(Pt(rect.Left, y - 2), Pt(x - 8, y + 8), Pt(x - 1, rect.Bottom), Pt(x + 3, rect.Bottom - 1));
-            eye.AddBezier(Pt(x + 3, rect.Bottom - 1), Pt(x + 9, y + 5), Pt(x + 10, y), Pt(rect.Right, y - 5));
+            eye.AddBezier(
+                Pt(x + halfWidth, y - 1),
+                Pt(x + 4.5f, topY - 2),
+                Pt(x - 4.8f, topY - 1.2f),
+                Pt(x - halfWidth, y - 1.5f));
+            eye.AddBezier(
+                Pt(x - halfWidth, y - 1.5f),
+                Pt(x - 6.6f, y + 6.2f),
+                Pt(x - 0.8f, y + halfHeight),
+                Pt(x + 2.8f, y + halfHeight - 0.5f));
+            eye.AddBezier(
+                Pt(x + 2.8f, y + halfHeight - 0.5f),
+                Pt(x + 7.2f, y + 4.2f),
+                Pt(x + 8.1f, y + 1.0f),
+                Pt(x + halfWidth, y - 1));
         }
+
         eye.CloseFigure();
 
         using var eyeBrush = VerticalGradient(
-            rect,
-            Color.FromArgb(33, 19, 58),
-            Color.FromArgb(5, 7, 16));
+            new RectangleF(x - halfWidth, topY - 2, halfWidth * 2, halfHeight * 2 + 4),
+            Color.FromArgb(33, 18, 57),
+            Color.FromArgb(5, 7, 15));
 
-        using var rim = new Pen(Color.FromArgb(165, c.Accent), 1.2f);
+        using var rim = new Pen(Color.FromArgb(175, c.Accent), miniature ? 1.6f : 1.05f);
         g.FillPath(eyeBrush, eye);
         g.DrawPath(rim, eye);
 
-        using var irisBrush = new SolidBrush(Color.FromArgb(150, c.Accent));
-        g.FillEllipse(
-            irisBrush,
-            x - 4.2f,
-            y + 1.5f,
-            8.4f,
-            5.7f);
+        using var iris = new SolidBrush(Color.FromArgb(155, c.Accent));
+        g.FillEllipse(iris, x - 3.4f, y + 0.5f, 6.8f, 5.6f);
+
+        using var pupil = new SolidBrush(Color.FromArgb(210, 3, 4, 10));
+        g.FillEllipse(pupil, x - 2.0f, y - 0.2f, 4.0f, 7.2f);
 
         using var highlight = new SolidBrush(Color.White);
         g.FillEllipse(
             highlight,
-            x + (left ? -2.2f : -1.3f),
-            y - 5.1f,
-            3.2f,
-            3.2f);
+            x + (left ? -2.2f : -1.1f),
+            y - 4.8f,
+            miniature ? 3.4f : 3.0f,
+            miniature ? 3.4f : 3.0f);
     }
 
-    private static void DrawCollar(Graphics g, GuardianColors c)
+    private static void DrawCollar(Graphics g, GuardianColors c, bool miniature)
     {
         using var collar = Path(
             P(48, 92),
-            L(61, 98),
-            L(68, 96),
-            L(80, 102),
-            L(92, 96),
-            L(99, 98),
+            L(60, 97),
+            L(68, 95),
+            L(80, 101),
+            L(92, 95),
+            L(100, 97),
             L(112, 92),
-            L(116, 101),
-            L(102, 111),
-            L(92, 108),
-            L(80, 114),
-            L(68, 108),
-            L(58, 111),
-            L(44, 101),
+            L(116, 100),
+            L(102, 110),
+            L(92, 107),
+            L(80, 113),
+            L(68, 107),
+            L(58, 110),
+            L(44, 100),
             Z());
 
         using var collarBrush = VerticalGradient(
-            new RectangleF(44, 92, 72, 23),
-            Color.FromArgb(45, 42, 58),
-            Color.FromArgb(11, 12, 18));
-
-        using var collarEdge = new Pen(Color.FromArgb(210, c.PurpleLight), 1.45f)
+            new RectangleF(44, 92, 72, 22),
+            Color.FromArgb(50, 47, 63),
+            Color.FromArgb(9, 10, 16));
+        using var edge = new Pen(Color.FromArgb(215, c.PurpleLight), miniature ? 1.9f : 1.4f)
         {
             LineJoin = LineJoin.Bevel
         };
 
         g.FillPath(collarBrush, collar);
-        g.DrawPath(collarEdge, collar);
+        g.DrawPath(edge, collar);
 
-        using var leftFacet = Path(P(47, 98), L(60, 101), L(67, 99), L(60, 108), Z());
+        using var leftFacet = Path(
+            P(48, 97),
+            L(60, 100),
+            L(67, 98),
+            L(61, 106),
+            L(54, 105),
+            Z());
         using var rightFacet = Mirror(leftFacet, 80);
-        using var facetBrush = new SolidBrush(Color.FromArgb(195, c.PurpleBright));
+        using var facetBrush = new SolidBrush(Color.FromArgb(205, c.PurpleBright));
+
         g.FillPath(facetBrush, leftFacet);
         g.FillPath(facetBrush, rightFacet);
 
         using var shield = Path(
             P(80, 99),
-            L(94, 106),
-            L(91, 124),
-            L(80, 133),
-            L(69, 124),
-            L(66, 106),
+            L(93, 106),
+            L(90, 123),
+            L(80, 132),
+            L(70, 123),
+            L(67, 106),
             Z());
 
         using var shieldBrush = VerticalGradient(
-            new RectangleF(65, 99, 30, 35),
+            new RectangleF(66, 99, 28, 34),
             c.PurpleBright,
             c.Darkest);
-
-        using var shieldEdge = new Pen(c.PurpleLight, 2.1f)
+        using var glow = new Pen(Color.FromArgb(90, c.Accent), miniature ? 4.2f : 4.8f)
+        {
+            LineJoin = LineJoin.Round
+        };
+        using var shieldEdge = new Pen(c.PurpleLight, miniature ? 2.1f : 1.8f)
         {
             LineJoin = LineJoin.Round
         };
 
         g.FillPath(shieldBrush, shield);
-        g.DrawPath(shieldEdge, shield);
-
-        using var glow = new Pen(Color.FromArgb(105, c.Accent), 5f)
-        {
-            LineJoin = LineJoin.Round
-        };
         g.DrawPath(glow, shield);
         g.DrawPath(shieldEdge, shield);
 
-        using var innerShield = Path(
+        using var inner = Path(
             P(80, 104),
-            L(89, 109),
-            L(87, 121),
-            L(80, 127),
-            L(73, 121),
-            L(71, 109),
+            L(88.5f, 109),
+            L(86.5f, 120),
+            L(80, 126),
+            L(73.5f, 120),
+            L(71.5f, 109),
             Z());
-        using var innerShieldPen = new Pen(Color.FromArgb(205, c.Accent), 1.2f)
+
+        using var innerPen = new Pen(Color.FromArgb(210, c.Accent), miniature ? 1.6f : 1.1f)
         {
             LineJoin = LineJoin.Round
         };
-        g.DrawPath(innerShieldPen, innerShield);
+        g.DrawPath(innerPen, inner);
 
-        using var checkPen = new Pen(Color.White, 3.5f)
+        using var check = new Pen(Color.White, miniature ? 3.8f : 3.2f)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
             LineJoin = LineJoin.Round
         };
-
-        g.DrawLines(checkPen, [Pt(73.8f, 115), Pt(79, 120), Pt(87.3f, 110.5f)]);
-    }
-
-    private static void DrawMiniatureGuardian(
-        Graphics g,
-        GuardianColors c,
-        LynxVisualState state)
-    {
-        using var tail = Path(
-            P(50, 145),
-            C(22, 146, 7, 128, 9, 104),
-            C(10, 78, 28, 57, 49, 64),
-            C(66, 73, 66, 98, 56, 116),
-            C(54, 130, 52, 139, 50, 145),
-            Z());
-        using var tailBrush = VerticalGradient(new RectangleF(7, 56, 60, 92), c.BodyDark, c.Darkest);
-        using var outline = new Pen(c.Edge, 2.3f) { LineJoin = LineJoin.Round };
-        g.FillPath(tailBrush, tail);
-        g.DrawPath(outline, tail);
-
-        using var tailFlash = Path(P(14, 102), C(22, 76, 39, 65, 53, 73), C(37, 71, 24, 84, 14, 102), Z());
-        using var flashBrush = new SolidBrush(Color.FromArgb(210, c.PurpleBright));
-        g.FillPath(flashBrush, tailFlash);
-
-        DrawBody(g, c);
-        DrawHead(g, c);
-        DrawFace(g, c, state);
-        DrawCollar(g, c);
+        g.DrawLines(check, [Pt(74, 114.5f), Pt(79, 119.4f), Pt(87, 110)]);
     }
 
     private static void DrawStateSignal(
@@ -635,32 +717,33 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
 
         if (state == LynxVisualState.Get)
         {
-            g.DrawLine(signal, 80, 28, 80, 37);
-            g.DrawLine(signal, 80, 37, 76, 33);
-            g.DrawLine(signal, 80, 37, 84, 33);
+            g.DrawLine(signal, 80, 27, 80, 36);
+            g.DrawLine(signal, 80, 36, 76, 32);
+            g.DrawLine(signal, 80, 36, 84, 32);
         }
         else if (state == LynxVisualState.Send)
         {
-            g.DrawLine(signal, 80, 37, 80, 28);
-            g.DrawLine(signal, 80, 28, 76, 32);
-            g.DrawLine(signal, 80, 28, 84, 32);
+            g.DrawLine(signal, 80, 36, 80, 27);
+            g.DrawLine(signal, 80, 27, 76, 31);
+            g.DrawLine(signal, 80, 27, 84, 31);
         }
         else if (state == LynxVisualState.Save)
         {
-            using var savePen = new Pen(Color.FromArgb(230, c.Accent), 2f)
+            using var save = new Pen(Color.FromArgb(230, c.Accent), 2f)
             {
                 StartCap = LineCap.Round,
                 EndCap = LineCap.Round
             };
-            g.DrawLines(savePen, [Pt(70, 33), Pt(76, 39), Pt(90, 24)]);
+            g.DrawLines(save, [Pt(70, 32), Pt(76, 38), Pt(90, 23)]);
         }
         else if (state == LynxVisualState.Conflict)
         {
-            using var warnBrush = new SolidBrush(Color.FromArgb(225, c.Accent));
-            g.FillPolygon(warnBrush, [Pt(80, 27), Pt(73, 40), Pt(87, 40)]);
-            using var markPen = new Pen(Color.FromArgb(30, 20, 15), 1.4f);
-            g.DrawLine(markPen, 80, 31, 80, 36);
-            g.FillEllipse(Brushes.Black, 79.2f, 37.2f, 1.6f, 1.6f);
+            using var warning = new SolidBrush(Color.FromArgb(225, c.Accent));
+            g.FillPolygon(warning, [Pt(80, 26), Pt(73, 39), Pt(87, 39)]);
+
+            using var mark = new Pen(Color.FromArgb(30, 20, 15), 1.4f);
+            g.DrawLine(mark, 80, 30, 80, 35);
+            g.FillEllipse(Brushes.Black, 79.2f, 36.2f, 1.6f, 1.6f);
         }
     }
 
@@ -675,8 +758,8 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
         g.DrawLine(debugPen, 80, 0, 80, 160);
         g.DrawLine(debugPen, 0, 80, 160, 80);
 
-        using var anchorBrush = new SolidBrush(Color.FromArgb(230, 240, 189, 97));
-        g.FillEllipse(anchorBrush, 77, 100, 6, 6);
+        using var anchor = new SolidBrush(Color.FromArgb(230, 240, 189, 97));
+        g.FillEllipse(anchor, 77, 100, 6, 6);
     }
 
     private static LinearGradientBrush VerticalGradient(
@@ -803,17 +886,16 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
             LynxPalette palette,
             Color accent)
         {
-            // Preserve the approved dark-purple identity. Palette selection changes
-            // undertones and state accents rather than turning the guardian into a
-            // completely different-colored animal.
+            // The guardian stays recognisably purple. Palette selection changes
+            // undertone and status lighting rather than repainting the animal.
             return new GuardianColors(
-                Darkest: Mix(Color.FromArgb(18, 11, 31), palette.Fur, 0.18f),
-                BodyDark: Mix(Color.FromArgb(38, 24, 61), palette.Fur, 0.22f),
-                Body: Mix(Color.FromArgb(66, 39, 103), palette.Fur, 0.18f),
-                PurpleMid: Mix(Color.FromArgb(101, 57, 177), palette.Accent, 0.16f),
-                PurpleBright: Mix(Color.FromArgb(124, 70, 220), palette.Accent, 0.14f),
-                PurpleLight: Mix(Color.FromArgb(181, 134, 255), palette.Eye, 0.14f),
-                Edge: Mix(Color.FromArgb(126, 82, 191), palette.Edge, 0.22f),
+                Darkest: Mix(Color.FromArgb(17, 9, 30), palette.Fur, 0.13f),
+                BodyDark: Mix(Color.FromArgb(35, 20, 58), palette.Fur, 0.17f),
+                Body: Mix(Color.FromArgb(58, 31, 96), palette.Fur, 0.15f),
+                PurpleMid: Mix(Color.FromArgb(91, 48, 172), palette.Accent, 0.13f),
+                PurpleBright: Mix(Color.FromArgb(119, 63, 220), palette.Accent, 0.12f),
+                PurpleLight: Mix(Color.FromArgb(185, 137, 255), palette.Eye, 0.11f),
+                Edge: Mix(Color.FromArgb(122, 79, 191), palette.Edge, 0.18f),
                 Accent: accent);
         }
     }
