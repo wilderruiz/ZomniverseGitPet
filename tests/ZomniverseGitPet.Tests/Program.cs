@@ -131,6 +131,24 @@ Check("project test advisor suggests without changing project files", () =>
     finally { TryDelete(root); }
 });
 
+Check("project test advisor prefers executable dotnet test runner", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "tests", "Sample.Tests"));
+        File.WriteAllText(
+            Path.Combine(root, "tests", "Sample.Tests", "Sample.Tests.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(root, "Sample.sln"), "");
+
+        var suggestions = ProjectTestAdvisor.Suggest(root);
+        return suggestions.SequenceEqual(
+            [$"dotnet run --project \"{Path.Combine("tests", "Sample.Tests", "Sample.Tests.csproj")}\" -c Release"]);
+    }
+    finally { TryDelete(root); }
+});
+
 Check("zero-context diff maps before and now lines", () =>
 {
     var diff = "@@ -10,2 +10,3 @@\n-old a\n-old b\n+new a\n+new b\n+new c\n";
