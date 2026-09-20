@@ -46,7 +46,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
     private static void DrawGroundReference(Graphics g, SilhouetteColors c)
     {
         using var brush = new SolidBrush(Color.FromArgb(26, c.Edge));
-        g.FillEllipse(24, 146, 112, 7, brush);
+        g.FillEllipse(brush, 24, 146, 112, 7);
     }
 
     private static void DrawTail(Graphics g, SilhouetteColors c)
