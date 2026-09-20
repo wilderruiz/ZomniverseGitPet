@@ -77,6 +77,8 @@ internal static class StandaloneProjectPublishingUiRuntime
 
     private static void EnsureButton(GuardianForm guardian)
     {
+        if (SendButtons.ContainsKey(guardian) && GetButtons.ContainsKey(guardian)) return;
+
         var toolbar = FindToolbar(guardian);
         if (toolbar is null) return;
 
@@ -158,7 +160,9 @@ internal static class StandaloneProjectPublishingUiRuntime
         if (!logical) return;
 
         var snapshot = GuardianSyncState.Current;
-        var linked = StandaloneProjectPublishing.GetLink(_config) is not null;
+        var link = StandaloneProjectPublishing.GetLink(_config);
+        var linked = link is not null;
+        var noLocalBaseline = link is not null && string.IsNullOrWhiteSpace(link.LastPublishedFingerprint);
         var onlineMode = _config.ConnectionMode != GitPetConnectionModes.LocalGitOnly;
         var operationRunning = OperationInProgress(guardian);
 
@@ -168,7 +172,7 @@ internal static class StandaloneProjectPublishingUiRuntime
                                 linked &&
                                 snapshot.HasRepository &&
                                 snapshot.Unsaved == 0 &&
-                                snapshot.Ahead == 0 &&
+                                (snapshot.Ahead == 0 || noLocalBaseline) &&
                                 !operationRunning;
         standaloneGet.Cursor = standaloneGet.Enabled ? Cursors.Hand : Cursors.Default;
 
@@ -181,6 +185,7 @@ internal static class StandaloneProjectPublishingUiRuntime
                                  snapshot.OnlineReachable &&
                                  snapshot.Unsaved == 0 &&
                                  snapshot.Ahead > 0 &&
+                                 snapshot.Behind == 0 &&
                                  !operationRunning;
         standaloneSend.Cursor = standaloneSend.Enabled ? Cursors.Hand : Cursors.Default;
     }
@@ -227,7 +232,7 @@ internal static class StandaloneProjectPublishingUiRuntime
             return;
         }
 
-        if (snapshot.Ahead > 0)
+        if (snapshot.Ahead > 0 && !string.IsNullOrWhiteSpace(link.LastPublishedFingerprint))
         {
             using var sendFirst = new GuardianConfirmDialog(
                 "Get project",
