@@ -29,7 +29,7 @@ internal sealed class LynxLabForm : Form
 
         _desktopPreview = new LynxDesktopPreviewForm(_renderer);
         _stateValue = ValueLabel("Idle");
-        _paletteValue = ValueLabel(LynxPalette.All[4].Name);
+        _paletteValue = ValueLabel(LynxPalette.Default.Name);
         _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
         _debugToggle = LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
@@ -223,10 +223,10 @@ internal sealed class LynxLabForm : Form
             Height = 32,
             BackColor = Color.FromArgb(0x15, 0x1E, 0x27),
             ForeColor = ForeColor,
-            FlatStyle = FlatStyle.Flat,
-            DataSource = LynxPalette.All.ToList(),
-            SelectedIndex = 4
+            FlatStyle = FlatStyle.Flat
         };
+        palette.Items.AddRange(LynxPalette.All.Cast<object>().ToArray());
+        palette.SelectedItem = LynxPalette.Default;
         palette.SelectedIndexChanged += (_, _) =>
         {
             if (palette.SelectedItem is LynxPalette selected)

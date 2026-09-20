@@ -97,5 +97,11 @@ internal sealed record LynxPalette(
             Color.FromArgb(0x6F, 0x91, 0x9E))
     ];
 
+    public static LynxPalette Default { get; } =
+        All.First(palette => string.Equals(
+            palette.Name,
+            "Deep Violet",
+            StringComparison.Ordinal));
+
     public override string ToString() => Name;
 }
