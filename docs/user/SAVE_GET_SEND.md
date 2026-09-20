@@ -38,6 +38,8 @@ git pull --ff-only origin <current-branch>
 
 Fast-forward-only means GitPet will never create an automatic merge commit on your behalf. If local and remote history have diverged, Get stops and offers [Reconciliation](RECONCILIATION.md) instead of guessing how to combine them.
 
+For a **scoped logical project with a standalone remote**, Get uses a different safety path: GitPet fetches the project-only remote into its isolated project workspace, checks that every incoming path still belongs to the configured project scope, and copies only those project files back into the source working tree as unsaved changes. It does not pull standalone history into the parent repository.
+
 ## Send ↑
 
 Send pushes commits you've already saved — never anything still sitting unsaved on disk. GitPet distinguishes four situations before it offers to Send:
