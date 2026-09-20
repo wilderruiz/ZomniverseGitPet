@@ -232,10 +232,37 @@ internal sealed class GuardianWorkboardService(GitService git)
         var link = StandaloneProjectPublishing.GetLink(config);
         var hasRemote = link is not null && remoteState.HasRemote;
         var pending = hasRemote && remoteState.Ahead > 0;
+        var incoming = hasRemote && remoteState.Behind > 0;
 
+        IReadOnlyList<GuardianWorkboardRow> getRows = [];
         IReadOnlyList<GuardianWorkboardRow> sendRows = [];
+        IReadOnlyList<GuardianWorkboardRow> reconcileRows = [];
         var sendFileCount = 0;
         var sendCommitCount = 0;
+
+        if (incoming)
+        {
+            var inspection = await StandaloneProjectPublishing.InspectRemoteAsync(
+                config,
+                git,
+                repositoryPath,
+                fetchRemote: false,
+                token);
+            getRows = LimitRows(
+                inspection.Changes
+                    .Select(change => new GuardianWorkboardRow(
+                        change.Status.StartsWith("A", StringComparison.OrdinalIgnoreCase) ? "ADDED" :
+                        change.Status.StartsWith("D", StringComparison.OrdinalIgnoreCase) ? "DELETED" :
+                        change.Status.StartsWith("R", StringComparison.OrdinalIgnoreCase) ? "RENAMED" :
+                        change.Status.StartsWith("C", StringComparison.OrdinalIgnoreCase) ? "COPIED" :
+                        "MODIFIED",
+                        change.Path,
+                        string.IsNullOrWhiteSpace(change.PreviousPath)
+                            ? "Project-only online change waiting for Get."
+                            : $"Project-only online change from {change.PreviousPath} waiting for Get.")))
+                    .ToArray(),
+                MaxFileRows);
+        }
         if (pending)
         {
             var files = await StandaloneProjectPublishing.GetTrackedScopeFilesAsync(
@@ -269,15 +296,28 @@ internal sealed class GuardianWorkboardService(GitService git)
             : "Everything in this selected project scope has already been sent.";
         var reconcileEmpty = !hasRemote
             ? "No standalone publishing history is connected yet."
-            : "Standalone project publishing keeps parent and project histories isolated.\nNothing needs reconciliation here.";
+            : pending && incoming
+                ? "Both the saved local project and its standalone online copy changed.\nGet and Send are paused so GitPet does not guess which history should win."
+                : "Standalone project publishing keeps parent and project histories isolated.\nNothing needs reconciliation here.";
+
+        if (pending && incoming)
+        {
+            reconcileRows =
+            [
+                new GuardianWorkboardRow(
+                    "BOTH SIDES",
+                    $"{project?.DisplayName ?? "Logical project"} standalone history",
+                    "Saved local project updates and project-only online updates both exist. Review the two sides before choosing how to proceed.")
+            ];
+        }
 
         return new GuardianWorkboardSnapshot(
             true,
             status.Branch,
             saveRows,
-            [],
+            getRows,
             sendRows,
-            [],
+            reconcileRows,
             sendCommitCount,
             sendFileCount,
             false,
