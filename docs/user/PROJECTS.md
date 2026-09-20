@@ -31,6 +31,12 @@ Preparing a project does **not** create an online repository, configure a remote
 
 GitPet remembers up to 20 recently used projects so you can switch between them from the Projects menu without re-browsing for the folder each time.
 
+## Repository branches
+
+When the active GitPet project represents the whole repository, the **BRANCH** value in Guardian's status card is a dropdown. Opening it refreshes the repository's local and `origin/*` branches. Switching is allowed only with a clean working tree.
+
+This is different from a scoped logical project's standalone publishing branch. Scoped projects keep the shared parent repository branch visible but unchanged; their own project-only remote branch is selected from the separate **Branch: … ▾** control.
+
 ## Related documents
 
 - [Logical Projects](LOGICAL_PROJECTS.md) — when more than one project shares a physical repository.
