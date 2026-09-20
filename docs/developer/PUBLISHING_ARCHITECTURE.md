@@ -42,6 +42,25 @@ This path is verified (and regression-tested) to never be a subdirectory of the 
 7. `git push -u origin main`.
 8. On success, the fingerprint and source commit are recorded so step 3 can short-circuit next time, and an audit-log entry (`standalone_project_published`) is written.
 
+## Standalone Get / receive flow
+
+Scoped Get is deliberately **not** implemented as `git pull` in the parent repository, because the standalone project and parent repository have intentionally separate histories.
+
+1. Require a linked standalone project remote and a clean scoped working tree.
+2. Refuse Get when saved local project updates are still waiting to be sent (unless the project has no publishing baseline yet).
+3. Use the isolated publishing workspace as the remote-history boundary.
+4. Fetch `origin/main` only inside that isolated workspace.
+5. Diff the isolated workspace baseline against `origin/main`.
+6. Validate every added, modified, deleted, copied, or renamed path against the active logical project's configured scope.
+7. Block the entire receive operation if any changed path escapes the project scope.
+8. Materialize the remote project snapshot inside the isolated workspace.
+9. Copy only the validated changed files back into the parent working tree; apply validated deletions only inside scope.
+10. Leave the imported files **uncommitted** in the parent repository so Guardian can show them in Save/File Review before the user chooses to Save.
+
+The parent repository's `origin`, branch history, and unrelated sibling files are never pulled or rewritten by standalone Get.
+
+If both a local standalone snapshot is waiting to Send and the standalone remote has incoming changes, GitPet disables both directions and surfaces the state rather than automatically reconciling independent histories.
+
 ## Compare with Send / the publish boundary
 
 Before any of the above runs, if the active project has a saved [allow list](../user/ALLOW_LISTS.md), `ProjectPublishBoundary.CompareAsync` resolves that allow list against the repository's committed tree and diffs it against the same snapshot step 2 would build, producing three buckets: **matched**, **allow-list only** (in the contract, not in what would be sent), and **send only** (about to be sent, not in the contract). Only an exact match (empty allow-list-only and send-only sets, no resolution issues) is allowed to proceed automatically; anything else blocks the publish and shows the mismatch. See [Project Boundaries](../safety/PROJECT_BOUNDARIES.md) for the full safety mechanism and [ADR-0004](../adr/ADR-0004-PROJECT-ALLOW-LIST-PUBLISH-BOUNDARY.md) for why this exists at all.

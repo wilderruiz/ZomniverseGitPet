@@ -51,12 +51,17 @@ internal static class GuardianSyncState
 
         var current = Current;
         var sameBranch = string.Equals(current.Branch, status.Branch, StringComparison.OrdinalIgnoreCase);
-        var ahead = status.HasTrackingInformation
-            ? status.Ahead
-            : sameBranch ? current.Ahead : 0;
-        var behind = status.HasTrackingInformation
-            ? status.Behind
-            : sameBranch ? current.Behind : 0;
+        var logicalProject = StandaloneProjectPublishing.IsLogicalProject(_config, _config.RepositoryPath);
+        var ahead = logicalProject
+            ? current.Ahead
+            : status.HasTrackingInformation
+                ? status.Ahead
+                : sameBranch ? current.Ahead : 0;
+        var behind = logicalProject
+            ? current.Behind
+            : status.HasTrackingInformation
+                ? status.Behind
+                : sameBranch ? current.Behind : 0;
 
         Publish(new GuardianSyncSnapshot(
             true,
@@ -117,21 +122,30 @@ internal static class GuardianSyncState
                     return;
                 }
 
-                var pending = await StandaloneProjectPublishing.HasPendingPublishAsync(
+                var remoteInspection = await StandaloneProjectPublishing.InspectRemoteAsync(
+                    config,
+                    git,
+                    repositoryPath,
+                    fetchRemote,
+                    token);
+                var snapshotDiffers = await StandaloneProjectPublishing.HasPendingPublishAsync(
                     config,
                     git,
                     repositoryPath,
                     token);
+                var pending = string.IsNullOrWhiteSpace(link.LastPublishedFingerprint)
+                    ? !remoteInspection.RemoteBranchExists && snapshotDiffers
+                    : snapshotDiffers;
 
                 Publish(new GuardianSyncSnapshot(
                     true,
                     status.Branch,
                     status.Files.Count,
                     pending ? 1 : 0,
-                    0,
+                    remoteInspection.IncomingChangeCount > 0 ? 1 : 0,
                     true,
-                    true,
-                    !string.IsNullOrWhiteSpace(link.LastPublishedFingerprint),
+                    remoteInspection.OnlineReachable,
+                    remoteInspection.RemoteBranchExists,
                     false));
                 return;
             }

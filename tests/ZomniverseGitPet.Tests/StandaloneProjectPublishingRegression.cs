@@ -82,7 +82,40 @@ internal static class StandaloneProjectPublishingRegression
                     "https://github.com/wilderruiz/zar-ai-v2"))
                 throw new InvalidOperationException("Equivalent GitHub remote URLs stopped matching.");
 
-            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint).");
+            /* ==========================================================================
+               PATCH: STANDALONE GET BOUNDARY REGRESSION
+               DATE.TIME: 2026-09-20 17:46 +03:00
+               Incoming remote changes must remain inside the logical-project scope.
+               ========================================================================== */
+            var incoming = StandaloneProjectPublishing.ParseRemoteChanges(
+                "A\tselected/remote.txt\n" +
+                "M\tselected/keep.txt\n" +
+                "R100\tselected/old.txt\tselected/new.txt\n" +
+                "D\troot-selected.txt\n");
+            if (incoming.Count != 4 ||
+                incoming[0].Status != "A" ||
+                incoming[0].Path != "selected/remote.txt" ||
+                incoming[2].PreviousPath != "selected/old.txt" ||
+                incoming[2].Path != "selected/new.txt")
+                throw new InvalidOperationException("Standalone Get change parsing regression failed.");
+
+            foreach (var incomingPath in new[]
+                     {
+                         "selected/remote.txt",
+                         "selected/keep.txt",
+                         "selected/old.txt",
+                         "selected/new.txt",
+                         "root-selected.txt"
+                     })
+            {
+                if (!StandaloneProjectPublishing.IsPathInsideProjectScope(config, root, incomingPath))
+                    throw new InvalidOperationException("Standalone Get rejected an in-scope project path: " + incomingPath);
+            }
+
+            if (StandaloneProjectPublishing.IsPathInsideProjectScope(config, root, "unrelated/never-send.txt"))
+                throw new InvalidOperationException("Standalone Get allowed an unrelated parent-repository path.");
+
+            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get boundary).");
         }
         finally
         {
