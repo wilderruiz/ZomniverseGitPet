@@ -170,11 +170,12 @@ internal sealed class GuardianConfirmDialog : Form
            ========================================================================== */
         var confirm = new GuardianActionButton
         {
+            // Opt out before Text triggers the button's sync-role detection.
+            SyncStateAware = false,
             Text = confirmText,
             Width = confirmWidth,
             Height = 38,
             Kind = GuardianActionKind.Primary,
-            SyncStateAware = false,
             /*
             PATCH: ALIGN DIALOG ACTION BUTTONS
             DATE: 2026-09-09

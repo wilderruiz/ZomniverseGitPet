@@ -427,6 +427,9 @@ internal static class StandaloneProjectPublishingUiRuntime
             "Incoming files will remain UNSAVED so you can review them before Save. The parent repository history will not be pulled.",
             "Get project ↓",
             "Cancel",
+            dialogSize: new Size(800, 560),
+            resizable: true,
+            scrollable: true,
             confirmWidth: 160);
         if (confirmation.ShowDialog(guardian) != DialogResult.Yes) return;
 
