@@ -29,6 +29,7 @@ public sealed class GuardianForm : Form
     private readonly GuardianStatusChip _healthChip = new();
     private readonly GuardianStatusChip _branchChip = new();
     private readonly GuardianStatusChip _changesChip = new();
+    private ContextMenuStrip? _repositoryBranchMenu;
 
     private readonly DataGridView _files = new();
     private readonly Label _emptyState = new();
@@ -104,6 +105,13 @@ public sealed class GuardianForm : Form
         WindowChrome.ApplyGuardianChrome(this);
 
         ConfigureToolTips();
+
+        _branchChip.AccessibleName = "Repository branch";
+        _branchChip.Click += async (_, _) =>
+        {
+            if (_branchChip.Interactive && _branchChip.Enabled)
+                await ShowRepositoryBranchMenuAsync();
+        };
 
         var menu = BuildMainMenu();
         var header = BuildHeader();
@@ -952,6 +960,8 @@ public sealed class GuardianForm : Form
             _healthChip.Tone = GuardianChipTone.Warning;
             _branchChip.Text = "?";
             _branchChip.Tone = GuardianChipTone.Neutral;
+            _branchChip.Interactive = false;
+            _branchChip.Enabled = false;
             _changesChip.Text = "STATUS UNKNOWN";
             _changesChip.Tone = GuardianChipTone.Warning;
             _commitLabel.Text = "LATEST  unavailable";
@@ -961,8 +971,17 @@ public sealed class GuardianForm : Form
 
         _healthChip.Text = "● HEALTHY";
         _healthChip.Tone = GuardianChipTone.Healthy;
-        _branchChip.Text = status.Branch;
+
+        var scopedLogicalProject = StandaloneProjectPublishing.IsLogicalProject(_config, path);
+        _branchChip.Interactive = !scopedLogicalProject;
+        _branchChip.Enabled = !scopedLogicalProject && _operation is null;
+        _branchChip.Text = status.Branch + (!scopedLogicalProject ? " ▾" : "");
         _branchChip.Tone = GuardianChipTone.Neutral;
+        _toolTips.SetToolTip(
+            _branchChip,
+            scopedLogicalProject
+                ? $"Parent repository branch\n{status.Branch}\n\nThis is a scoped logical project. Use its standalone Branch ▾ control in the toolbar to change the project-only remote branch without switching the parent repository."
+                : $"Repository branch\n{status.Branch}\n\nClick to switch branches inside GitPet. GitPet requires a clean working tree. Online-only branches become local tracking branches when selected.");
         _changesChip.Text = status.Files.Count == 0
             ? "CLEAN  ✓"
             : $"{status.Files.Count} CHANGE{(status.Files.Count == 1 ? "" : "S")}";
@@ -982,6 +1001,8 @@ public sealed class GuardianForm : Form
         _healthChip.Tone = GuardianChipTone.Neutral;
         _branchChip.Text = "—";
         _branchChip.Tone = GuardianChipTone.Neutral;
+        _branchChip.Interactive = false;
+        _branchChip.Enabled = false;
         _changesChip.Text = "OPEN PROJECTS";
         _changesChip.Tone = GuardianChipTone.Neutral;
         _commitLabel.Text = "LATEST  Choose or prepare a project to begin.";
@@ -1011,6 +1032,213 @@ public sealed class GuardianForm : Form
             _lastRepositoryStatusError = friendlyError;
         }
         SetActivityState("● ATTENTION", GuardianTheme.Warning);
+    }
+
+    private async Task ShowRepositoryBranchMenuAsync()
+    {
+        if (_operation is not null || _refreshInProgress || !HasRepository()) return;
+
+        var repositoryPath = _config.RepositoryPath!;
+        if (StandaloneProjectPublishing.IsLogicalProject(_config, repositoryPath))
+        {
+            using var scoped = new GuardianConfirmDialog(
+                "Repository branch",
+                "PARENT BRANCH STAYS SEPARATE",
+                "This GitPet project is a scoped logical project.\r\n\r\n" +
+                "Use the standalone Branch ▾ control in the toolbar to change the project-only remote branch. " +
+                "The BRANCH value in the status card is the shared parent repository branch.",
+                "OK",
+                showCancel: false);
+            scoped.ShowDialog(this);
+            return;
+        }
+
+        var status = await _git.GetStatusAsync(repositoryPath);
+        if (!status.Healthy)
+        {
+            using var unhealthy = new GuardianConfirmDialog(
+                "Repository branch",
+                "REPOSITORY NEEDS ATTENTION",
+                GitService.DescribeRepositoryReadFailure(status.Error),
+                "OK",
+                showCancel: false);
+            unhealthy.ShowDialog(this);
+            return;
+        }
+
+        if (status.Files.Count > 0)
+        {
+            using var dirty = new GuardianConfirmDialog(
+                "Repository branch",
+                "SAVE OR DISCARD CHANGES FIRST",
+                $"GitPet found {status.Files.Count} unsaved working-tree change{(status.Files.Count == 1 ? "" : "s")}.\r\n\r\n" +
+                "Finish those changes before switching the repository branch. GitPet will not stash, reset, or carry unsaved work across branches automatically.",
+                "OK",
+                showCancel: false);
+            dirty.ShowDialog(this);
+            return;
+        }
+
+        _branchChip.Enabled = false;
+        IReadOnlyList<RepositoryBranchOption> branches;
+        try
+        {
+            UseWaitCursor = true;
+            branches = await _git.ListRepositoryBranchesAsync(repositoryPath, refreshRemote: true);
+        }
+        finally
+        {
+            UseWaitCursor = false;
+            _branchChip.Enabled = true;
+        }
+
+        if (branches.Count == 0)
+        {
+            using var empty = new GuardianConfirmDialog(
+                "Repository branch",
+                "NO BRANCHES FOUND",
+                "GitPet could not read local or origin branches for this repository.\r\n\r\n" +
+                "The current branch has not been changed.",
+                "OK",
+                showCancel: false);
+            empty.ShowDialog(this);
+            return;
+        }
+
+        _repositoryBranchMenu?.Close();
+        _repositoryBranchMenu?.Dispose();
+
+        var branchMenu = new ContextMenuStrip
+        {
+            BackColor = GuardianTheme.SurfaceRaised,
+            ForeColor = GuardianTheme.Ink,
+            ShowImageMargin = false,
+            Font = new Font("Segoe UI", 9f)
+        };
+        _repositoryBranchMenu = branchMenu;
+
+        foreach (var option in branches
+                     .OrderBy(option => option.Name.Equals(status.Branch, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                     .ThenBy(option => option.IsLocal ? 0 : 1)
+                     .ThenBy(option => option.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var isCurrent = option.Name.Equals(status.Branch, StringComparison.OrdinalIgnoreCase);
+            var location = option.IsLocal && option.IsRemote
+                ? "local + online"
+                : option.IsLocal ? "local" : "online";
+            var item = new ToolStripMenuItem(
+                isCurrent
+                    ? $"✓  {option.Name}    [{location}]"
+                    : $"{option.Name}    [{location}]")
+            {
+                Enabled = !isCurrent,
+                ForeColor = isCurrent ? GuardianTheme.Healthy : GuardianTheme.Ink,
+                BackColor = GuardianTheme.SurfaceRaised,
+                Tag = option
+            };
+
+            item.Click += async (_, _) =>
+            {
+                branchMenu.Close();
+                await SwitchRepositoryBranchAsync(option);
+            };
+            branchMenu.Items.Add(item);
+        }
+
+        branchMenu.Items.Add(new ToolStripSeparator());
+        branchMenu.Items.Add(new ToolStripMenuItem(
+            "Online-only branches are tracked locally when selected.")
+        {
+            Enabled = false,
+            ForeColor = GuardianTheme.MutedInk,
+            BackColor = GuardianTheme.SurfaceRaised
+        });
+
+        branchMenu.Closed += (_, _) =>
+        {
+            if (!ReferenceEquals(_repositoryBranchMenu, branchMenu)) return;
+            _repositoryBranchMenu = null;
+            branchMenu.Dispose();
+        };
+
+        branchMenu.Show(_branchChip, new Point(0, _branchChip.Height));
+    }
+
+    private async Task SwitchRepositoryBranchAsync(RepositoryBranchOption branch)
+    {
+        if (_operation is not null || !HasRepository()) return;
+
+        var repositoryPath = _config.RepositoryPath!;
+        var current = await _git.GetCurrentBranchAsync(repositoryPath);
+        var currentBranch = current.Success && !string.IsNullOrWhiteSpace(current.Output)
+            ? current.Output.Trim()
+            : _status?.Branch ?? "?";
+        if (branch.Name.Equals(currentBranch, StringComparison.OrdinalIgnoreCase)) return;
+
+        var status = await _git.GetStatusAsync(repositoryPath);
+        if (!status.Healthy || status.Files.Count > 0)
+        {
+            using var blocked = new GuardianConfirmDialog(
+                "Repository branch",
+                "BRANCH SWITCH BLOCKED",
+                status.Healthy
+                    ? "The working tree changed while the branch menu was open. Save or discard those changes before switching branches."
+                    : GitService.DescribeRepositoryReadFailure(status.Error),
+                "OK",
+                showCancel: false);
+            blocked.ShowDialog(this);
+            return;
+        }
+
+        var remoteOnlyNote = branch.IsLocal
+            ? ""
+            : "\r\n\r\nThis branch currently exists only on origin. GitPet will create a local tracking branch for it.";
+
+        using var confirmation = new GuardianConfirmDialog(
+            "Repository branch",
+            "SWITCH REPOSITORY BRANCH",
+            $"Switch this repository from:\r\n{currentBranch}\r\n\r\nto:\r\n{branch.Name}?" +
+            remoteOnlyNote +
+            "\r\n\r\nGitPet will only run Git branch switching. It will not commit, merge, reset, clean, push, or force-update anything.",
+            "Switch branch",
+            "Cancel",
+            confirmWidth: 150,
+            dialogSize: new Size(760, 500));
+        if (confirmation.ShowDialog(this) != DialogResult.Yes) return;
+
+        await RunOperationAsync($"Switching repository branch to {branch.Name}...", async token =>
+        {
+            var result = await _git.SwitchRepositoryBranchAsync(repositoryPath, branch, token);
+            if (!result.Success)
+            {
+                ReportActivity(
+                    "Branch switch failed.\r\n\r\n" + result.Output,
+                    GuardianActivityKind.Error);
+                return;
+            }
+
+            _reviewedPath = null;
+            ShowActivityPanel();
+            ReportActivity(
+                $"✓ Repository branch switched\r\n{currentBranch}  →  {branch.Name}\r\n\r\n" +
+                (branch.IsLocal
+                    ? "Existing local branch selected."
+                    : "Online branch is now tracked by a new local branch."),
+                GuardianActivityKind.Success);
+
+            await _audit.WriteAsync("repository_branch_switched", new
+            {
+                repository = Path.GetFileName(Path.TrimEndingDirectorySeparator(repositoryPath)),
+                from = currentBranch,
+                to = branch.Name,
+                branch.IsLocal,
+                branch.IsRemote
+            });
+
+            try { await GuardianSyncState.RefreshAsync(true); } catch { }
+            await RefreshRepositoryViewAsync(token);
+            try { await GuardianWorkboardRuntime.RefreshNowAsync(); } catch { }
+        });
     }
 
     private static string HumanizeGitStatus(string status) => status switch
@@ -1825,6 +2053,8 @@ public sealed class GuardianForm : Form
         ShowActivityPanel();
         _operation = new CancellationTokenSource();
         foreach (var button in _operationButtons) button.Enabled = false;
+        var branchChipWasEnabled = _branchChip.Enabled;
+        _branchChip.Enabled = false;
 
         _cancelButton.Visible = true;
         SetActivityState("● WORKING", GuardianTheme.Changes);
@@ -1867,6 +2097,7 @@ public sealed class GuardianForm : Form
         finally
         {
             foreach (var button in _operationButtons) button.Enabled = true;
+            _branchChip.Enabled = branchChipWasEnabled;
             _cancelButton.Visible = false;
             SetActivityState("● READY", GuardianTheme.Healthy);
 

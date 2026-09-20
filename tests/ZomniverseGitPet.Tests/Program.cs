@@ -27,6 +27,36 @@ Check("branch.ab parses ahead and behind", () =>
     return status.HasTrackingInformation && status.Ahead == 2 && status.Behind == 1;
 });
 
+Check("repository branch discovery merges local and origin refs", () =>
+{
+    var branches = GitService.ParseRepositoryBranches(
+        "refs/heads/main\n" +
+        "refs/heads/feature/local-work\n" +
+        "refs/remotes/origin/HEAD\n" +
+        "refs/remotes/origin/main\n" +
+        "refs/remotes/origin/feature/local-work\n" +
+        "refs/remotes/origin/feature/online-only\n");
+
+    return branches.Count == 3 &&
+           branches[0] == new RepositoryBranchOption("main", true, true) &&
+           branches.Any(branch =>
+               branch == new RepositoryBranchOption("feature/local-work", true, true)) &&
+           branches.Any(branch =>
+               branch == new RepositoryBranchOption("feature/online-only", false, true));
+});
+
+Check("repository branch switch uses safe git switch arguments", () =>
+{
+    var local = GitService.BuildRepositorySwitchArguments(
+        new RepositoryBranchOption("feature/local-work", true, true));
+    var online = GitService.BuildRepositorySwitchArguments(
+        new RepositoryBranchOption("feature/online-only", false, true));
+
+    return local.SequenceEqual(["switch", "feature/local-work"]) &&
+           online.SequenceEqual(
+               ["switch", "--track", "-c", "feature/online-only", "origin/feature/online-only"]);
+});
+
 Check("friendly sync state uses singular and plural grammar", () =>
 {
     var singular = new RepositoryStatus(

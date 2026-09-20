@@ -19,6 +19,11 @@ public sealed record CommandResult(int ExitCode, string Output, bool TimedOut = 
     public bool Success => ExitCode == 0 && !TimedOut;
 }
 
+public sealed record RepositoryBranchOption(
+    string Name,
+    bool IsLocal,
+    bool IsRemote);
+
 public sealed record CheckpointResult(
     bool Success,
     string Message,
