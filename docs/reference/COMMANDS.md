@@ -41,4 +41,12 @@ The exact external commands GitPet runs, and where in the app each one comes fro
 
 ## Isolated publishing workspace (standalone logical-project publishing)
 
-Runs an independent set of the same Git commands (`init -b main`, `add -f -A`, `commit`, `push -u origin main`) inside its own isolated working copy — see [Publishing Architecture](../developer/PUBLISHING_ARCHITECTURE.md).
+Runs an independent set of Git commands inside its isolated working copy. The local workspace may initialize with `git init -b main`, but the selected standalone remote branch drives remote operations:
+
+- `git ls-remote --heads <standalone-remote>` — discover existing branches for the Branch selector.
+- `git ls-remote --heads <standalone-remote> refs/heads/<selected-branch>` — probe the selected branch.
+- `git fetch --prune origin <selected-branch>` — standalone Get/inspection only, never in the parent repository.
+- `git diff ... refs/remotes/origin/<selected-branch>` and `git reset --hard refs/remotes/origin/<selected-branch>` — isolated workspace comparison/materialization.
+- `git push -u origin HEAD:refs/heads/<selected-branch>` — standalone Send without force-push.
+
+See [Publishing Architecture](../developer/PUBLISHING_ARCHITECTURE.md).
