@@ -68,11 +68,11 @@ internal sealed class GuardianStatusChip : Control
     }
 
     protected override bool IsInputKey(Keys keyData) =>
-        Interactive && keyData is Keys.Enter or Keys.Space || base.IsInputKey(keyData);
+        (Interactive && keyData is (Keys.Enter or Keys.Space)) || base.IsInputKey(keyData);
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (Interactive && e.KeyCode is Keys.Enter or Keys.Space)
+        if (Interactive && e.KeyCode is (Keys.Enter or Keys.Space))
         {
             e.Handled = true;
             OnClick(EventArgs.Empty);
