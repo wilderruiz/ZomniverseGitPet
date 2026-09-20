@@ -261,7 +261,9 @@ internal sealed class GuardianWorkboardService(GitService git)
         var saveEmpty = "Nothing waiting to be saved.\nLocal working files match the latest saved version.";
         var getEmpty = !hasRemote
             ? "No project-only online home is connected yet."
-            : "Standalone project publishing is outbound-only for now.\nThe parent repository is never pulled into this project copy.";
+            : pending
+                ? "Send the saved local project snapshot first.\nGet stays blocked until local and standalone histories have one clear baseline."
+                : "Use Get ↓ to check the project-only online home.\nIncoming files are scope-checked and arrive as unsaved local changes for review.";
         var sendEmpty = !hasRemote
             ? "Connect a project-only online home before sending.\nThe parent repository will not be used."
             : "Everything in this selected project scope has already been sent.";
