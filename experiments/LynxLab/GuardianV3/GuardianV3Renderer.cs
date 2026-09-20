@@ -6,7 +6,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
 {
     private const float DesignSize = 160f;
 
-    public string Name => "Guardian V3 layered · face pass";
+    public string Name => "Guardian V3 layered · armor pass";
 
     public void Draw(
         Graphics graphics,
@@ -36,6 +36,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             DrawEars(graphics, colors);
             DrawHead(graphics, colors);
             DrawFace(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
+            DrawCollarArmor(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
+            DrawShield(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
 
             if (debugOverlay)
                 DrawDebugGeometry(graphics);
@@ -359,6 +361,86 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             EndCap = LineCap.Round
         };
         g.DrawPath(lidPen, lid);
+    }
+
+    private static void DrawCollarArmor(Graphics g, LynxPalette palette, bool miniature)
+    {
+        // The upper edge follows the jaw; the lower edge forms rigid plates.
+        using var leftPanel = Path(
+            M(57, 90), L(66, 95), L(80, 99), L(80, 108),
+            L(65, 106), L(53, 100), L(55, 94), Z());
+        using var rightPanel = Mirror(leftPanel);
+        using var armor = new SolidBrush(Mix(Color.FromArgb(30, 24, 42), palette.Fur, 0.08f));
+        using var edge = new Pen(Color.FromArgb(108, 87, 140), miniature ? 1.4f : 0.85f)
+        {
+            LineJoin = LineJoin.Bevel
+        };
+        g.FillPath(armor, leftPanel);
+        g.FillPath(armor, rightPanel);
+        g.DrawPath(edge, leftPanel);
+        g.DrawPath(edge, rightPanel);
+
+        using var leftFacet = Path(
+            M(56, 96), L(64, 100), L(69, 104), L(61, 102), Z());
+        using var rightFacet = Mirror(leftFacet);
+        using var purple = new SolidBrush(Mix(Color.FromArgb(129, 73, 204), palette.Accent, 0.10f));
+        g.FillPath(purple, leftFacet);
+        g.FillPath(purple, rightFacet);
+
+        if (!miniature)
+        {
+            using var leftSeam = Path(M(61, 93), L(63, 98), L(73, 102));
+            using var rightSeam = Mirror(leftSeam);
+            using var seam = new Pen(Color.FromArgb(72, 58, 92), 0.7f);
+            g.DrawPath(seam, leftSeam);
+            g.DrawPath(seam, rightSeam);
+        }
+    }
+
+    private static void DrawShield(Graphics g, LynxPalette palette, bool miniature)
+    {
+        using var shield = Path(
+            M(80, 96), L(91, 101), L(89, 113),
+            L(80, 121), L(71, 113), L(69, 101), Z());
+        var violet = Mix(Color.FromArgb(161, 102, 235), palette.Accent, 0.10f);
+        using var halo = new Pen(Color.FromArgb(38, violet), miniature ? 3.4f : 3f)
+        {
+            LineJoin = LineJoin.Round
+        };
+        // A single low-opacity edge accent keeps the emblem legible on white fur.
+        g.DrawPath(halo, shield);
+        using var fill = new SolidBrush(Color.FromArgb(76, 37, 127));
+        using var border = new Pen(Mix(Color.FromArgb(201, 166, 249), palette.Eye, 0.08f),
+            miniature ? 1.8f : 1.25f)
+        {
+            LineJoin = LineJoin.Miter
+        };
+        g.FillPath(fill, shield);
+        g.DrawPath(border, shield);
+
+        using var inset = Path(
+            M(80, 99), L(88, 103), L(86.5f, 111.5f),
+            L(80, 117.5f), L(73.5f, 111.5f), L(72, 103), Z());
+        using var innerFill = new SolidBrush(Mix(Color.FromArgb(112, 53, 181), palette.Accent, 0.08f));
+        g.FillPath(innerFill, inset);
+        if (!miniature)
+        {
+            using var innerEdge = new Pen(violet, 0.65f);
+            g.DrawPath(innerEdge, inset);
+        }
+
+        using var check = new Pen(Color.White, miniature ? 2.7f : 2.2f)
+        {
+            StartCap = LineCap.Square,
+            EndCap = LineCap.Square,
+            LineJoin = LineJoin.Miter
+        };
+        g.DrawLines(check,
+        [
+            new PointF(75.5f, 107.5f),
+            new PointF(79, 111),
+            new PointF(85, 104.5f)
+        ]);
     }
 
     private static Pen Outline(SilhouetteColors c) =>
