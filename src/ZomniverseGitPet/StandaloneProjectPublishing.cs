@@ -229,6 +229,17 @@ internal static class StandaloneProjectPublishing
     internal static string RemoteTrackingRef(string branch) =>
         "refs/remotes/origin/" + NormalizeBranchName(branch);
 
+    internal static string[] BuildFetchArguments(string branch, bool quiet) =>
+        quiet
+            ? ["fetch", "--quiet", "--prune", "origin", NormalizeBranchName(branch)]
+            : ["fetch", "--prune", "origin", NormalizeBranchName(branch)];
+
+    internal static string[] BuildPushArguments(string branch) =>
+        ["push", "-u", "origin", $"HEAD:refs/heads/{NormalizeBranchName(branch)}"];
+
+    internal static string[] BuildBranchProbeArguments(string remoteUrl, string branch) =>
+        ["ls-remote", "--heads", remoteUrl, $"refs/heads/{NormalizeBranchName(branch)}"];
+
     public static void MarkPublished(
         AppConfig config,
         string sourceCommit,
@@ -494,7 +505,7 @@ internal static class StandaloneProjectPublishing
 
             var push = await git.RunGitAsync(
                 workspace,
-                ["push", "-u", "origin", $"HEAD:refs/heads/{link.Branch}"],
+                BuildPushArguments(link.Branch),
                 TimeSpan.FromMinutes(5), token);
             if (!push.Success)
                 return Failure(
@@ -559,7 +570,7 @@ internal static class StandaloneProjectPublishing
         {
             var probe = await git.RunGitAsync(
                 repositoryRoot,
-                ["ls-remote", "--heads", link.RemoteUrl, $"refs/heads/{link.Branch}"],
+                BuildBranchProbeArguments(link.RemoteUrl, link.Branch),
                 TimeSpan.FromSeconds(30),
                 token);
             return new(
@@ -585,7 +596,7 @@ internal static class StandaloneProjectPublishing
         {
             var fetch = await git.RunGitAsync(
                 workspace,
-                ["fetch", "--quiet", "--prune", "origin", link.Branch],
+                BuildFetchArguments(link.Branch, quiet: true),
                 TimeSpan.FromMinutes(2),
                 token);
             if (!fetch.Success)
@@ -775,7 +786,7 @@ internal static class StandaloneProjectPublishing
 
             var fetch = await git.RunGitAsync(
                 workspace,
-                ["fetch", "--prune", "origin", link.Branch],
+                BuildFetchArguments(link.Branch, quiet: false),
                 TimeSpan.FromMinutes(5),
                 token);
             if (!fetch.Success)
@@ -1080,7 +1091,7 @@ internal static class StandaloneProjectPublishing
         };
     }
 
-    private static void NormalizeEntry(StandaloneProjectPublishingEntry entry)
+    internal static void NormalizeEntry(StandaloneProjectPublishingEntry entry)
     {
         entry.Branch = NormalizeBranchName(entry.Branch);
         if (!IsSafeBranchName(entry.Branch)) entry.Branch = "main";
@@ -1107,7 +1118,7 @@ internal static class StandaloneProjectPublishing
         ProjectActiveBranchState(entry);
     }
 
-    private static StandaloneProjectBranchState GetOrCreateBranchState(
+    internal static StandaloneProjectBranchState GetOrCreateBranchState(
         StandaloneProjectPublishingEntry entry,
         string branch)
     {
@@ -1120,7 +1131,7 @@ internal static class StandaloneProjectPublishing
         return state;
     }
 
-    private static void ProjectActiveBranchState(StandaloneProjectPublishingEntry entry)
+    internal static void ProjectActiveBranchState(StandaloneProjectPublishingEntry entry)
     {
         var state = GetOrCreateBranchState(entry, entry.Branch);
         entry.LastPublishedSourceCommit = state.LastPublishedSourceCommit;
