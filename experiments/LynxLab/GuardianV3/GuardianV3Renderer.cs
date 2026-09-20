@@ -6,7 +6,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
 {
     private const float DesignSize = 160f;
 
-    public string Name => "Guardian V3 layered · silhouette pass";
+    public string Name => "Guardian V3 layered · face pass";
 
     public void Draw(
         Graphics graphics,
@@ -32,8 +32,10 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             DrawTorso(graphics, colors);
             DrawHaunches(graphics, colors);
             DrawForelegs(graphics, colors);
+            DrawChestFur(graphics);
             DrawEars(graphics, colors);
             DrawHead(graphics, colors);
+            DrawFace(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
 
             if (debugOverlay)
                 DrawDebugGeometry(graphics);
@@ -267,6 +269,96 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
 
         g.FillPath(innerBrush, leftInner);
         g.FillPath(innerBrush, rightInner);
+    }
+
+    private static void DrawChestFur(Graphics g)
+    {
+        // Broad shoulders become a curved ruff, then narrow between the forelegs.
+        // The head overlaps its root so the chest grows naturally from the neck.
+        using var chest = Path(
+            M(60, 89), C(69, 86, 91, 86, 100, 89),
+            C(100, 97, 98, 103, 96, 107), L(94, 102),
+            C(93, 110, 90, 115, 87, 119), L(88, 114),
+            C(83, 122, 84, 133, 80, 140),
+            C(76, 133, 77, 122, 72, 114), L(73, 119),
+            C(70, 115, 67, 110, 66, 102), L(64, 107),
+            C(62, 103, 60, 97, 60, 89), Z());
+        using var white = new SolidBrush(Color.FromArgb(243, 239, 251));
+        g.FillPath(white, chest);
+    }
+
+    private static void DrawFace(Graphics g, LynxPalette palette, bool miniature)
+    {
+        using var mask = Path(
+            M(47, 66), C(49, 59, 56, 56, 63, 58),
+            C(70, 60, 76, 65, 80, 70),
+            C(84, 65, 90, 60, 97, 58),
+            C(104, 56, 111, 59, 113, 66),
+            C(117, 74, 111, 81, 104, 85),
+            C(96, 91, 88, 94, 80, 95),
+            C(72, 94, 64, 91, 56, 85),
+            C(49, 81, 43, 74, 47, 66), Z());
+        using var white = new SolidBrush(Color.FromArgb(249, 246, 255));
+        g.FillPath(white, mask);
+
+        DrawFaceEye(g, palette, miniature, false);
+        DrawFaceEye(g, palette, miniature, true);
+
+        using var nose = Path(
+            M(75, 72), C(77, 70.5f, 83, 70.5f, 85, 72),
+            C(85, 74, 82, 77, 80, 77.5f),
+            C(78, 77, 75, 74, 75, 72), Z());
+        using var ink = new SolidBrush(Color.FromArgb(27, 14, 43));
+        g.FillPath(ink, nose);
+
+        using var mouth = Path(
+            M(73, 85), C(75, 83, 78, 81.5f, 80, 81.5f),
+            C(82, 81.5f, 85, 83, 87, 85));
+        using var mouthPen = new Pen(ink, miniature ? 1.6f : 1.15f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round
+        };
+        g.DrawLine(mouthPen, 80, 76.5f, 80, 81.5f);
+        g.DrawPath(mouthPen, mouth);
+    }
+
+    private static void DrawFaceEye(Graphics g, LynxPalette palette, bool miniature, bool right)
+    {
+        // A descending upper lid gives vigilance without a separate angry eyebrow.
+        using var leftEye = Path(
+            M(54, 51), C(58, 51, 64, 53.5f, 68, 56.5f),
+            C(67, 63, 64, 66, 60, 65),
+            C(56, 64, 53, 59, 54, 51), Z());
+        using var eye = right ? Mirror(leftEye) : (GraphicsPath)leftEye.Clone();
+        using var dark = new SolidBrush(Color.FromArgb(23, 12, 37));
+        g.FillPath(dark, eye);
+
+        var saved = g.Save();
+        try
+        {
+            g.SetClip(eye, CombineMode.Intersect);
+            var center = right ? 99f : 61f;
+            using var iris = new SolidBrush(Mix(Color.FromArgb(139, 70, 221), palette.Eye, 0.12f));
+            g.FillEllipse(iris, center - 4.5f, 55, 9, 11);
+            g.FillEllipse(dark, center - 2.1f, 54, 4.2f, 9);
+            var highlightSize = miniature ? 2.5f : 2f;
+            g.FillEllipse(Brushes.White, center - 3, 54, highlightSize, highlightSize);
+        }
+        finally
+        {
+            g.Restore(saved);
+        }
+
+        using var leftLid = Path(M(53.5f, 50.8f), C(58, 51, 64, 53.5f, 68.5f, 56.5f));
+        using var lid = right ? Mirror(leftLid) : (GraphicsPath)leftLid.Clone();
+        using var lidPen = new Pen(Color.FromArgb(42, 21, 67), miniature ? 1.4f : 0.9f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+        g.DrawPath(lidPen, lid);
     }
 
     private static Pen Outline(SilhouetteColors c) =>
