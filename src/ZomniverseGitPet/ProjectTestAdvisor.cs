@@ -54,6 +54,38 @@ public static class ProjectTestAdvisor
     {
         try
         {
+            var projects = Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+                .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
+                               !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            var executableTestProject = projects.FirstOrDefault(path =>
+            {
+                var relative = Path.GetRelativePath(root, path);
+                var looksLikeTestProject =
+                    relative.Contains($"{Path.DirectorySeparatorChar}tests{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetFileNameWithoutExtension(path).Contains("Tests", StringComparison.OrdinalIgnoreCase);
+                if (!looksLikeTestProject) return false;
+
+                try
+                {
+                    var text = File.ReadAllText(path);
+                    return text.Contains("<OutputType>Exe</OutputType>", StringComparison.OrdinalIgnoreCase) &&
+                           !text.Contains("Microsoft.NET.Test.Sdk", StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            });
+
+            if (executableTestProject is not null)
+            {
+                var relative = Path.GetRelativePath(root, executableTestProject);
+                suggestions.Add($"dotnet run --project \"{relative}\" -c Release");
+                return;
+            }
+
             var solution = Directory.EnumerateFiles(root, "*.sln", SearchOption.TopDirectoryOnly).FirstOrDefault();
             if (solution is not null)
             {
@@ -61,10 +93,7 @@ public static class ProjectTestAdvisor
                 return;
             }
 
-            var project = Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
-                .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
-                               !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
-                .FirstOrDefault();
+            var project = projects.FirstOrDefault();
             if (project is not null)
             {
                 var relative = Path.GetRelativePath(root, project);
