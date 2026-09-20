@@ -14,7 +14,7 @@ internal sealed class HairyGuardianRenderer : ILynxRenderer
     private const int MiniatureThreshold = 180;
     private const int MiniatureOversample = 4;
 
-    public string Name => "Hairy Guardian v2 · live GDI+ vector";
+    public string Name => "Hairy Guardian V2";
 
     public void Draw(
         Graphics graphics,

@@ -2,9 +2,12 @@ namespace LynxLab;
 
 internal sealed class LynxLabForm : Form
 {
-    private readonly ILynxRenderer _renderer = new HairyGuardianRenderer();
+    private readonly IReadOnlyList<ILynxRenderer> _renderers;
+    private ILynxRenderer _renderer;
     private readonly LynxCanvas _canvas;
     private readonly LynxDesktopPreviewForm _desktopPreview;
+    private readonly Label _viewportCaption;
+    private readonly Label _rendererValue;
     private readonly Label _stateValue;
     private readonly Label _paletteValue;
     private readonly CheckBox _desktopPreviewToggle;
@@ -13,6 +16,13 @@ internal sealed class LynxLabForm : Form
 
     public LynxLabForm()
     {
+        _renderers =
+        [
+            new HairyGuardianRenderer(),
+            new GuardianV3Renderer()
+        ];
+        _renderer = _renderers[0];
+
         Text = "Lynx Lab — Phase 0";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
@@ -28,6 +38,17 @@ internal sealed class LynxLabForm : Form
         };
 
         _desktopPreview = new LynxDesktopPreviewForm(_renderer);
+        _viewportCaption = new Label
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            Margin = new Padding(2, 2, 2, 12),
+            Text = "LAB VIEWPORT  ·  " + _renderer.Name,
+            ForeColor = Color.FromArgb(0x87, 0x97, 0xA9),
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        _rendererValue = ValueLabel(_renderer.Name);
         _stateValue = ValueLabel("Idle");
         _paletteValue = ValueLabel(LynxPalette.Default.Name);
         _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
@@ -168,18 +189,7 @@ internal sealed class LynxLabForm : Form
         inner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var caption = new Label
-        {
-            Dock = DockStyle.Top,
-            AutoSize = true,
-            Margin = new Padding(2, 2, 2, 12),
-            Text = "LAB VIEWPORT  ·  " + _renderer.Name,
-            ForeColor = Color.FromArgb(0x87, 0x97, 0xA9),
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-
-        inner.Controls.Add(caption, 0, 0);
+        inner.Controls.Add(_viewportCaption, 0, 0);
         inner.Controls.Add(_canvas, 0, 1);
         shell.Controls.Add(inner);
         return shell;
@@ -203,6 +213,29 @@ internal sealed class LynxLabForm : Form
             BackColor = shell.BackColor,
             Padding = new Padding(0, 0, 4, 0)
         };
+
+        stack.Controls.Add(SectionLabel("RENDERER"));
+
+        var rendererSelector = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            DisplayMember = nameof(ILynxRenderer.Name),
+            FormattingEnabled = true,
+            Height = 32,
+            BackColor = Color.FromArgb(0x15, 0x1E, 0x27),
+            ForeColor = ForeColor,
+            FlatStyle = FlatStyle.Flat
+        };
+        rendererSelector.Items.AddRange(_renderers.Cast<object>().ToArray());
+        rendererSelector.SelectedItem = _renderer;
+        rendererSelector.SelectedIndexChanged += (_, _) =>
+        {
+            if (rendererSelector.SelectedItem is ILynxRenderer selected)
+                SetRenderer(selected);
+        };
+        stack.Controls.Add(rendererSelector);
+
+        stack.Controls.Add(Spacer());
 
         stack.Controls.Add(SectionLabel("SIMULATED GIT STATE"));
 
@@ -268,7 +301,7 @@ internal sealed class LynxLabForm : Form
 
         stack.Controls.Add(Spacer());
         stack.Controls.Add(SectionLabel("TELEMETRY"));
-        stack.Controls.Add(KeyValueRow("Renderer", _renderer.Name));
+        stack.Controls.Add(KeyValueRow("Renderer", _rendererValue));
         stack.Controls.Add(KeyValueRow("Canvas", "vector / GDI+"));
         stack.Controls.Add(KeyValueRow("Pet size", "160 × 160"));
         stack.Controls.Add(KeyValueRow("Desktop host", "240 × 246"));
@@ -313,6 +346,15 @@ internal sealed class LynxLabForm : Form
         _canvas.State = state;
         _desktopPreview.State = state;
         _stateValue.Text = state.ToString();
+    }
+
+    private void SetRenderer(ILynxRenderer renderer)
+    {
+        _renderer = renderer;
+        _canvas.Renderer = renderer;
+        _desktopPreview.Renderer = renderer;
+        _viewportCaption.Text = "LAB VIEWPORT  ·  " + renderer.Name;
+        _rendererValue.Text = renderer.Name;
     }
 
     private void SetPalette(LynxPalette palette)
