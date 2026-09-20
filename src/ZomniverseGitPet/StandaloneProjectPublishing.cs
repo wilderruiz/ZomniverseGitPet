@@ -522,6 +522,7 @@ internal static class StandaloneProjectPublishing
                 project = project.DisplayName,
                 fileCount = snapshot.Files.Count,
                 sourceCommit = snapshot.SourceCommit,
+                branch = link.Branch,
                 workspace,
                 createdCommit
             });
@@ -903,7 +904,8 @@ internal static class StandaloneProjectPublishing
                 projectId = project.Id,
                 project = project.DisplayName,
                 changedFileCount = changes.Count,
-                remote = link.RepositoryLabel
+                remote = link.RepositoryLabel,
+                branch = link.Branch
             });
 
             return new(true,
