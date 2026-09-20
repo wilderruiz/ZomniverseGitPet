@@ -975,7 +975,7 @@ public sealed class GuardianForm : Form
         var scopedLogicalProject = StandaloneProjectPublishing.IsLogicalProject(_config, path);
         _branchChip.Interactive = !scopedLogicalProject;
         _branchChip.Enabled = !scopedLogicalProject && _operation is null;
-        _branchChip.Text = status.Branch + (!scopedLogicalProject ? " ▾" : "");
+        _branchChip.Text = status.Branch;
         _branchChip.Tone = GuardianChipTone.Neutral;
         _toolTips.SetToolTip(
             _branchChip,
@@ -1105,6 +1105,8 @@ public sealed class GuardianForm : Form
             return;
         }
 
+        if (IsDisposed || Disposing || _branchChip.IsDisposed) return;
+
         _repositoryBranchMenu?.Close();
         _repositoryBranchMenu?.Dispose();
 
@@ -1139,7 +1141,7 @@ public sealed class GuardianForm : Form
 
             item.Click += async (_, _) =>
             {
-                branchMenu.Close();
+                if (!branchMenu.IsDisposed) branchMenu.Close();
                 await SwitchRepositoryBranchAsync(option);
             };
             branchMenu.Items.Add(item);
@@ -1154,12 +1156,8 @@ public sealed class GuardianForm : Form
             BackColor = GuardianTheme.SurfaceRaised
         });
 
-        branchMenu.Closed += (_, _) =>
-        {
-            if (!ReferenceEquals(_repositoryBranchMenu, branchMenu)) return;
-            _repositoryBranchMenu = null;
-            branchMenu.Dispose();
-        };
+        // Keep the closed menu alive until replacement or form disposal.
+        // WinForms still accesses it while completing item-click/close processing.
 
         branchMenu.Show(_branchChip, new Point(0, _branchChip.Height));
     }
@@ -2268,6 +2266,8 @@ public sealed class GuardianForm : Form
             _reconcileOperation.Changed -= OnSaveOperationStateChanged;
             _comparisonLoad?.Cancel();
             _comparisonLoad?.Dispose();
+            _repositoryBranchMenu?.Dispose();
+            _repositoryBranchMenu = null;
             _toolTips.Dispose();
             _toolTipFont.Dispose();
         }

@@ -68,13 +68,14 @@ internal sealed class GuardianStatusChip : Control
     }
 
     protected override bool IsInputKey(Keys keyData) =>
-        (Interactive && keyData is (Keys.Enter or Keys.Space)) || base.IsInputKey(keyData);
+        (Interactive && (keyData & Keys.KeyCode) is (Keys.Enter or Keys.Space or Keys.Down or Keys.F4)) || base.IsInputKey(keyData);
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (Interactive && e.KeyCode is (Keys.Enter or Keys.Space))
+        if (Interactive && Enabled && e.KeyCode is (Keys.Enter or Keys.Space or Keys.Down or Keys.F4))
         {
             e.Handled = true;
+            e.SuppressKeyPress = true;
             OnClick(EventArgs.Empty);
             return;
         }
@@ -86,10 +87,12 @@ internal sealed class GuardianStatusChip : Control
         var background = Parent?.BackColor ?? GuardianTheme.Surface;
         e.Graphics.Clear(background);
 
-        if (Interactive && (_hovered || Focused))
+        if (Interactive)
         {
-            using var hover = new SolidBrush(Color.FromArgb(28, GuardianTheme.Info));
+            using var hover = new SolidBrush(Color.FromArgb(Enabled && (_hovered || Focused) ? 42 : 18, GuardianTheme.Info));
             e.Graphics.FillRectangle(hover, ClientRectangle);
+            using var border = new Pen(Enabled ? GuardianTheme.Info : GuardianTheme.FaintInk);
+            e.Graphics.DrawRectangle(border, 0, 0, Math.Max(0, Width - 1), Math.Max(0, Height - 1));
         }
 
         var accent = Tone switch
@@ -100,14 +103,45 @@ internal sealed class GuardianStatusChip : Control
             _ => GuardianTheme.Info
         };
 
+        var textBounds = ClientRectangle;
+        if (Interactive)
+        {
+            var arrowWidth = Math.Max(20, (int)Math.Round(24 * DeviceDpi / 96f));
+            textBounds = new Rectangle(6, 0, Math.Max(0, Width - arrowWidth - 8), Height);
+            using var arrow = new SolidBrush(Enabled ? accent : GuardianTheme.FaintInk);
+            var x = Width - arrowWidth / 2f;
+            var y = Height / 2f;
+            var half = 4f * DeviceDpi / 96f;
+            e.Graphics.FillPolygon(arrow,
+            [
+                new PointF(x - half, y - half / 2),
+                new PointF(x + half, y - half / 2),
+                new PointF(x, y + half / 2)
+            ]);
+            if (Focused && ShowFocusCues)
+                ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(ClientRectangle, -3, -3));
+        }
+
         TextRenderer.DrawText(
             e.Graphics,
             Text,
             Font,
-            ClientRectangle,
-            accent,
+            textBounds,
+            Enabled ? accent : GuardianTheme.FaintInk,
             TextFormatFlags.Left |
             TextFormatFlags.VerticalCenter |
-            TextFormatFlags.WordBreak);
+            (Interactive ? TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis : TextFormatFlags.WordBreak));
+    }
+
+    protected override void OnGotFocus(EventArgs e)
+    {
+        base.OnGotFocus(e);
+        Invalidate();
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        base.OnLostFocus(e);
+        Invalidate();
     }
 }
