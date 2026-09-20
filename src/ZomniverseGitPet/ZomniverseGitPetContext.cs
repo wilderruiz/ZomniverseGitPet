@@ -12,7 +12,9 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
     private readonly AuditLog _audit;
     private readonly ProjectInspector _projectInspector;
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly CancellationToken _lifetimeToken;
     private readonly SemaphoreSlim _projectSwitchGate = new(1, 1);
+    private int _disposeState;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly PetForm _pet;
     private GuardianForm? _guardian;
@@ -36,6 +38,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         _git = git;
         _audit = audit;
         _projectInspector = new ProjectInspector(git);
+        _lifetimeToken = _lifetimeToken;
         LogicalProjectScopeRuntime.Initialize(_config);
 
         _pet = new PetForm(ShowGuardian, ChooseRepositoryAsync, ExitApplication);
@@ -46,7 +49,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         _timer.Tick += async (_, _) => await RefreshAsync(false);
         _timer.Start();
 
-        _ = ListenForActivationAsync(pipeName, _lifetime.Token);
+        _ = ListenForActivationAsync(pipeName, _lifetimeToken);
         _ = _audit.WriteAsync("app_started");
         _ = RefreshAsync(false);
     }
@@ -306,7 +309,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
         var address = dialog.Address;
         _pet.ShowGuidance("📥 COPYING REPOSITORY\nI'll preserve its history");
-        var result = await _git.CloneRepositoryAsync(address.CloneSource, dialog.DestinationPath, _lifetime.Token);
+        var result = await _git.CloneRepositoryAsync(address.CloneSource, dialog.DestinationPath, _lifetimeToken);
         if (!result.Success)
         {
             _pet.ShowGuidance("⚠️ CLONE NEEDS HELP\nOpen Guardian for details");
@@ -340,7 +343,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         };
         if (dialog.ShowDialog(DialogOwner) != DialogResult.OK) return;
 
-        var inspection = await _projectInspector.InspectAsync(dialog.SelectedPath, _lifetime.Token);
+        var inspection = await _projectInspector.InspectAsync(dialog.SelectedPath, _lifetimeToken);
         await HandleInspectionAsync(inspection, preparationRequested);
     }
 
@@ -422,7 +425,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             inspection.SelectedPath, inspection.IgnoreSuggestions, initializeGit: true);
         if (preparation.ShowDialog(DialogOwner) != DialogResult.OK) return;
 
-        var initialize = await _git.InitializeRepositoryAsync(inspection.SelectedPath, _lifetime.Token);
+        var initialize = await _git.InitializeRepositoryAsync(inspection.SelectedPath, _lifetimeToken);
         if (!initialize.Success)
         {
             MessageBox.Show(DialogOwner,
@@ -431,7 +434,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             return;
         }
 
-        var verify = await _git.GetRepositoryRootAsync(inspection.SelectedPath, _lifetime.Token);
+        var verify = await _git.GetRepositoryRootAsync(inspection.SelectedPath, _lifetimeToken);
         if (!verify.Success || string.IsNullOrWhiteSpace(verify.Output))
         {
             MessageBox.Show(DialogOwner,
@@ -505,7 +508,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         IReadOnlyList<ProjectScopeEntry>? initialScope)
     {
         if (!Directory.Exists(repositoryPath) || !Directory.Exists(projectPath)) return;
-        var rootResult = await _git.GetRepositoryRootAsync(repositoryPath, _lifetime.Token);
+        var rootResult = await _git.GetRepositoryRootAsync(repositoryPath, _lifetimeToken);
         if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
         {
             MessageBox.Show(DialogOwner,
@@ -702,7 +705,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 "Reading repository...",
                 DateTimeOffset.UtcNow));
 
-            var rootResult = await _git.GetRepositoryRootAsync(project.Path, _lifetime.Token);
+            var rootResult = await _git.GetRepositoryRootAsync(project.Path, _lifetimeToken);
             if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
                 throw new InvalidOperationException(
                     "That project is no longer inside a readable Git repository.\r\n\r\n" + rootResult.Output);
@@ -719,7 +722,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 SaveOperationPhase.CheckingPathSupport,
                 "Validating Git state...",
                 DateTimeOffset.UtcNow));
-            var repositoryState = await _git.ValidateRepositoryStateAsync(project.RepositoryRoot, _lifetime.Token);
+            var repositoryState = await _git.ValidateRepositoryStateAsync(project.RepositoryRoot, _lifetimeToken);
             if (!repositoryState.Success)
                 throw new InvalidOperationException(
                     "GitPet did not activate this project.\r\n\r\n" +
@@ -744,18 +747,18 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 SaveOperationPhase.Staging,
                 "Checking project state...",
                 DateTimeOffset.UtcNow));
-            var status = await _git.GetStatusAsync(project.RepositoryRoot, _lifetime.Token);
+            var status = await _git.GetStatusAsync(project.RepositoryRoot, _lifetimeToken);
             if (!status.Healthy)
                 throw new InvalidOperationException(
                     GitService.DescribeRepositoryReadFailure(status.Error));
 
             ProjectSwitchRuntime.Transition(ProjectSwitchPhase.LoadingRemoteState, "Checking online updates...");
-            await GuardianSyncState.RefreshAsync(true, _lifetime.Token);
+            await GuardianSyncState.RefreshAsync(true, _lifetimeToken);
 
             ProjectSwitchRuntime.Transition(ProjectSwitchPhase.PreparingWorkboard, "Preparing workboard...");
             if (_guardian is { IsDisposed: false, Visible: true })
                 await _guardian.RefreshAsync();
-            await GuardianWorkboardRuntime.RefreshNowAsync(_lifetime.Token);
+            await GuardianWorkboardRuntime.RefreshNowAsync(_lifetimeToken);
 
             timer.Stop();
             _pet.SetOperationState(new SaveOperationVisualState(
@@ -781,7 +784,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 scopeEntries = scopeCount
             });
         }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)
         {
             timer.Stop();
             if (activated) await RestorePreviousProjectAsync(previousProjectId);
@@ -848,12 +851,12 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         _config.ActivateProject(previousProjectId);
         _configStore.Save(_config);
         ResetProjectState();
-        await GuardianSyncState.RefreshAsync(true, _lifetime.Token);
+        await GuardianSyncState.RefreshAsync(true, _lifetimeToken);
         if (_guardian is { IsDisposed: false, Visible: true })
             await _guardian.RefreshAsync();
-        await GuardianWorkboardRuntime.RefreshNowAsync(_lifetime.Token);
+        await GuardianWorkboardRuntime.RefreshNowAsync(_lifetimeToken);
 
-        var status = await _git.GetStatusAsync(previous.RepositoryRoot, _lifetime.Token);
+        var status = await _git.GetStatusAsync(previous.RepositoryRoot, _lifetimeToken);
         _pet.SetOperationState(new SaveOperationVisualState(
             SaveOperationPhase.Idle,
             "Ready",
@@ -863,7 +866,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     private async Task ActivateRepositoryAsync(string path)
     {
-        var rootResult = await _git.GetRepositoryRootAsync(path, _lifetime.Token);
+        var rootResult = await _git.GetRepositoryRootAsync(path, _lifetimeToken);
         if (!rootResult.Success || string.IsNullOrWhiteSpace(rootResult.Output))
         {
             MessageBox.Show(DialogOwner, "That project is no longer a readable Git repository.\r\n\r\n" + rootResult.Output,
@@ -904,7 +907,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                     await _guardian.RefreshAsync();
                 return;
             }
-            var status = await _git.GetStatusAsync(_config.RepositoryPath, _lifetime.Token);
+            var status = await _git.GetStatusAsync(_config.RepositoryPath, _lifetimeToken);
             _pet.SetStatus(status);
             await ConsiderAutomaticCheckpointAsync(status);
             if ((refreshGuardian || _guardian is { Visible: true }) && _guardian is { IsDisposed: false })
@@ -948,7 +951,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             if (commands.Count == 0) return;
             foreach (var command in commands)
             {
-                var test = await _git.RunTestCommandAsync(_config.RepositoryPath!, command, _lifetime.Token);
+                var test = await _git.RunTestCommandAsync(_config.RepositoryPath!, command, _lifetimeToken);
                 if (!test.Success) return;
             }
         }
@@ -957,7 +960,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         try
         {
             var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!,
-                $"auto-checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}", _lifetime.Token);
+                $"auto-checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}", _lifetimeToken);
             if (result.Success) _lastAutomaticFingerprint = fingerprint;
         }
         finally
@@ -1177,16 +1180,32 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!disposing)
         {
-            _timer.Dispose();
-            _lifetime.Cancel();
-            _lifetime.Dispose();
-            _projectSwitchGate.Dispose();
-            _projectsMenu?.Dispose();
-            _guardian?.Dispose();
-            _pet.Dispose();
+            base.Dispose(false);
+            return;
         }
-        base.Dispose(disposing);
+
+        // ApplicationContext shutdown may be followed by the outer using-scope
+        // disposal in Program.Main. Cleanup must therefore be idempotent.
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
+
+        _timer.Stop();
+        _timer.Dispose();
+
+        // Cancel once, then dispose. Async operations use the cached
+        // CancellationToken struct (_lifetimeToken), so they never access
+        // CancellationTokenSource.Token after the source has been disposed.
+        try { _lifetime.Cancel(); }
+        catch (ObjectDisposedException) { }
+        _lifetime.Dispose();
+
+        _projectSwitchGate.Dispose();
+        _projectsMenu?.Dispose();
+        _guardian?.Dispose();
+        _pet.Dispose();
+
+        base.Dispose(true);
     }
 }
