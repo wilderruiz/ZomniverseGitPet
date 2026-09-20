@@ -30,9 +30,10 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             DrawGroundReference(graphics, colors);
             DrawTail(graphics, colors);
             DrawTorso(graphics, colors);
+            DrawHaunches(graphics, colors);
             DrawForelegs(graphics, colors);
-            DrawHead(graphics, colors);
             DrawEars(graphics, colors);
+            DrawHead(graphics, colors);
 
             if (debugOverlay)
                 DrawDebugGeometry(graphics);
@@ -51,16 +52,17 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
 
     private static void DrawTail(Graphics g, SilhouetteColors c)
     {
-        // The approved mascot's tail is a major identity feature: tall, heavy,
-        // fluffy and clearly visible behind the left side of the body.
+        // Fuller plume with an S-curve. The tail should read as heavy fur,
+        // not as a flat crescent or leaf.
         using var tail = Path(
-            M(50, 142),
-            C(32, 148, 16, 140, 10, 126),
-            C(2, 108, 5, 89, 16, 74),
-            C(25, 62, 37, 56, 47, 59),
-            L(42, 51),
-            C(55, 54, 65, 66, 65, 81),
-            C(66, 98, 59, 116, 50, 142),
+            M(49, 143),
+            C(31, 147, 15, 138, 10, 124),
+            C(3, 106, 7, 88, 18, 74),
+            C(27, 63, 38, 58, 48, 60),
+            L(43, 53),
+            C(55, 54, 66, 64, 68, 78),
+            C(71, 94, 64, 109, 57, 121),
+            C(51, 132, 48, 139, 49, 143),
             Z());
 
         using var fill = new SolidBrush(c.Tail);
@@ -69,45 +71,48 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         g.FillPath(fill, tail);
         g.DrawPath(edge, tail);
 
-        // Outer fur breaks keep the silhouette from reading as a smooth crescent.
         using var upperTuft = Path(
-            M(16, 78),
-            L(10, 74),
+            M(17, 79),
+            L(10, 75),
             L(20, 70),
-            L(16, 64),
-            C(26, 58, 37, 56, 47, 59),
-            C(35, 60, 26, 67, 21, 76),
+            L(17, 64),
+            C(27, 59, 38, 58, 48, 60),
+            C(37, 62, 28, 68, 22, 77),
             Z());
 
-        using var midTuft = Path(
-            M(12, 105),
-            L(18, 96),
-            L(15, 91),
-            L(25, 87),
-            L(21, 81),
-            C(32, 72, 43, 68, 52, 72),
-            C(35, 76, 22, 88, 12, 105),
+        using var middleSweep = Path(
+            M(13, 108),
+            C(18, 91, 30, 77, 49, 70),
+            C(38, 70, 28, 78, 22, 90),
+            C(18, 98, 15, 104, 13, 108),
             Z());
 
-        using var tuftBrush = new SolidBrush(c.TailAccent);
-        g.FillPath(tuftBrush, upperTuft);
-        g.FillPath(tuftBrush, midTuft);
+        using var lowerSweep = Path(
+            M(15, 121),
+            C(23, 132, 35, 138, 49, 136),
+            L(44, 142),
+            C(31, 143, 21, 136, 15, 121),
+            Z());
+
+        using var accent = new SolidBrush(c.TailAccent);
+        g.FillPath(accent, upperTuft);
+        g.FillPath(accent, middleSweep);
+        g.FillPath(accent, lowerSweep);
     }
 
     private static void DrawTorso(Graphics g, SilhouetteColors c)
     {
-        // Narrower shoulders and a longer torso than V2: the reference feels
-        // like a sitting fox/guardian rather than a round plush toy.
+        // Broader seated torso with shoulders that taper into the chest.
         using var torso = Path(
-            M(55, 86),
-            C(49, 93, 45, 104, 44, 118),
-            C(43, 133, 47, 144, 57, 151),
-            C(64, 156, 73, 158, 80, 158),
-            C(87, 158, 96, 156, 103, 151),
-            C(113, 144, 117, 133, 116, 118),
-            C(115, 104, 111, 93, 105, 86),
-            C(98, 80, 90, 78, 80, 78),
-            C(70, 78, 62, 80, 55, 86),
+            M(53, 84),
+            C(47, 92, 43, 103, 42, 117),
+            C(41, 132, 45, 144, 56, 151),
+            C(63, 156, 71, 158, 80, 158),
+            C(89, 158, 97, 156, 104, 151),
+            C(115, 144, 119, 132, 118, 117),
+            C(117, 103, 113, 92, 107, 84),
+            C(100, 79, 91, 76, 80, 76),
+            C(69, 76, 60, 79, 53, 84),
             Z());
 
         using var fill = new SolidBrush(c.Body);
@@ -116,15 +121,13 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         g.FillPath(fill, torso);
         g.DrawPath(edge, torso);
 
-        // Shoulder fur gives a visible break between head and forelegs.
         using var leftShoulder = Path(
-            M(53, 91),
-            L(61, 96),
-            L(58, 101),
-            L(66, 105),
+            M(51, 92),
+            L(60, 96),
+            L(57, 101),
+            L(65, 105),
             L(61, 110),
-            L(67, 115),
-            C(59, 115, 53, 108, 51, 100),
+            C(56, 108, 52, 102, 51, 92),
             Z());
 
         using var rightShoulder = Mirror(leftShoulder);
@@ -134,10 +137,28 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         g.FillPath(shoulderBrush, rightShoulder);
     }
 
+    private static void DrawHaunches(Graphics g, SilhouetteColors c)
+    {
+        using var left = Path(
+            M(45, 113),
+            C(38, 122, 38, 137, 45, 147),
+            C(50, 154, 59, 156, 66, 151),
+            C(69, 145, 68, 135, 65, 125),
+            C(61, 116, 53, 111, 45, 113),
+            Z());
+
+        using var right = Mirror(left);
+        using var fill = new SolidBrush(c.Body);
+        using var edge = Outline(c);
+
+        g.FillPath(fill, left);
+        g.FillPath(fill, right);
+        g.DrawPath(edge, left);
+        g.DrawPath(edge, right);
+    }
+
     private static void DrawForelegs(Graphics g, SilhouetteColors c)
     {
-        // Separate long forelegs are important. V2 visually merged the whole
-        // lower half into one oval body.
         DrawForeleg(g, left: true, c);
         DrawForeleg(g, left: false, c);
     }
@@ -145,12 +166,12 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
     private static void DrawForeleg(Graphics g, bool left, SilhouetteColors c)
     {
         using var leg = Path(
-            M(58, 101),
-            C(54, 112, 53, 126, 55, 139),
-            C(57, 148, 62, 153, 68, 154),
-            C(72, 154, 74, 151, 74, 147),
-            C(72, 133, 72, 118, 75, 105),
-            C(70, 100, 64, 99, 58, 101),
+            M(60, 99),
+            C(57, 110, 57, 125, 59, 139),
+            C(60, 146, 64, 150, 69, 151),
+            C(72, 151, 74, 148, 74, 144),
+            C(73, 131, 73, 116, 76, 103),
+            C(71, 99, 65, 98, 60, 99),
             Z());
 
         using var actual = left ? leg : Mirror(leg);
@@ -160,10 +181,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         g.FillPath(fill, actual);
         g.DrawPath(edge, actual);
 
-        // Compact paws replace V2's huge horizontal ovals.
         var pawRect = left
-            ? new RectangleF(52, 143, 24, 13)
-            : new RectangleF(84, 143, 24, 13);
+            ? new RectangleF(56, 143, 20, 11)
+            : new RectangleF(84, 143, 20, 11);
 
         using var paw = new GraphicsPath();
         paw.AddEllipse(pawRect);
@@ -175,39 +195,36 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
 
     private static void DrawHead(Graphics g, SilhouetteColors c)
     {
-        // Broad temples, tapered jaw, explicit cheek fur and a small crown tuft.
-        // This should be judged against the approved reference before facial
-        // features are added.
+        // Smaller and more tapered than the first pass. The cheek fur provides
+        // width without turning the whole skull into a circle.
         using var head = Path(
-            M(43, 38),
-            C(50, 28, 60, 22, 70, 19),
-            L(68, 15),
-            L(77, 18),
-            L(86, 14),
-            L(84, 19),
-            C(101, 21, 112, 28, 118, 39),
-            C(124, 48, 125, 59, 122, 69),
+            M(46, 39),
+            C(52, 30, 62, 24, 72, 21),
+            L(70, 17),
+            L(78, 20),
+            L(86, 16),
+            L(84, 21),
+            C(98, 23, 108, 30, 114, 39),
+            C(120, 48, 121, 58, 118, 67),
 
-            // right cheek tufts
-            L(128, 75),
-            L(119, 76),
-            L(124, 82),
-            L(114, 81),
-            L(117, 88),
-            L(108, 87),
+            L(123, 72),
+            L(115, 73),
+            L(120, 79),
+            L(111, 78),
+            L(114, 84),
+            L(106, 83),
 
-            C(101, 96, 91, 101, 80, 103),
-            C(69, 101, 59, 96, 52, 88),
+            C(99, 91, 90, 96, 80, 98),
+            C(70, 96, 61, 91, 54, 83),
 
-            // left cheek tufts
-            L(43, 87),
-            L(46, 81),
-            L(36, 82),
-            L(41, 76),
-            L(32, 75),
-            L(38, 69),
+            L(46, 84),
+            L(49, 78),
+            L(40, 79),
+            L(45, 73),
+            L(37, 72),
+            L(42, 67),
 
-            C(35, 58, 36, 48, 43, 38),
+            C(39, 58, 40, 48, 46, 39),
             Z());
 
         using var fill = new SolidBrush(c.Head);
@@ -220,10 +237,10 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
     private static void DrawEars(Graphics g, SilhouetteColors c)
     {
         using var leftEar = Path(
-            M(44, 48),
-            C(37, 38, 37, 20, 46, 4),
-            C(57, 13, 64, 24, 67, 38),
-            C(59, 42, 51, 46, 44, 48),
+            M(46, 45),
+            C(40, 35, 40, 20, 48, 6),
+            C(58, 14, 64, 24, 66, 36),
+            C(59, 40, 52, 43, 46, 45),
             Z());
 
         using var rightEar = Mirror(leftEar);
@@ -236,13 +253,13 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         g.DrawPath(edge, rightEar);
 
         using var leftInner = Path(
-            M(46, 39),
-            C(44, 29, 46, 18, 49, 11),
-            C(56, 18, 60, 28, 61, 36),
-            L(56, 32),
-            L(57, 39),
-            L(51, 34),
-            L(48, 41),
+            M(48, 37),
+            C(46, 28, 48, 18, 51, 12),
+            C(57, 19, 60, 27, 61, 34),
+            L(57, 31),
+            L(58, 37),
+            L(52, 33),
+            L(50, 39),
             Z());
 
         using var rightInner = Mirror(leftInner);
