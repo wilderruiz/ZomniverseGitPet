@@ -20,10 +20,14 @@ Completing any of these paths marks first-run setup as done; GitPet won't show i
 
 Once a project is open, the **Guardian** window is the main surface:
 
-- A header showing the branch name and whether the repository is healthy.
+- A header showing the branch name and whether the repository is healthy. For a whole-repository project, the branch value is clickable and opens GitPet's branch switcher.
 - A list of changed files, colored by what changed.
 - The **File Review** pane, a before/now comparison for whichever file you click.
 - A toolbar: **Projects · Refresh · Review · Tests · Save · Get ↓ · Send ↑ · History · Health**.
+
+For whole-repository projects, click the **BRANCH** value in the status card to switch branches without leaving GitPet. GitPet refreshes local and `origin/*` branches, requires a clean working tree, and uses `git switch`. Choosing an online-only branch creates a local tracking branch automatically. Branch switching never commits, merges, resets, cleans, pushes, or force-updates anything.
+
+For a **scoped logical project**, that status-card branch is the shared parent repository branch and is deliberately not switchable there. Use the scoped project's separate **Branch: … ▾** toolbar control to choose its standalone project-only remote branch instead.
 - A quiet activity log of what GitPet has done.
 
 Alongside Guardian, a small fox stays near your desktop as a lightweight status indicator (idle, healthy, changes-ready-for-review, or needs-attention) — it's cosmetic, not a second place to take action.
