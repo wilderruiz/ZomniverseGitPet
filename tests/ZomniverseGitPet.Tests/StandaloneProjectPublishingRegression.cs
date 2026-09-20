@@ -83,6 +83,112 @@ internal static class StandaloneProjectPublishingRegression
                 throw new InvalidOperationException("Equivalent GitHub remote URLs stopped matching.");
 
             /* ==========================================================================
+               PATCH: STANDALONE REMOTE BRANCH REGRESSIONS
+               DATE.TIME: 2026-09-20 18:18 +03:00
+               Keep standalone branch selection isolated from parent repository history.
+               ========================================================================== */
+            var branchList = StandaloneProjectPublishing.ParseRemoteBranches(
+                "aaa\trefs/heads/main\n" +
+                "bbb\trefs/heads/feature/home-agentic-v2\n" +
+                "ccc\trefs/heads/legacy/home-v1.4.8-professional\n");
+            if (!branchList.SequenceEqual(
+                    ["main", "feature/home-agentic-v2", "legacy/home-v1.4.8-professional"]))
+                throw new InvalidOperationException("Standalone remote branch parsing/order regression failed.");
+
+            foreach (var validBranch in new[]
+                     {
+                         "main",
+                         "feature/home-agentic-v2",
+                         "legacy/home-v1.4.8-professional"
+                     })
+            {
+                if (!StandaloneProjectPublishing.IsSafeBranchName(validBranch))
+                    throw new InvalidOperationException("Valid standalone branch was rejected: " + validBranch);
+            }
+
+            foreach (var invalidBranch in new[]
+                     {
+                         "../escape",
+                         "-danger",
+                         "bad branch",
+                         "bad..branch",
+                         "bad~branch",
+                         "bad:branch",
+                         "bad\\branch",
+                         "refs/heads/main"
+                     })
+            {
+                if (StandaloneProjectPublishing.IsSafeBranchName(invalidBranch))
+                    throw new InvalidOperationException("Unsafe standalone branch was accepted: " + invalidBranch);
+            }
+
+            var fetchArgs = StandaloneProjectPublishing.BuildFetchArguments(
+                "feature/home-agentic-v2",
+                quiet: false);
+            var pushArgs = StandaloneProjectPublishing.BuildPushArguments(
+                "feature/home-agentic-v2");
+            if (!fetchArgs.SequenceEqual(
+                    ["fetch", "--prune", "origin", "feature/home-agentic-v2"]) ||
+                !pushArgs.SequenceEqual(
+                    ["push", "-u", "origin", "HEAD:refs/heads/feature/home-agentic-v2"]) ||
+                StandaloneProjectPublishing.RemoteTrackingRef("feature/home-agentic-v2") !=
+                    "refs/remotes/origin/feature/home-agentic-v2")
+                throw new InvalidOperationException("Selected standalone branch did not flow into Git command construction.");
+
+            var legacyEntry = new StandaloneProjectPublishingEntry
+            {
+                ProjectId = "legacy",
+                RemoteUrl = "https://example.invalid/legacy.git",
+                RepositoryLabel = "legacy",
+                Branch = "",
+                LastPublishedSourceCommit = "legacy-source",
+                LastPublishedFingerprint = "legacy-fingerprint",
+                LastPublishedUtc = DateTimeOffset.Parse("2026-09-11T12:00:00Z")
+            };
+            StandaloneProjectPublishing.NormalizeEntry(legacyEntry);
+            if (legacyEntry.Branch != "main" ||
+                !legacyEntry.BranchStates.TryGetValue("main", out var migratedMain) ||
+                migratedMain.LastPublishedFingerprint != "legacy-fingerprint" ||
+                legacyEntry.LastPublishedFingerprint != "legacy-fingerprint")
+                throw new InvalidOperationException("Legacy standalone publishing state did not migrate into main.");
+
+            var branchStateEntry = new StandaloneProjectPublishingEntry
+            {
+                ProjectId = "branches",
+                RemoteUrl = "https://example.invalid/branches.git",
+                RepositoryLabel = "branches",
+                Branch = "main"
+            };
+            var mainState = StandaloneProjectPublishing.GetOrCreateBranchState(branchStateEntry, "main");
+            mainState.LastPublishedFingerprint = "main-fingerprint";
+            mainState.LastPublishedSourceCommit = "main-source";
+            var featureState = StandaloneProjectPublishing.GetOrCreateBranchState(
+                branchStateEntry,
+                "feature/home-agentic-v2");
+            featureState.LastPublishedFingerprint = "feature-fingerprint";
+            featureState.LastPublishedSourceCommit = "feature-source";
+
+            branchStateEntry.Branch = "feature/home-agentic-v2";
+            StandaloneProjectPublishing.ProjectActiveBranchState(branchStateEntry);
+            if (branchStateEntry.LastPublishedFingerprint != "feature-fingerprint")
+                throw new InvalidOperationException("Feature branch did not restore its own standalone baseline.");
+
+            branchStateEntry.Branch = "main";
+            StandaloneProjectPublishing.ProjectActiveBranchState(branchStateEntry);
+            if (branchStateEntry.LastPublishedFingerprint != "main-fingerprint")
+                throw new InvalidOperationException("Switching back to main did not restore its prior standalone baseline.");
+
+            var mainWorkspace = StandaloneProjectPublishing.GetWorkspacePath(project, "main");
+            var featureWorkspace = StandaloneProjectPublishing.GetWorkspacePath(
+                project,
+                "feature/home-agentic-v2");
+            if (PathEquals(mainWorkspace, featureWorkspace) ||
+                !featureWorkspace.StartsWith(
+                    Path.Combine(mainWorkspace, "branches"),
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Standalone branch workspaces are not isolated.");
+
+            /* ==========================================================================
                PATCH: STANDALONE GET BOUNDARY REGRESSION
                DATE.TIME: 2026-09-20 17:46 +03:00
                Incoming remote changes must remain inside the logical-project scope.
@@ -115,13 +221,19 @@ internal static class StandaloneProjectPublishingRegression
             if (StandaloneProjectPublishing.IsPathInsideProjectScope(config, root, "unrelated/never-send.txt"))
                 throw new InvalidOperationException("Standalone Get allowed an unrelated parent-repository path.");
 
-            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get boundary).");
+            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get + branch isolation).");
         }
         finally
         {
             try { Directory.Delete(root, true); } catch { }
         }
     }
+
+    private static bool PathEquals(string left, string right) =>
+        string.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
+            StringComparison.OrdinalIgnoreCase);
 
     private static string RunGit(string workingDirectory, params string[] arguments)
     {
