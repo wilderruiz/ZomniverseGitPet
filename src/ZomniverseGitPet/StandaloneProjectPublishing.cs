@@ -204,6 +204,7 @@ internal static class StandaloneProjectPublishing
     {
         var value = NormalizeBranchName(branch);
         if (value.Length == 0 || value.Length > 255) return false;
+        if (value.StartsWith("refs/", StringComparison.OrdinalIgnoreCase)) return false;
         if (value.StartsWith("-", StringComparison.Ordinal) ||
             value.StartsWith(".", StringComparison.Ordinal) ||
             value.EndsWith(".", StringComparison.Ordinal) ||
