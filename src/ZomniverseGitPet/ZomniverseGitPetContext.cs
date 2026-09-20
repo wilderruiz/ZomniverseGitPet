@@ -38,7 +38,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         _git = git;
         _audit = audit;
         _projectInspector = new ProjectInspector(git);
-        _lifetimeToken = _lifetimeToken;
+        _lifetimeToken = _lifetime.Token;
         LogicalProjectScopeRuntime.Initialize(_config);
 
         _pet = new PetForm(ShowGuardian, ChooseRepositoryAsync, ExitApplication);
