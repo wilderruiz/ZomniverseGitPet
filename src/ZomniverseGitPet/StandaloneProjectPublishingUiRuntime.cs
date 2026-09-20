@@ -14,6 +14,7 @@ internal static class StandaloneProjectPublishingUiRuntime
     private static bool _tickRunning;
     private static readonly Dictionary<GuardianForm, GuardianActionButton> SendButtons = [];
     private static readonly Dictionary<GuardianForm, GuardianActionButton> GetButtons = [];
+    private static readonly Dictionary<GuardianForm, GuardianActionButton> BranchButtons = [];
 
     public static void Initialize(AppConfig config, GitService git, AuditLog audit)
     {
@@ -34,6 +35,7 @@ internal static class StandaloneProjectPublishingUiRuntime
             _timer = null;
             SendButtons.Clear();
             GetButtons.Clear();
+            BranchButtons.Clear();
         };
     }
 
@@ -41,6 +43,7 @@ internal static class StandaloneProjectPublishingUiRuntime
     {
         foreach (var guardian in SendButtons.Keys
                      .Concat(GetButtons.Keys)
+                     .Concat(BranchButtons.Keys)
                      .Distinct()
                      .ToArray())
             UpdateButton(guardian);
@@ -61,6 +64,8 @@ internal static class StandaloneProjectPublishingUiRuntime
                 SendButtons.Remove(stale);
             foreach (var stale in GetButtons.Keys.Where(form => !guardians.Contains(form)).ToArray())
                 GetButtons.Remove(stale);
+            foreach (var stale in BranchButtons.Keys.Where(form => !guardians.Contains(form)).ToArray())
+                BranchButtons.Remove(stale);
 
             foreach (var guardian in guardians)
             {
@@ -77,10 +82,36 @@ internal static class StandaloneProjectPublishingUiRuntime
 
     private static void EnsureButton(GuardianForm guardian)
     {
-        if (SendButtons.ContainsKey(guardian) && GetButtons.ContainsKey(guardian)) return;
+        if (SendButtons.ContainsKey(guardian) &&
+            GetButtons.ContainsKey(guardian) &&
+            BranchButtons.ContainsKey(guardian)) return;
 
         var toolbar = FindToolbar(guardian);
         if (toolbar is null) return;
+
+        if (!BranchButtons.ContainsKey(guardian))
+        {
+            var originalGet = FindOriginalGet(toolbar);
+            if (originalGet is not null)
+            {
+                var index = toolbar.Controls.GetChildIndex(originalGet);
+                var branchButton = new GuardianActionButton
+                {
+                    Name = "StandaloneProjectBranchButton",
+                    Text = "Branch: main ▾",
+                    Width = 190,
+                    Kind = GuardianActionKind.Standard,
+                    SyncStateAware = false,
+                    Visible = false,
+                    Enabled = false,
+                    Margin = originalGet.Margin
+                };
+                branchButton.Click += async (_, _) => await SelectBranchAsync(guardian);
+                toolbar.Controls.Add(branchButton);
+                toolbar.Controls.SetChildIndex(branchButton, index);
+                BranchButtons[guardian] = branchButton;
+            }
+        }
 
         if (!GetButtons.ContainsKey(guardian))
         {
@@ -134,6 +165,7 @@ internal static class StandaloneProjectPublishingUiRuntime
         {
             SendButtons.Remove(guardian);
             GetButtons.Remove(guardian);
+            BranchButtons.Remove(guardian);
         };
     }
 
@@ -147,7 +179,9 @@ internal static class StandaloneProjectPublishingUiRuntime
         var originalGet = FindOriginalGet(toolbar);
         SendButtons.TryGetValue(guardian, out var standaloneSend);
         GetButtons.TryGetValue(guardian, out var standaloneGet);
-        if (originalSend is null || originalGet is null || standaloneSend is null || standaloneGet is null) return;
+        BranchButtons.TryGetValue(guardian, out var branchButton);
+        if (originalSend is null || originalGet is null ||
+            standaloneSend is null || standaloneGet is null || branchButton is null) return;
 
         var repositoryRoot = _config.RepositoryPath;
         var logical = !string.IsNullOrWhiteSpace(repositoryRoot) &&
@@ -157,6 +191,7 @@ internal static class StandaloneProjectPublishingUiRuntime
         originalGet.Visible = !logical;
         standaloneSend.Visible = logical;
         standaloneGet.Visible = logical;
+        branchButton.Visible = logical;
         if (!logical) return;
 
         var snapshot = GuardianSyncState.Current;
@@ -165,6 +200,20 @@ internal static class StandaloneProjectPublishingUiRuntime
         var noLocalBaseline = link is not null && string.IsNullOrWhiteSpace(link.LastPublishedFingerprint);
         var onlineMode = _config.ConnectionMode != GitPetConnectionModes.LocalGitOnly;
         var operationRunning = OperationInProgress(guardian);
+
+        branchButton.Text = linked
+            ? $"Branch: {link!.Branch} ▾"
+            : "Branch: —";
+        branchButton.Width = Math.Clamp(TextRenderer.MeasureText(branchButton.Text, branchButton.Font).Width + 34, 150, 280);
+        branchButton.Enabled = onlineMode &&
+                               linked &&
+                               snapshot.HasRepository &&
+                               snapshot.Unsaved == 0 &&
+                               snapshot.Ahead == 0 &&
+                               snapshot.Behind == 0 &&
+                               !snapshot.ReconciliationPending &&
+                               !operationRunning;
+        branchButton.Cursor = branchButton.Enabled ? Cursors.Hand : Cursors.Default;
 
         standaloneGet.Text = "Get ↓";
         standaloneGet.Width = 92;
@@ -189,6 +238,129 @@ internal static class StandaloneProjectPublishingUiRuntime
                                  snapshot.Behind == 0 &&
                                  !operationRunning;
         standaloneSend.Cursor = standaloneSend.Enabled ? Cursors.Hand : Cursors.Default;
+    }
+
+    private static async Task SelectBranchAsync(GuardianForm guardian)
+    {
+        var config = _config;
+        var git = _git;
+        var audit = _audit;
+        if (config is null || git is null || audit is null ||
+            string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
+        if (!StandaloneProjectPublishing.IsLogicalProject(config, config.RepositoryPath)) return;
+
+        var link = StandaloneProjectPublishing.GetLink(config);
+        if (link is null)
+        {
+            using var missing = new GuardianConfirmDialog(
+                "Project branch",
+                "CONNECT PROJECT FIRST",
+                "Connect this logical project to its standalone online repository before choosing a branch.",
+                "OK",
+                showCancel: false);
+            missing.ShowDialog(guardian);
+            return;
+        }
+
+        var snapshot = GuardianSyncState.Current;
+        var operationRunning = OperationInProgress(guardian);
+        if (operationRunning ||
+            snapshot.Unsaved > 0 ||
+            snapshot.Ahead > 0 ||
+            snapshot.Behind > 0 ||
+            snapshot.ReconciliationPending)
+        {
+            var reasons = new List<string>();
+            if (operationRunning) reasons.Add("another GitPet operation is still running");
+            if (snapshot.Unsaved > 0) reasons.Add("unsaved project changes are waiting for review");
+            if (snapshot.Ahead > 0) reasons.Add("saved project updates are waiting to Send");
+            if (snapshot.Behind > 0) reasons.Add("online project updates are waiting to Get");
+            if (snapshot.ReconciliationPending) reasons.Add("the project is in reconciliation");
+
+            using var blocked = new GuardianConfirmDialog(
+                "Project branch",
+                "FINISH CURRENT PROJECT STATE FIRST",
+                "GitPet will not switch the standalone branch while this logical project has unresolved state.\r\n\r\n" +
+                string.Join("\r\n", reasons.Select(reason => "• " + reason)) +
+                "\r\n\r\nThe parent repository branch has not been changed.",
+                "OK",
+                showCancel: false,
+                dialogSize: new Size(720, 470));
+            blocked.ShowDialog(guardian);
+            return;
+        }
+
+        guardian.UseWaitCursor = true;
+        IReadOnlyList<string> branches;
+        try
+        {
+            branches = await StandaloneProjectPublishing.ListRemoteBranchesAsync(
+                config,
+                git,
+                config.RepositoryPath);
+        }
+        finally
+        {
+            guardian.UseWaitCursor = false;
+        }
+
+        if (branches.Count == 0)
+        {
+            using var empty = new GuardianConfirmDialog(
+                "Project branch",
+                "NO REMOTE BRANCHES FOUND",
+                $"GitPet could not find any existing branches at {link.RepositoryLabel}.\r\n\r\n" +
+                "Refresh the GitHub connection or create the branch online first. This selector never creates or force-updates branches.",
+                "OK",
+                showCancel: false);
+            empty.ShowDialog(guardian);
+            return;
+        }
+
+        using var selector = new StandaloneProjectBranchForm(
+            link.RepositoryLabel,
+            link.Branch,
+            branches);
+        if (selector.ShowDialog(guardian) != DialogResult.OK) return;
+
+        var selected = selector.SelectedBranch;
+        if (string.IsNullOrWhiteSpace(selected) ||
+            selected.Equals(link.Branch, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        using var confirmation = new GuardianConfirmDialog(
+            "Project branch",
+            "SWITCH STANDALONE PROJECT BRANCH",
+            $"Change only this logical project's standalone remote branch?\r\n\r\n" +
+            $"{link.RepositoryLabel}\r\n" +
+            $"{link.Branch}  →  {selected}\r\n\r\n" +
+            "The parent repository branch and history stay exactly where they are. " +
+            "GitPet will re-check GET and SEND state against the selected standalone branch.",
+            "Use branch",
+            "Cancel",
+            confirmWidth: 140,
+            dialogSize: new Size(760, 470));
+        if (confirmation.ShowDialog(guardian) != DialogResult.Yes) return;
+
+        StandaloneProjectPublishing.SetBranch(config, selected);
+        await audit.WriteAsync("standalone_project_branch_changed", new
+        {
+            projectId = config.GetActiveProject()?.Id,
+            project = config.GetActiveProject()?.DisplayName,
+            remote = link.RepositoryLabel,
+            from = link.Branch,
+            to = selected
+        });
+
+        try { await GuardianSyncState.RefreshAsync(true); } catch { }
+        try { await guardian.RefreshAsync(); } catch { }
+        try { await GuardianWorkboardRuntime.RefreshNowAsync(); } catch { }
+        UpdateButton(guardian);
+
+        var pet = Application.OpenForms
+            .OfType<PetForm>()
+            .FirstOrDefault(form => form.Visible && !form.IsDisposed);
+        pet?.ShowGuidance($"⑂ PROJECT BRANCH\n{selected}");
     }
 
     private static async Task ReceiveAsync(GuardianForm guardian)
@@ -249,7 +421,7 @@ internal static class StandaloneProjectPublishingUiRuntime
         using var confirmation = new GuardianConfirmDialog(
             "Get project",
             "GET PROJECT SCOPE ONLY",
-            $"Check {link.RepositoryLabel} for project-only updates?\r\n\r\n" +
+            $"Check {link.RepositoryLabel} / {link.Branch} for project-only updates?\r\n\r\n" +
             "GitPet will fetch into its isolated project workspace, verify every changed path is inside this project's configured scope, " +
             "then copy only those project files into the local working tree.\r\n\r\n" +
             "Incoming files will remain UNSAVED so you can review them before Save. The parent repository history will not be pulled.",
@@ -381,7 +553,7 @@ internal static class StandaloneProjectPublishingUiRuntime
         using var confirmation = new GuardianConfirmDialog(
             "Send project",
             "SEND PROJECT SCOPE ONLY",
-            $"Publish the saved {project.DisplayName} project to:\r\n{link.RepositoryLabel}\r\n\r\n" +
+            $"Publish the saved {project.DisplayName} project to:\r\n{link.RepositoryLabel}\r\nBranch: {link.Branch}\r\n\r\n" +
             "GitPet will build an isolated copy containing ONLY this project's selected tracked files.\r\n\r\n" +
             "The larger parent repository and unrelated sibling folders will NOT be sent.",
             "Send project ↑",
