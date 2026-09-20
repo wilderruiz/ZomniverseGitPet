@@ -33,6 +33,18 @@ internal sealed record StandaloneProjectPublishResult(
     string RemoteUrl = "",
     bool CreatedCommit = false);
 
+internal sealed record StandaloneProjectRemoteChange(
+    string Status,
+    string Path,
+    string PreviousPath = "");
+
+internal sealed record StandaloneProjectReceiveResult(
+    bool Success,
+    string Message,
+    int ChangedFileCount = 0,
+    string WorkspacePath = "",
+    string RemoteUrl = "");
+
 internal static class StandaloneProjectPublishing
 {
     private static readonly object StoreGate = new();
@@ -387,6 +399,378 @@ internal static class StandaloneProjectPublishing
         }
     }
 
+    /* ==========================================================================
+       PATCH: STANDALONE LOGICAL PROJECT GET
+       DATE.TIME: 2026-09-20 17:40 +03:00
+       Receive project-only remote changes through the isolated workspace.
+       Never pull standalone history into the parent repository.
+       ========================================================================== */
+    public static async Task<StandaloneProjectReceiveResult> ReceiveAsync(
+        AppConfig config,
+        GitService git,
+        AuditLog audit,
+        CancellationToken token = default)
+    {
+        var project = config.GetActiveProject();
+        var repositoryRoot = config.RepositoryPath;
+        if (project is null || string.IsNullOrWhiteSpace(repositoryRoot) || !Directory.Exists(repositoryRoot))
+            return new(false, "Choose a logical GitPet project before getting project-only updates.");
+        if (!IsLogicalProject(config, repositoryRoot))
+            return new(false, "This is the whole Git repository, so normal Get should be used instead.");
+
+        var link = GetLink(config);
+        if (link is null)
+            return new(false, "Connect this GitPet project to its own online repository first.");
+
+        var status = await git.GetStatusAsync(repositoryRoot, token);
+        if (!status.Healthy)
+            return new(false, "GitPet could not verify the project before Get.\r\n\r\n" + status.Error);
+        if (status.Files.Count > 0)
+            return new(false, "Save or discard this project's current local changes before getting its standalone online copy.");
+
+        if (await HasPendingPublishAsync(config, git, repositoryRoot, token))
+        {
+            return new(false,
+                "This project has saved local updates that have not been sent yet.\r\n\r\n" +
+                "Send those project-only updates first, then use Get so GitPet never guesses how to combine two independent histories.",
+                RemoteUrl: link.RemoteUrl);
+        }
+
+        var snapshot = await BuildSnapshotAsync(config, git, repositoryRoot, token);
+        if (snapshot is null || snapshot.Files.Count == 0)
+            return new(false, "The selected project scope does not contain any tracked files in the latest saved version.");
+
+        var workspace = GetWorkspacePath(project);
+        var stagingRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ZomniverseGitPet",
+            "Receiving",
+            project.Id,
+            Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(workspace);
+
+            var gitDirectory = Path.Combine(workspace, ".git");
+            var hasWorkspaceGit = Directory.Exists(gitDirectory);
+            if (!hasWorkspaceGit)
+            {
+                CleanPublishingWorkspace(workspace);
+                foreach (var relative in snapshot.Files)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var source = ResolveInside(repositoryRoot, relative);
+                    if (!File.Exists(source))
+                        return new(false, $"A saved project file is missing from the working tree:\r\n{relative}",
+                            WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+                    var destination = ResolveInside(workspace, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    File.Copy(source, destination, true);
+                }
+
+                var init = await git.RunGitAsync(workspace, ["init", "-b", "main"], TimeSpan.FromMinutes(1), token);
+                if (!init.Success)
+                    return ReceiveFailure("GitPet could not initialize its isolated Get workspace.", init, workspace, link.RemoteUrl);
+            }
+            else
+            {
+                var workspaceHead = await git.RunGitAsync(
+                    workspace, ["rev-parse", "--verify", "HEAD"], cancellationToken: token);
+                if (workspaceHead.Success)
+                {
+                    var reset = await git.RunGitAsync(
+                        workspace, ["reset", "--hard", "HEAD"], TimeSpan.FromMinutes(1), token);
+                    if (!reset.Success)
+                        return ReceiveFailure("GitPet could not reset its isolated Get workspace.", reset, workspace, link.RemoteUrl);
+                    var clean = await git.RunGitAsync(
+                        workspace, ["clean", "-fdx"], TimeSpan.FromMinutes(1), token);
+                    if (!clean.Success)
+                        return ReceiveFailure("GitPet could not clean its isolated Get workspace.", clean, workspace, link.RemoteUrl);
+                }
+                else
+                {
+                    CleanPublishingWorkspace(workspace);
+                    foreach (var relative in snapshot.Files)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        var source = ResolveInside(repositoryRoot, relative);
+                        if (!File.Exists(source))
+                            return new(false, $"A saved project file is missing from the working tree:\r\n{relative}",
+                                WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+                        var destination = ResolveInside(workspace, relative);
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                        File.Copy(source, destination, true);
+                    }
+                }
+            }
+
+            var name = await git.GetUserNameAsync(repositoryRoot, token);
+            var email = await git.GetUserEmailAsync(repositoryRoot, token);
+            if (!name.Success || string.IsNullOrWhiteSpace(name.Output) ||
+                !email.Success || string.IsNullOrWhiteSpace(email.Output))
+            {
+                return new(false,
+                    "GitPet needs the Git author name and email already used by this source repository before it can establish the isolated Get baseline.",
+                    WorkspacePath: workspace,
+                    RemoteUrl: link.RemoteUrl);
+            }
+
+            var setName = await git.RunGitAsync(workspace, ["config", "user.name", name.Output.Trim()], cancellationToken: token);
+            if (!setName.Success)
+                return ReceiveFailure("GitPet could not configure the isolated Get author name.", setName, workspace, link.RemoteUrl);
+            var setEmail = await git.RunGitAsync(workspace, ["config", "user.email", email.Output.Trim()], cancellationToken: token);
+            if (!setEmail.Success)
+                return ReceiveFailure("GitPet could not configure the isolated Get author email.", setEmail, workspace, link.RemoteUrl);
+
+            var remote = await git.RunGitAsync(workspace, ["remote", "get-url", "origin"], cancellationToken: token);
+            CommandResult remoteResult;
+            if (!remote.Success || string.IsNullOrWhiteSpace(remote.Output))
+                remoteResult = await git.RunGitAsync(workspace, ["remote", "add", "origin", link.RemoteUrl], cancellationToken: token);
+            else if (!RemoteEquals(remote.Output.Trim(), link.RemoteUrl))
+                remoteResult = await git.RunGitAsync(workspace, ["remote", "set-url", "origin", link.RemoteUrl], cancellationToken: token);
+            else
+                remoteResult = new CommandResult(0, remote.Output);
+            if (!remoteResult.Success)
+                return ReceiveFailure("GitPet could not configure the standalone Get source.", remoteResult, workspace, link.RemoteUrl);
+
+            var localHead = await git.RunGitAsync(workspace, ["rev-parse", "--verify", "HEAD"], cancellationToken: token);
+            if (!localHead.Success)
+            {
+                var stageBaseline = await git.RunGitAsync(workspace, ["add", "-f", "-A"], TimeSpan.FromMinutes(1), token);
+                if (!stageBaseline.Success)
+                    return ReceiveFailure("GitPet could not stage the isolated Get baseline.", stageBaseline, workspace, link.RemoteUrl);
+
+                var baselineCommit = await git.RunGitAsync(
+                    workspace,
+                    ["commit", "-m", $"baseline: {project.DisplayName} before standalone Get"],
+                    TimeSpan.FromMinutes(1),
+                    token);
+                if (!baselineCommit.Success)
+                    return ReceiveFailure("GitPet could not create the isolated Get baseline.", baselineCommit, workspace, link.RemoteUrl);
+            }
+
+            var fetch = await git.RunGitAsync(
+                workspace,
+                ["fetch", "--prune", "origin", "main"],
+                TimeSpan.FromMinutes(5),
+                token);
+            if (!fetch.Success)
+                return ReceiveFailure("GitPet could not fetch the project-only online repository.", fetch, workspace, link.RemoteUrl);
+
+            var remoteHead = await git.RunGitAsync(
+                workspace,
+                ["rev-parse", "--verify", "refs/remotes/origin/main"],
+                TimeSpan.FromSeconds(12),
+                token);
+            if (!remoteHead.Success)
+                return ReceiveFailure("The standalone repository does not have a readable main branch.", remoteHead, workspace, link.RemoteUrl);
+
+            var diff = await git.RunGitAsync(
+                workspace,
+                ["diff", "--name-status", "--find-renames", "HEAD", "refs/remotes/origin/main"],
+                TimeSpan.FromSeconds(30),
+                token);
+            if (!diff.Success)
+                return ReceiveFailure("GitPet could not compare the local project package with its online copy.", diff, workspace, link.RemoteUrl);
+
+            var changes = ParseRemoteChanges(diff.Output);
+            if (changes.Count == 0)
+            {
+                return new(true,
+                    "The project-only online repository is already synchronized with this local project.",
+                    0,
+                    workspace,
+                    link.RemoteUrl);
+            }
+
+            var escaped = changes
+                .SelectMany(change => string.IsNullOrWhiteSpace(change.PreviousPath)
+                    ? new[] { change.Path }
+                    : new[] { change.PreviousPath, change.Path })
+                .Where(path => !IsPathInsideProjectScope(config, repositoryRoot, path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (escaped.Length > 0)
+            {
+                await audit.WriteAsync("standalone_project_get_boundary_blocked", new
+                {
+                    projectId = project.Id,
+                    project = project.DisplayName,
+                    escapedPaths = escaped
+                });
+                return new(false,
+                    "Get blocked: the standalone repository contains incoming changes outside this project's configured scope.\r\n\r\n" +
+                    string.Join("\r\n", escaped),
+                    WorkspacePath: workspace,
+                    RemoteUrl: link.RemoteUrl);
+            }
+
+            var resetRemote = await git.RunGitAsync(
+                workspace,
+                ["reset", "--hard", "refs/remotes/origin/main"],
+                TimeSpan.FromMinutes(1),
+                token);
+            if (!resetRemote.Success)
+                return ReceiveFailure("GitPet could not materialize the online project snapshot in its isolated workspace.", resetRemote, workspace, link.RemoteUrl);
+            var cleanRemote = await git.RunGitAsync(workspace, ["clean", "-fdx"], TimeSpan.FromMinutes(1), token);
+            if (!cleanRemote.Success)
+                return ReceiveFailure("GitPet could not clean the isolated online project snapshot.", cleanRemote, workspace, link.RemoteUrl);
+
+            Directory.CreateDirectory(stagingRoot);
+            foreach (var change in changes)
+            {
+                token.ThrowIfCancellationRequested();
+                if (change.Status.StartsWith("D", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var remoteSource = ResolveInside(workspace, change.Path);
+                if (!File.Exists(remoteSource))
+                {
+                    return new(false,
+                        $"The online project change could not be materialized as a normal file:\r\n{change.Path}",
+                        WorkspacePath: workspace,
+                        RemoteUrl: link.RemoteUrl);
+                }
+
+                var staged = ResolveInside(stagingRoot, change.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(staged)!);
+                File.Copy(remoteSource, staged, true);
+            }
+
+            foreach (var change in changes)
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (!string.IsNullOrWhiteSpace(change.PreviousPath) &&
+                    !change.PreviousPath.Equals(change.Path, StringComparison.OrdinalIgnoreCase) &&
+                    change.Status.StartsWith("R", StringComparison.OrdinalIgnoreCase))
+                {
+                    var previous = ResolveInside(repositoryRoot, change.PreviousPath);
+                    if (File.Exists(previous)) File.Delete(previous);
+                }
+
+                if (change.Status.StartsWith("D", StringComparison.OrdinalIgnoreCase))
+                {
+                    var deleted = ResolveInside(repositoryRoot, change.Path);
+                    if (File.Exists(deleted)) File.Delete(deleted);
+                    continue;
+                }
+
+                var staged = ResolveInside(stagingRoot, change.Path);
+                var destination = ResolveInside(repositoryRoot, change.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(staged, destination, true);
+            }
+
+            await audit.WriteAsync("standalone_project_received", new
+            {
+                projectId = project.Id,
+                project = project.DisplayName,
+                changedFileCount = changes.Count,
+                remote = link.RepositoryLabel
+            });
+
+            return new(true,
+                $"Received {changes.Count} project-only change{(changes.Count == 1 ? "" : "s")} from {link.RepositoryLabel}.\r\n\r\n" +
+                "They were copied only into this project's configured scope and remain UNSAVED locally so you can review them before Save.",
+                changes.Count,
+                workspace,
+                link.RemoteUrl);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await audit.WriteAsync("standalone_project_get_error", new
+            {
+                projectId = project.Id,
+                project = project.DisplayName,
+                error = ex.Message
+            });
+            return new(false,
+                "GitPet could not receive the standalone project safely.\r\n\r\n" + ex.Message,
+                WorkspacePath: workspace,
+                RemoteUrl: link.RemoteUrl);
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    internal static IReadOnlyList<StandaloneProjectRemoteChange> ParseRemoteChanges(string output)
+    {
+        var changes = new List<StandaloneProjectRemoteChange>();
+        foreach (var line in (output ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = line.Split('\t');
+            if (fields.Length < 2) continue;
+
+            var status = fields[0].Trim();
+            if (status.Length == 0) continue;
+
+            var renameOrCopy = (status.StartsWith("R", StringComparison.OrdinalIgnoreCase) ||
+                                status.StartsWith("C", StringComparison.OrdinalIgnoreCase)) &&
+                               fields.Length >= 3;
+            var previous = renameOrCopy ? NormalizeRelative(fields[1]) : "";
+            var path = NormalizeRelative(renameOrCopy ? fields[2] : fields[1]);
+            if (path.Length == 0) continue;
+
+            changes.Add(new StandaloneProjectRemoteChange(status, path, previous));
+        }
+        return changes;
+    }
+
+    internal static bool IsPathInsideProjectScope(
+        AppConfig config,
+        string repositoryRoot,
+        string relativePath)
+    {
+        var project = config.GetActiveProject();
+        if (project is null || !PathEquals(project.RepositoryRoot, repositoryRoot)) return false;
+
+        var candidate = NormalizeRelative(relativePath);
+        if (candidate.Length == 0) return false;
+
+        if (project.TrackEverything)
+        {
+            var projectRelative = LogicalProjectScopeRuntime.TryGetRelativePath(repositoryRoot, project.Path);
+            if (string.IsNullOrWhiteSpace(projectRelative)) return false;
+            var scope = NormalizeRelative(projectRelative);
+            return candidate.Equals(scope, StringComparison.OrdinalIgnoreCase) ||
+                   candidate.StartsWith(scope + "/", StringComparison.OrdinalIgnoreCase);
+        }
+
+        foreach (var entry in project.ScopeEntries ?? [])
+        {
+            var scope = NormalizeRelative(entry.RelativePath);
+            if (scope.Length == 0) continue;
+            if (entry.IsDirectory)
+            {
+                if (candidate.Equals(scope, StringComparison.OrdinalIgnoreCase) ||
+                    candidate.StartsWith(scope + "/", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            else if (candidate.Equals(scope, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool RemoteEquals(string? left, string? right)
     {
         static string Normalize(string? value)
@@ -484,6 +868,16 @@ internal static class StandaloneProjectPublishing
             throw new InvalidOperationException("A project publishing path resolved outside its repository boundary: " + relative);
         return candidate;
     }
+
+    private static StandaloneProjectReceiveResult ReceiveFailure(
+        string prefix,
+        CommandResult result,
+        string workspace,
+        string remoteUrl) =>
+        new(false,
+            prefix + (string.IsNullOrWhiteSpace(result.Output) ? "" : "\r\n\r\n" + result.Output),
+            WorkspacePath: workspace,
+            RemoteUrl: remoteUrl);
 
     private static StandaloneProjectPublishResult Failure(
         string prefix,
