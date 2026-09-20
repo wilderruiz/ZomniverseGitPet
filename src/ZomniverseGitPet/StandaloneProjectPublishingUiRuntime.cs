@@ -12,7 +12,8 @@ internal static class StandaloneProjectPublishingUiRuntime
     private static AuditLog? _audit;
     private static System.Windows.Forms.Timer? _timer;
     private static bool _tickRunning;
-    private static readonly Dictionary<GuardianForm, GuardianActionButton> Buttons = [];
+    private static readonly Dictionary<GuardianForm, GuardianActionButton> SendButtons = [];
+    private static readonly Dictionary<GuardianForm, GuardianActionButton> GetButtons = [];
 
     public static void Initialize(AppConfig config, GitService git, AuditLog audit)
     {
@@ -31,13 +32,18 @@ internal static class StandaloneProjectPublishingUiRuntime
             _timer?.Stop();
             _timer?.Dispose();
             _timer = null;
-            Buttons.Clear();
+            SendButtons.Clear();
+            GetButtons.Clear();
         };
     }
 
     private static void OnSyncChanged(object? sender, EventArgs e)
     {
-        foreach (var guardian in Buttons.Keys.ToArray()) UpdateButton(guardian);
+        foreach (var guardian in SendButtons.Keys
+                     .Concat(GetButtons.Keys)
+                     .Distinct()
+                     .ToArray())
+            UpdateButton(guardian);
     }
 
     private static Task TickAsync()
@@ -51,8 +57,10 @@ internal static class StandaloneProjectPublishingUiRuntime
                 .Where(form => !form.IsDisposed)
                 .ToArray();
 
-            foreach (var stale in Buttons.Keys.Where(form => !guardians.Contains(form)).ToArray())
-                Buttons.Remove(stale);
+            foreach (var stale in SendButtons.Keys.Where(form => !guardians.Contains(form)).ToArray())
+                SendButtons.Remove(stale);
+            foreach (var stale in GetButtons.Keys.Where(form => !guardians.Contains(form)).ToArray())
+                GetButtons.Remove(stale);
 
             foreach (var guardian in guardians)
             {
@@ -69,63 +77,218 @@ internal static class StandaloneProjectPublishingUiRuntime
 
     private static void EnsureButton(GuardianForm guardian)
     {
-        if (Buttons.ContainsKey(guardian)) return;
         var toolbar = FindToolbar(guardian);
         if (toolbar is null) return;
 
-        var original = FindOriginalSend(toolbar);
-        if (original is null) return;
-        var index = toolbar.Controls.GetChildIndex(original);
-
-        var button = new GuardianActionButton
+        if (!GetButtons.ContainsKey(guardian))
         {
-            Name = "StandaloneProjectSendButton",
-            Text = "Send ↑",
-            Width = 92,
-            Kind = GuardianActionKind.Push,
-            SyncStateAware = false,
-            Visible = false,
-            Enabled = false,
-            Margin = original.Margin
+            var originalGet = FindOriginalGet(toolbar);
+            if (originalGet is not null)
+            {
+                var index = toolbar.Controls.GetChildIndex(originalGet);
+                var getButton = new GuardianActionButton
+                {
+                    Name = "StandaloneProjectGetButton",
+                    Text = "Get ↓",
+                    Width = 92,
+                    Kind = GuardianActionKind.Pull,
+                    SyncStateAware = false,
+                    Visible = false,
+                    Enabled = false,
+                    Margin = originalGet.Margin
+                };
+                getButton.Click += async (_, _) => await ReceiveAsync(guardian);
+                toolbar.Controls.Add(getButton);
+                toolbar.Controls.SetChildIndex(getButton, index);
+                GetButtons[guardian] = getButton;
+            }
+        }
+
+        if (!SendButtons.ContainsKey(guardian))
+        {
+            var originalSend = FindOriginalSend(toolbar);
+            if (originalSend is not null)
+            {
+                var index = toolbar.Controls.GetChildIndex(originalSend);
+                var sendButton = new GuardianActionButton
+                {
+                    Name = "StandaloneProjectSendButton",
+                    Text = "Send ↑",
+                    Width = 92,
+                    Kind = GuardianActionKind.Push,
+                    SyncStateAware = false,
+                    Visible = false,
+                    Enabled = false,
+                    Margin = originalSend.Margin
+                };
+                sendButton.Click += async (_, _) => await PublishAsync(guardian);
+                toolbar.Controls.Add(sendButton);
+                toolbar.Controls.SetChildIndex(sendButton, index);
+                SendButtons[guardian] = sendButton;
+            }
+        }
+
+        guardian.Disposed += (_, _) =>
+        {
+            SendButtons.Remove(guardian);
+            GetButtons.Remove(guardian);
         };
-        button.Click += async (_, _) => await PublishAsync(guardian);
-        toolbar.Controls.Add(button);
-        toolbar.Controls.SetChildIndex(button, index);
-        Buttons[guardian] = button;
-        guardian.Disposed += (_, _) => Buttons.Remove(guardian);
     }
 
     private static void UpdateButton(GuardianForm guardian)
     {
-        if (_config is null || !Buttons.TryGetValue(guardian, out var standaloneButton)) return;
+        if (_config is null) return;
         var toolbar = FindToolbar(guardian);
         if (toolbar is null) return;
-        var original = FindOriginalSend(toolbar);
-        if (original is null) return;
+
+        var originalSend = FindOriginalSend(toolbar);
+        var originalGet = FindOriginalGet(toolbar);
+        SendButtons.TryGetValue(guardian, out var standaloneSend);
+        GetButtons.TryGetValue(guardian, out var standaloneGet);
+        if (originalSend is null || originalGet is null || standaloneSend is null || standaloneGet is null) return;
 
         var repositoryRoot = _config.RepositoryPath;
         var logical = !string.IsNullOrWhiteSpace(repositoryRoot) &&
                       StandaloneProjectPublishing.IsLogicalProject(_config, repositoryRoot);
 
-        original.Visible = !logical;
-        standaloneButton.Visible = logical;
+        originalSend.Visible = !logical;
+        originalGet.Visible = !logical;
+        standaloneSend.Visible = logical;
+        standaloneGet.Visible = logical;
         if (!logical) return;
 
         var snapshot = GuardianSyncState.Current;
         var linked = StandaloneProjectPublishing.GetLink(_config) is not null;
         var onlineMode = _config.ConnectionMode != GitPetConnectionModes.LocalGitOnly;
         var operationRunning = OperationInProgress(guardian);
-        standaloneButton.Text = "Send ↑";
-        standaloneButton.Width = 92;
-        standaloneButton.Enabled = onlineMode &&
-                                   linked &&
-                                   snapshot.HasRepository &&
-                                   snapshot.HasRemote &&
-                                   snapshot.OnlineReachable &&
-                                   snapshot.Unsaved == 0 &&
-                                   snapshot.Ahead > 0 &&
-                                   !operationRunning;
-        standaloneButton.Cursor = standaloneButton.Enabled ? Cursors.Hand : Cursors.Default;
+
+        standaloneGet.Text = "Get ↓";
+        standaloneGet.Width = 92;
+        standaloneGet.Enabled = onlineMode &&
+                                linked &&
+                                snapshot.HasRepository &&
+                                snapshot.Unsaved == 0 &&
+                                snapshot.Ahead == 0 &&
+                                !operationRunning;
+        standaloneGet.Cursor = standaloneGet.Enabled ? Cursors.Hand : Cursors.Default;
+
+        standaloneSend.Text = "Send ↑";
+        standaloneSend.Width = 92;
+        standaloneSend.Enabled = onlineMode &&
+                                 linked &&
+                                 snapshot.HasRepository &&
+                                 snapshot.HasRemote &&
+                                 snapshot.OnlineReachable &&
+                                 snapshot.Unsaved == 0 &&
+                                 snapshot.Ahead > 0 &&
+                                 !operationRunning;
+        standaloneSend.Cursor = standaloneSend.Enabled ? Cursors.Hand : Cursors.Default;
+    }
+
+    private static async Task ReceiveAsync(GuardianForm guardian)
+    {
+        var config = _config;
+        var git = _git;
+        var audit = _audit;
+        if (config is null || git is null || audit is null || string.IsNullOrWhiteSpace(config.RepositoryPath)) return;
+        if (!StandaloneProjectPublishing.IsLogicalProject(config, config.RepositoryPath)) return;
+
+        if (config.ConnectionMode == GitPetConnectionModes.LocalGitOnly)
+        {
+            using var localOnly = new GuardianConfirmDialog(
+                "Get project",
+                "LOCAL GIT MODE",
+                "GitPet is currently keeping this project local. Switch the GitHub connection back on before getting project-only updates.",
+                "OK",
+                showCancel: false);
+            localOnly.ShowDialog(guardian);
+            return;
+        }
+
+        var project = config.GetActiveProject();
+        var link = StandaloneProjectPublishing.GetLink(config);
+        if (project is null || link is null)
+        {
+            await GuardianSyncState.ConnectOriginAsync(guardian);
+            return;
+        }
+
+        var snapshot = GuardianSyncState.Current;
+        if (snapshot.Unsaved > 0)
+        {
+            using var saveFirst = new GuardianConfirmDialog(
+                "Get project",
+                "SAVE OR DISCARD LOCAL CHANGES FIRST",
+                "GitPet found local changes inside this logical project's selected scope.\r\n\r\n" +
+                "Review and Save them, or discard them intentionally, before getting the standalone online copy.",
+                "OK",
+                showCancel: false);
+            saveFirst.ShowDialog(guardian);
+            return;
+        }
+
+        if (snapshot.Ahead > 0)
+        {
+            using var sendFirst = new GuardianConfirmDialog(
+                "Get project",
+                "SEND SAVED PROJECT UPDATES FIRST",
+                "This project has saved local updates that have not been sent to its project-only online home.\r\n\r\n" +
+                "Send those updates first, then Get. GitPet will not guess how to combine independent local and standalone histories.",
+                "OK",
+                showCancel: false);
+            sendFirst.ShowDialog(guardian);
+            return;
+        }
+
+        using var confirmation = new GuardianConfirmDialog(
+            "Get project",
+            "GET PROJECT SCOPE ONLY",
+            $"Check {link.RepositoryLabel} for project-only updates?\r\n\r\n" +
+            "GitPet will fetch into its isolated project workspace, verify every changed path is inside this project's configured scope, " +
+            "then copy only those project files into the local working tree.\r\n\r\n" +
+            "Incoming files will remain UNSAVED so you can review them before Save. The parent repository history will not be pulled.",
+            "Get project ↓",
+            "Cancel",
+            confirmWidth: 160);
+        if (confirmation.ShowDialog(guardian) != DialogResult.Yes) return;
+
+        var pet = Application.OpenForms
+            .OfType<PetForm>()
+            .FirstOrDefault(form => form.Visible && !form.IsDisposed);
+        pet?.BeginGuidanceHold("↓ GETTING PROJECT\nChecking project-only remote");
+
+        var toolbar = FindToolbar(guardian);
+        if (toolbar is not null) toolbar.Enabled = false;
+        guardian.UseWaitCursor = true;
+        try
+        {
+            var result = await StandaloneProjectPublishing.ReceiveAsync(config, git, audit);
+            using var done = new GuardianConfirmDialog(
+                "Get project",
+                result.Success ? (result.ChangedFileCount > 0 ? "PROJECT UPDATES RECEIVED  ✓" : "PROJECT ALREADY CURRENT  ✓") : "GET NEEDS ATTENTION",
+                result.Message,
+                "OK",
+                showCancel: false,
+                dialogSize: result.Success ? new Size(760, 460) : new Size(760, 520));
+            done.ShowDialog(guardian);
+
+            pet?.ShowGuidance(result.Success
+                ? result.ChangedFileCount > 0
+                    ? $"↓ {result.ChangedFileCount} PROJECT CHANGE{(result.ChangedFileCount == 1 ? "" : "S")}\nReview before Save"
+                    : "✓ PROJECT CURRENT\nNothing new to Get"
+                : "⚠ GET NEEDS HELP\nNo parent history was pulled");
+        }
+        finally
+        {
+            guardian.UseWaitCursor = false;
+            if (toolbar is not null) toolbar.Enabled = true;
+            pet?.EndGuidanceHold();
+        }
+
+        try { await GuardianSyncState.RefreshAsync(true); } catch { }
+        try { await guardian.RefreshAsync(); } catch { }
+        try { await GuardianWorkboardRuntime.RefreshNowAsync(); } catch { }
+        UpdateButton(guardian);
     }
 
     private static async Task PublishAsync(GuardianForm guardian)
@@ -262,6 +425,13 @@ internal static class StandaloneProjectPublishingUiRuntime
             .OfType<FlowLayoutPanel>()
             .FirstOrDefault(panel => panel.Controls.OfType<GuardianActionButton>()
                 .Any(button => button.Text.StartsWith("Projects", StringComparison.OrdinalIgnoreCase)));
+
+    private static GuardianActionButton? FindOriginalGet(FlowLayoutPanel toolbar) =>
+        toolbar.Controls
+            .OfType<GuardianActionButton>()
+            .FirstOrDefault(button =>
+                button.Name != "StandaloneProjectGetButton" &&
+                button.Text.StartsWith("Get", StringComparison.OrdinalIgnoreCase));
 
     private static GuardianActionButton? FindOriginalSend(FlowLayoutPanel toolbar) =>
         toolbar.Controls
