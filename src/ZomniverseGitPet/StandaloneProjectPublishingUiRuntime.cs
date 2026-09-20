@@ -171,6 +171,7 @@ internal static class StandaloneProjectPublishingUiRuntime
         standaloneGet.Enabled = onlineMode &&
                                 linked &&
                                 snapshot.HasRepository &&
+                                snapshot.OnlineReachable &&
                                 snapshot.Unsaved == 0 &&
                                 (snapshot.Ahead == 0 || noLocalBaseline) &&
                                 !operationRunning;
