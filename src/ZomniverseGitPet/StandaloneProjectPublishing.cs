@@ -45,6 +45,15 @@ internal sealed record StandaloneProjectReceiveResult(
     string WorkspacePath = "",
     string RemoteUrl = "");
 
+internal sealed record StandaloneProjectRemoteInspection(
+    bool OnlineReachable,
+    bool RemoteBranchExists,
+    IReadOnlyList<StandaloneProjectRemoteChange> Changes,
+    string Message = "")
+{
+    public int IncomingChangeCount => Changes.Count;
+}
+
 internal static class StandaloneProjectPublishing
 {
     private static readonly object StoreGate = new();
@@ -251,6 +260,24 @@ internal static class StandaloneProjectPublishing
         if (status.Files.Count > 0)
             return new(false, "Save this project's changes before sending its standalone copy online.");
 
+        var remoteInspection = await InspectRemoteAsync(config, git, repositoryRoot, true, token);
+        if (remoteInspection.OnlineReachable &&
+            remoteInspection.RemoteBranchExists &&
+            string.IsNullOrWhiteSpace(link.LastPublishedFingerprint))
+        {
+            return new(false,
+                "This project-only online repository already has a main branch, but this local GitPet project has no publishing baseline yet.\r\n\r\n" +
+                "Use Get first so GitPet can establish the project-only baseline without overwriting online work.",
+                RemoteUrl: link.RemoteUrl);
+        }
+        if (remoteInspection.IncomingChangeCount > 0)
+        {
+            return new(false,
+                $"The project-only online repository has {remoteInspection.IncomingChangeCount} incoming change{(remoteInspection.IncomingChangeCount == 1 ? "" : "s")}.\r\n\r\n" +
+                "Use Get and review those changes before sending local project updates.",
+                RemoteUrl: link.RemoteUrl);
+        }
+
         var snapshot = await BuildSnapshotAsync(config, git, repositoryRoot, token);
         if (snapshot is null || snapshot.Files.Count == 0)
             return new(false, "The selected project scope does not contain any tracked files in the latest saved version.");
@@ -399,6 +426,84 @@ internal static class StandaloneProjectPublishing
         }
     }
 
+    public static async Task<StandaloneProjectRemoteInspection> InspectRemoteAsync(
+        AppConfig config,
+        GitService git,
+        string repositoryRoot,
+        bool fetchRemote = true,
+        CancellationToken token = default)
+    {
+        var project = config.GetActiveProject();
+        var link = GetLink(config);
+        if (project is null || link is null || !IsLogicalProject(config, repositoryRoot))
+            return new(false, false, [], "No standalone project remote is connected.");
+
+        var workspace = GetWorkspacePath(project);
+        var gitDirectory = Path.Combine(workspace, ".git");
+        if (!Directory.Exists(gitDirectory))
+        {
+            var probe = await git.RunGitAsync(
+                repositoryRoot,
+                ["ls-remote", "--heads", link.RemoteUrl, "refs/heads/main"],
+                TimeSpan.FromSeconds(30),
+                token);
+            return new(
+                probe.Success,
+                probe.Success && !string.IsNullOrWhiteSpace(probe.Output),
+                [],
+                probe.Success ? "" : probe.Output);
+        }
+
+        var remote = await git.RunGitAsync(workspace, ["remote", "get-url", "origin"], cancellationToken: token);
+        CommandResult remoteResult;
+        if (!remote.Success || string.IsNullOrWhiteSpace(remote.Output))
+            remoteResult = await git.RunGitAsync(workspace, ["remote", "add", "origin", link.RemoteUrl], cancellationToken: token);
+        else if (!RemoteEquals(remote.Output.Trim(), link.RemoteUrl))
+            remoteResult = await git.RunGitAsync(workspace, ["remote", "set-url", "origin", link.RemoteUrl], cancellationToken: token);
+        else
+            remoteResult = new CommandResult(0, remote.Output);
+
+        if (!remoteResult.Success)
+            return new(false, false, [], remoteResult.Output);
+
+        if (fetchRemote)
+        {
+            var fetch = await git.RunGitAsync(
+                workspace,
+                ["fetch", "--quiet", "--prune", "origin", "main"],
+                TimeSpan.FromMinutes(2),
+                token);
+            if (!fetch.Success)
+                return new(false, false, [], fetch.Output);
+        }
+
+        var remoteHead = await git.RunGitAsync(
+            workspace,
+            ["rev-parse", "--verify", "-q", "refs/remotes/origin/main"],
+            TimeSpan.FromSeconds(10),
+            token);
+        if (!remoteHead.Success)
+            return new(true, false, []);
+
+        var localHead = await git.RunGitAsync(
+            workspace,
+            ["rev-parse", "--verify", "-q", "HEAD"],
+            TimeSpan.FromSeconds(10),
+            token);
+        if (!localHead.Success)
+            return new(true, true, []);
+
+        var diff = await git.RunGitAsync(
+            workspace,
+            ["diff", "--name-status", "--find-renames", "HEAD", "refs/remotes/origin/main"],
+            TimeSpan.FromSeconds(20),
+            token);
+        if (!diff.Success)
+            return new(false, true, [], diff.Output);
+
+        return new(true, true, ParseRemoteChanges(diff.Output));
+    }
+
     /* ==========================================================================
        PATCH: STANDALONE LOGICAL PROJECT GET
        DATE.TIME: 2026-09-20 17:40 +03:00
@@ -428,7 +533,8 @@ internal static class StandaloneProjectPublishing
         if (status.Files.Count > 0)
             return new(false, "Save or discard this project's current local changes before getting its standalone online copy.");
 
-        if (await HasPendingPublishAsync(config, git, repositoryRoot, token))
+        if (!string.IsNullOrWhiteSpace(link.LastPublishedFingerprint) &&
+            await HasPendingPublishAsync(config, git, repositoryRoot, token))
         {
             return new(false,
                 "This project has saved local updates that have not been sent yet.\r\n\r\n" +
