@@ -339,7 +339,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V3 Expression Phase 4 gives every Git state a persistent readable mood through eyes, pupils, brows, mouth, ears and tail posture. Phase 3 motion now accents the expression instead of carrying it alone.",
+            Text = "Guardian V5 armored pass: dramatic persistent state poses, graphite armor with palette/state lighting, no floor base, and a supersampled high-definition 160×160 desktop mascot preview.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -428,13 +428,13 @@ internal sealed class LynxLabForm : Form
     private static string ExpressionName(LynxVisualState state) =>
         state switch
         {
-            LynxVisualState.Clean => "calm / settled",
-            LynxVisualState.Changes => "alert / concerned",
-            LynxVisualState.Attention => "focused / vigilant",
-            LynxVisualState.Save => "acknowledging",
-            LynxVisualState.Get => "curious / attentive",
-            LynxVisualState.Send => "confident",
-            LynxVisualState.Conflict => "tense / guarded",
+            LynxVisualState.Clean => "relaxed / safe",
+            LynxVisualState.Changes => "alert / investigating",
+            LynxVisualState.Attention => "hard focus / vigilant",
+            LynxVisualState.Save => "satisfied / acknowledged",
+            LynxVisualState.Get => "curious / incoming",
+            LynxVisualState.Send => "confident / dispatched",
+            LynxVisualState.Conflict => "combat-ready / guarded",
             _ => "serious neutral"
         };
 
