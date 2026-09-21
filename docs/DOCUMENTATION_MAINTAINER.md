@@ -34,7 +34,7 @@ When in doubt, re-check the code rather than guessing.
 
 ## Version-independence rule
 
-10. **Keep the root `README.md` version-independent.** It must not hard-code a "current version" number, a version-specific architecture heading, or duplicate long-form internal documentation that belongs under `docs/`. The authoritative source for "what is the latest version" is the project's GitHub Releases page, not a string baked into a Markdown file that will inevitably drift (see the Post-audit delta in `docs/DOCUMENTATION_AUDIT.md` for a concrete example of what happens when it isn't). A version number is fine in a historical record (`docs/history/RELEASE_HISTORY.md`, an ADR's `Date`), never in living prose that describes current behavior.
+10. **Keep the root `README.md` version-independent.** It must not hard-code a "current version" number, a version-specific architecture heading, or duplicate long-form internal documentation that belongs under `docs/`. The authoritative source for "what is the latest version" is the project's GitHub Releases page, not a string baked into a Markdown file that will inevitably drift (see the post-audit delta in `docs/internal/DOCUMENTATION_AUDIT.md` for a concrete example of what happens when it isn't). A version number is fine in a historical record (`docs/history/RELEASE_HISTORY.md`, an ADR's `Date`), never in living prose that describes current behavior.
 
 ## Safety and content hygiene
 
@@ -51,9 +51,26 @@ When in doubt, re-check the code rather than guessing.
 18. **Update `docs/README.md` whenever a canonical document is added or retired.** The entry point must never list a document that no longer exists, or omit one that does.
 19. **Audit documentation drift before public releases.** Before a release is published, re-check that the documents describing the subsystems that changed since the last release still match the code, and that no version number was accidentally reintroduced into `README.md` or an architecture heading.
 
+## Public documentation promotion
+
+Canonical documentation must be visible from the repository's default public branch, normally `main`. Users should not be expected to switch to a development branch to find the manual.
+
+After a documentation maintenance pass:
+
+1. Determine the repository's default branch.
+2. Compare the canonical documentation on the working/development branch with the default branch.
+3. If the documentation is newer, prepare a **documentation-only** promotion from the current default branch.
+4. Never merge an entire feature/development branch into `main` merely to publish documentation.
+5. A documentation promotion should normally contain only `README.md`, `docs/**`, and other clearly documentation-only files such as `mockups/pet/README.md` when relevant.
+6. Do not include application source, tests, build scripts, installer changes, binaries, or unrelated commits unless explicitly approved.
+7. Verify `docs/README.md` exists on the public branch, the root README links to it, every referenced document exists, relative links resolve, and Mermaid blocks use GitHub-compatible syntax.
+8. Do not promote development-only claims as stable public behavior. Keep them on the development branch or mark them EXPERIMENTAL / UNRELEASED when explicitly approved.
+9. Prefer a dedicated docs-promotion branch and pull request so the final diff can be reviewed independently of application development.
+10. Never merge that pull request automatically unless the maintainer explicitly asks for the merge.
+
 ## Style
 
-- Write concise technical English. Prefer diagrams (Mermaid, GitHub-renders natively) and small, concrete examples over long prose.
+- Write concise technical English. Prefer diagrams (Mermaid, GitHub renders them natively) and small, concrete examples over long prose.
 - Use consistent terminology — see `docs/reference/TERMINOLOGY.md` — and use it exactly, everywhere.
 - Avoid marketing language in developer documentation.
 - User documentation should explain Git concepts using GitPet's own terminology first (Save, Get, Send, Reconcile, Checkpoint, Project), with the underlying Git terminology (commit, pull, push, merge, repository) given secondarily where it helps a reader who already knows Git.
@@ -61,7 +78,7 @@ When in doubt, re-check the code rather than guessing.
 
 ## ADR format
 
-```
+```text
 # ADR-NNNN — Title
 
 Status: Accepted
