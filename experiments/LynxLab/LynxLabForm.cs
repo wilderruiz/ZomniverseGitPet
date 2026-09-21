@@ -11,6 +11,7 @@ internal sealed class LynxLabForm : Form
     private readonly Label _stateValue;
     private readonly Label _paletteValue;
     private readonly Label _motionValue;
+    private readonly Label _expressionValue;
     private readonly CheckBox _desktopPreviewToggle;
     private readonly CheckBox _debugToggle;
     private readonly CheckBox _topMostToggle;
@@ -57,6 +58,7 @@ internal sealed class LynxLabForm : Form
         _stateValue = ValueLabel("Idle");
         _paletteValue = ValueLabel(LynxPalette.Default.Name);
         _motionValue = ValueLabel("state loop");
+        _expressionValue = ValueLabel("serious neutral");
         _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
         _debugToggle = LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
@@ -329,6 +331,7 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(KeyValueRow("Desktop host", "240 × 246"));
         stack.Controls.Add(KeyValueRow("State", _stateValue));
         stack.Controls.Add(KeyValueRow("Motion", _motionValue));
+        stack.Controls.Add(KeyValueRow("Expression", _expressionValue));
         stack.Controls.Add(KeyValueRow("Palette", _paletteValue));
 
         var note = new Label
@@ -336,7 +339,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V3 Animation Phase 3 adds restrained one-shot reactions when Git state changes, then settles back into the Phase 2 state-aware loop. Direct2D comes later.",
+            Text = "Guardian V3 Expression Phase 4 gives every Git state a persistent readable mood through eyes, pupils, brows, mouth, ears and tail posture. Phase 3 motion now accents the expression instead of carrying it alone.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -391,6 +394,7 @@ internal sealed class LynxLabForm : Form
         _canvas.State = state;
         _desktopPreview.State = state;
         _stateValue.Text = state.ToString();
+        _expressionValue.Text = ExpressionName(state);
         _stateChangedAtSeconds = _animationClock.Elapsed.TotalSeconds;
 
         // Render the first reaction frame immediately rather than waiting for
@@ -420,6 +424,19 @@ internal sealed class LynxLabForm : Form
         _viewportCaption.Text = "LAB VIEWPORT  ·  " + renderer.Name;
         _rendererValue.Text = renderer.Name;
     }
+
+    private static string ExpressionName(LynxVisualState state) =>
+        state switch
+        {
+            LynxVisualState.Clean => "calm / settled",
+            LynxVisualState.Changes => "alert / concerned",
+            LynxVisualState.Attention => "focused / vigilant",
+            LynxVisualState.Save => "acknowledging",
+            LynxVisualState.Get => "curious / attentive",
+            LynxVisualState.Send => "confident",
+            LynxVisualState.Conflict => "tense / guarded",
+            _ => "serious neutral"
+        };
 
     private void SetPalette(LynxPalette palette)
     {

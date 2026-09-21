@@ -7,7 +7,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
     private const float DesignSize = 160f;
     private LynxAnimationFrame _animation = LynxAnimationFrame.Static;
 
-    public string Name => "Guardian V3 layered · animation phase 3";
+    public string Name => "Guardian V3 layered · expression phase 4";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
@@ -30,13 +30,14 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
 
             var colors = SilhouetteColors.FromPalette(palette);
             var miniature = Math.Min(bounds.Width, bounds.Height) <= 180;
+            var expression = ExpressionProfile.For(state, _animation.TransitionAmount);
 
             DrawGroundReference(graphics, colors);
 
             var tailSaved = graphics.Save();
             try
             {
-                ApplyTailSway(graphics, _animation.TailSwayDegrees);
+                ApplyTailSway(graphics, _animation.TailSwayDegrees + expression.TailPoseDegrees);
                 DrawTail(graphics, colors);
             }
             finally
@@ -55,9 +56,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 DrawForelegs(graphics, colors);
                 DrawChestFur(graphics);
                 DrawCollarArmor(graphics, palette, miniature);
-                DrawEars(graphics, colors);
+                DrawEars(graphics, colors, expression);
                 DrawHead(graphics, colors);
-                DrawFace(graphics, palette, miniature, _animation.Blink);
+                DrawFace(graphics, palette, miniature, _animation.Blink, expression);
                 DrawShield(graphics, palette, state, miniature, _animation.ShieldPulse);
                 DrawRimLighting(graphics, colors, state, miniature);
             }
@@ -305,7 +306,10 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         g.DrawPath(edge, head);
     }
 
-    private static void DrawEars(Graphics g, SilhouetteColors c)
+    private static void DrawEars(
+        Graphics g,
+        SilhouetteColors c,
+        ExpressionProfile expression)
     {
         using var leftEar = Path(
             M(46, 45),
@@ -315,14 +319,6 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             Z());
 
         using var rightEar = Mirror(leftEar);
-        using var fill = new LinearGradientBrush(new RectangleF(40, 6, 80, 40),
-            Mix(c.Ear, c.Head, 0.3f), c.Ear, 90f);
-        using var edge = Outline(c);
-
-        g.FillPath(fill, leftEar);
-        g.FillPath(fill, rightEar);
-        g.DrawPath(edge, leftEar);
-        g.DrawPath(edge, rightEar);
 
         using var leftInner = Path(
             M(48, 37),
@@ -335,11 +331,40 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             Z());
 
         using var rightInner = Mirror(leftInner);
+
+        RotatePathAround(
+            leftEar,
+            new PointF(54f, 42f),
+            -expression.EarOutwardDegrees);
+        RotatePathAround(
+            leftInner,
+            new PointF(54f, 42f),
+            -expression.EarOutwardDegrees);
+        RotatePathAround(
+            rightEar,
+            new PointF(106f, 42f),
+            expression.EarOutwardDegrees);
+        RotatePathAround(
+            rightInner,
+            new PointF(106f, 42f),
+            expression.EarOutwardDegrees);
+
+        using var fill = new LinearGradientBrush(
+            new RectangleF(40, 6, 80, 40),
+            Mix(c.Ear, c.Head, 0.3f),
+            c.Ear,
+            90f);
+        using var edge = Outline(c);
         using var innerBrush = new SolidBrush(c.EarInner);
 
+        g.FillPath(fill, leftEar);
+        g.FillPath(fill, rightEar);
+        g.DrawPath(edge, leftEar);
+        g.DrawPath(edge, rightEar);
         g.FillPath(innerBrush, leftInner);
         g.FillPath(innerBrush, rightInner);
     }
+
 
     private static void DrawChestFur(Graphics g)
     {
@@ -373,7 +398,12 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         g.FillPath(centerFill, centerLock);
     }
 
-    private static void DrawFace(Graphics g, LynxPalette palette, bool miniature, float blink)
+    private static void DrawFace(
+        Graphics g,
+        LynxPalette palette,
+        bool miniature,
+        float blink,
+        ExpressionProfile expression)
     {
         using var mask = Path(
             M(47, 66), C(49, 59, 56, 56, 63, 58),
@@ -384,12 +414,15 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             C(96, 91, 88, 94, 80, 95),
             C(72, 94, 64, 91, 56, 85),
             C(49, 81, 43, 74, 47, 66), Z());
-        using var white = new LinearGradientBrush(new RectangleF(45, 57, 70, 39),
-            Color.FromArgb(255, 253, 255), Color.FromArgb(222, 211, 237), 90f);
+        using var white = new LinearGradientBrush(
+            new RectangleF(45, 57, 70, 39),
+            Color.FromArgb(255, 253, 255),
+            Color.FromArgb(222, 211, 237),
+            90f);
         g.FillPath(white, mask);
 
-        DrawFaceEye(g, palette, miniature, false, blink);
-        DrawFaceEye(g, palette, miniature, true, blink);
+        DrawFaceEye(g, palette, miniature, false, blink, expression);
+        DrawFaceEye(g, palette, miniature, true, blink, expression);
 
         using var nose = Path(
             M(75, 72), C(77, 70.5f, 83, 70.5f, 85, 72),
@@ -398,9 +431,13 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         using var ink = new SolidBrush(Color.FromArgb(27, 14, 43));
         g.FillPath(ink, nose);
 
+        var mouthEdgeY = 84.3f;
+        var mouthCenterY = mouthEdgeY + expression.MouthCurve;
         using var mouth = Path(
-            M(73, 85), C(75, 83, 78, 81.5f, 80, 81.5f),
-            C(82, 81.5f, 85, 83, 87, 85));
+            M(73, mouthEdgeY),
+            C(75.5f, mouthEdgeY, 78f, mouthCenterY, 80f, mouthCenterY),
+            C(82f, mouthCenterY, 84.5f, mouthEdgeY, 87f, mouthEdgeY));
+
         using var mouthPen = new Pen(ink, miniature ? 1.6f : 1.15f)
         {
             StartCap = LineCap.Round,
@@ -416,27 +453,20 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         LynxPalette palette,
         bool miniature,
         bool right,
-        float blink)
+        float blink,
+        ExpressionProfile expression)
     {
-        // Keep the approved vigilant shape, then compress it vertically for a blink.
         using var leftEye = Path(
             M(54, 51), C(58, 51, 64, 53.5f, 68, 56.5f),
             C(67, 63, 64, 66, 60, 65),
             C(56, 64, 53, 59, 54, 51), Z());
         using var eye = right ? Mirror(leftEye) : (GraphicsPath)leftEye.Clone();
 
-        var eyeOpen = Math.Clamp(1f - blink * 0.90f, 0.10f, 1f);
+        var eyeOpen = Math.Clamp(
+            expression.EyeOpenness - blink * 0.90f,
+            0.10f,
+            1.12f);
 
-        // Blink around the eye's fixed vertical centre.
-        //
-        // With MatrixOrder.Append, points are transformed in the order the
-        // operations are appended. The previous +pivot / scale / -pivot order
-        // moved the eye geometry vertically as it closed, which made the eyes
-        // jump outside their sockets and flicker badly in the 160x160 preview.
-        //
-        // Move the eye centre to the origin first, squash it there, then move
-        // it back. The socket therefore stays spatially locked throughout the
-        // blink; only its vertical aperture changes.
         const float blinkPivotY = 58.5f;
         using (var blinkMatrix = new Matrix())
         {
@@ -455,15 +485,28 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             g.SetClip(eye, CombineMode.Intersect);
 
             var center = right ? 99f : 61f;
-            var irisHeight = 11f * eyeOpen;
+            var irisWidth = 9f * expression.PupilScale;
+            var irisHeight = 11f * eyeOpen * expression.PupilScale;
             var irisY = 60.5f - irisHeight / 2f;
-            var pupilHeight = 9f * eyeOpen;
+            var pupilWidth = 4.2f * expression.PupilScale;
+            var pupilHeight = 9f * eyeOpen * expression.PupilScale;
             var pupilY = 58.5f - pupilHeight / 2f;
 
             using var iris = new SolidBrush(
                 Mix(Color.FromArgb(139, 70, 221), palette.Eye, 0.12f));
-            g.FillEllipse(iris, center - 4.5f, irisY, 9f, irisHeight);
-            g.FillEllipse(dark, center - 2.1f, pupilY, 4.2f, pupilHeight);
+
+            g.FillEllipse(
+                iris,
+                center - irisWidth / 2f,
+                irisY,
+                irisWidth,
+                irisHeight);
+            g.FillEllipse(
+                dark,
+                center - pupilWidth / 2f,
+                pupilY,
+                pupilWidth,
+                pupilHeight);
 
             if (blink < 0.72f)
             {
@@ -471,7 +514,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 g.FillEllipse(
                     Brushes.White,
                     center - 3f,
-                    54f + blink * 2.2f,
+                    54f + blink * 2.2f + expression.EyeHighlightOffsetY,
                     highlightSize,
                     highlightSize * eyeOpen);
             }
@@ -481,12 +524,24 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             g.Restore(saved);
         }
 
+        var browOuterY = 50.8f + expression.BrowLift;
+        var browInnerY =
+            56.5f +
+            expression.BrowInnerDrop +
+            expression.BrowLift;
+
         using var leftLid = Path(
-            M(53.5f, 50.8f), C(58, 51, 64, 53.5f, 68.5f, 56.5f));
-        using var lid = right ? Mirror(leftLid) : (GraphicsPath)leftLid.Clone();
+            M(53.5f, browOuterY),
+            C(
+                58f, browOuterY + 0.2f,
+                64f, browInnerY - 2f,
+                68.5f, browInnerY));
+        using var lid =
+            right ? Mirror(leftLid) : (GraphicsPath)leftLid.Clone();
+
         using var lidPen = new Pen(
             Color.FromArgb(42, 21, 67),
-            miniature ? 1.4f : 0.9f)
+            miniature ? 1.5f : 1.0f)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round
@@ -503,9 +558,17 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 StartCap = LineCap.Round,
                 EndCap = LineCap.Round
             };
-            g.DrawArc(closedPen, center - 7f, 56.2f, 14f, 4.5f, 8f, 164f);
+            g.DrawArc(
+                closedPen,
+                center - 7f,
+                56.2f,
+                14f,
+                4.5f,
+                8f,
+                164f);
         }
     }
+
 
     private static void DrawCollarArmor(Graphics g, LynxPalette palette, bool miniature)
     {
@@ -646,6 +709,119 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             using var leg = Path(M(59, 117), C(59, 123, 59, 131, 60, 137));
             g.DrawPath(rim, cheek);
             g.DrawPath(rim, leg);
+        }
+    }
+
+    private static void RotatePathAround(
+        GraphicsPath path,
+        PointF pivot,
+        float degrees)
+    {
+        if (Math.Abs(degrees) < 0.001f)
+            return;
+
+        using var matrix = new Matrix();
+        matrix.Translate(-pivot.X, -pivot.Y, MatrixOrder.Append);
+        matrix.Rotate(degrees, MatrixOrder.Append);
+        matrix.Translate(pivot.X, pivot.Y, MatrixOrder.Append);
+        path.Transform(matrix);
+    }
+
+    private readonly record struct ExpressionProfile(
+        float EyeOpenness,
+        float PupilScale,
+        float BrowLift,
+        float BrowInnerDrop,
+        float MouthCurve,
+        float EarOutwardDegrees,
+        float TailPoseDegrees,
+        float EyeHighlightOffsetY)
+    {
+        public static ExpressionProfile For(
+            LynxVisualState state,
+            float transitionAmount)
+        {
+            var expression = state switch
+            {
+                LynxVisualState.Clean => new ExpressionProfile(
+                    0.96f, 1.00f,
+                    -0.6f, -2.4f,
+                    0.9f,
+                    2.4f, -1.2f,
+                    0.2f),
+
+                LynxVisualState.Changes => new ExpressionProfile(
+                    1.06f, 1.05f,
+                    -1.5f, -2.8f,
+                    -0.8f,
+                    -1.0f, 1.4f,
+                    -0.2f),
+
+                LynxVisualState.Attention => new ExpressionProfile(
+                    0.88f, 0.92f,
+                    0.2f, 1.0f,
+                    -1.8f,
+                    -2.1f, 0.4f,
+                    0f),
+
+                LynxVisualState.Save => new ExpressionProfile(
+                    0.94f, 1.00f,
+                    -0.8f, -2.2f,
+                    1.35f,
+                    1.4f, -0.5f,
+                    0.2f),
+
+                LynxVisualState.Get => new ExpressionProfile(
+                    1.10f, 1.12f,
+                    -1.8f, -3.2f,
+                    0.0f,
+                    -1.6f, 1.8f,
+                    -0.4f),
+
+                LynxVisualState.Send => new ExpressionProfile(
+                    0.93f, 0.98f,
+                    -0.4f, -1.2f,
+                    1.05f,
+                    0.5f, 0.8f,
+                    0.1f),
+
+                LynxVisualState.Conflict => new ExpressionProfile(
+                    0.76f, 0.86f,
+                    0.5f, 2.2f,
+                    -2.8f,
+                    -3.2f, -1.0f,
+                    0f),
+
+                _ => new ExpressionProfile(
+                    0.92f, 1.00f,
+                    0f, 0f,
+                    -1.1f,
+                    0f, 0f,
+                    0f)
+            };
+
+            var boost = Math.Clamp(transitionAmount, 0f, 1f);
+
+            return expression with
+            {
+                BrowInnerDrop =
+                    expression.BrowInnerDrop +
+                    (state is LynxVisualState.Attention or LynxVisualState.Conflict
+                        ? 0.7f * boost
+                        : 0f),
+
+                EarOutwardDegrees =
+                    expression.EarOutwardDegrees +
+                    (state == LynxVisualState.Get
+                        ? -0.7f * boost
+                        : 0f),
+
+                MouthCurve =
+                    expression.MouthCurve +
+                    (state == LynxVisualState.Save
+                        ? 0.35f * boost
+                        : 0f)
+            };
         }
     }
 
