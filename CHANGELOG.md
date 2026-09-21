@@ -12,6 +12,8 @@
 - Added animated dark armor that transitions between cool blue and **Forest Emerald** while preserving the selected palette identity.
 - Added a Direct2D hardware-capability path with DPI-aware rendering and automatic fallback to the previous PNG/GDI+ pet if native rendering fails.
 - Added DEV vs installed-release identity handling, safer application channel handoff, installed-only self-update support, installer/release packaging, SHA-256 release manifests, and GitHub Release publishing safeguards.
+- Added **Milestones → Prepare ZomniverseGitPet application release…**, so the full clean-tree/build/test/portable/installer/hash pipeline can be run from GitPet itself with live output and cancellation before the separate Publish step.
+- Fixed **Help → About ZomniverseGitPet** to read the running build's informational/product version, so release builds show the `<Version>` from the project instead of drifting on stale assembly-version metadata.
 - Expanded first-run onboarding, project switching, connection management, repository activity feedback, file review, documentation, and regression coverage.
 - Added the isolated **Lynx Lab** development harness used to validate the Guardian renderer and 160×160 production-size behavior before promotion into the application.
 - Bumped the application version to **0.5.0**.

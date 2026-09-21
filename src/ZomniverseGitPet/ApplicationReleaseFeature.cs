@@ -5,6 +5,7 @@ namespace ZomniverseGitPet;
 internal static class ApplicationReleaseFeature
 {
     private const string MenuItemName = "ApplicationReleasePublisherItem";
+    private const string PrepareMenuItemName = "ApplicationReleasePrepareItem";
     private const string SetupMenuItemName = "ApplicationReleaseGitHubSetupItem";
     private static readonly HashSet<IntPtr> AttachedGuardians = new();
     private static System.Windows.Forms.Timer? _timer;
@@ -52,6 +53,14 @@ internal static class ApplicationReleaseFeature
             };
             setup.Click += async (_, _) => await OpenGitHubSetupAsync(guardian);
 
+            var prepare = new ToolStripMenuItem("Prepare ZomniverseGitPet application release…")
+            {
+                Name = PrepareMenuItemName,
+                Visible = false,
+                ToolTipText = "Run the full release pipeline inside GitPet: clean-tree check, Release build, regression tests, portable EXE, installer, manifest and SHA-256 checksums."
+            };
+            prepare.Click += async (_, _) => await OpenReleaseBuilderAsync(guardian);
+
             var publish = new ToolStripMenuItem("Publish ZomniverseGitPet application release…")
             {
                 Name = MenuItemName,
@@ -78,15 +87,17 @@ internal static class ApplicationReleaseFeature
             }
 
             milestones.DropDownItems.Insert(insertionIndex, setup);
-            milestones.DropDownItems.Insert(insertionIndex + 1, publish);
+            milestones.DropDownItems.Insert(insertionIndex + 1, prepare);
+            milestones.DropDownItems.Insert(insertionIndex + 2, publish);
             if (!existingSeparatorWillFollow)
-                milestones.DropDownItems.Insert(insertionIndex + 2, new ToolStripSeparator());
+                milestones.DropDownItems.Insert(insertionIndex + 3, new ToolStripSeparator());
 
             milestones.DropDownOpening += (_, _) =>
             {
                 var config = new ConfigStore().Load();
                 var visible = GitHubReleasePublisher.LooksLikeGitPetSource(config.RepositoryPath);
                 setup.Visible = visible;
+                prepare.Visible = visible;
                 publish.Visible = visible;
             };
 
@@ -107,6 +118,32 @@ internal static class ApplicationReleaseFeature
         using var form = new GitHubPublishingSetupForm(publisher);
         form.ShowDialog(owner);
         await Task.CompletedTask;
+    }
+
+    private static async Task OpenReleaseBuilderAsync(Form owner)
+    {
+        var config = new ConfigStore().Load();
+        var repository = config.RepositoryPath;
+        if (!GitHubReleasePublisher.LooksLikeGitPetSource(repository)) return;
+
+        using var form =
+            new ApplicationReleaseBuildForm(repository!);
+
+        form.ShowDialog(owner);
+
+        if (!form.PackageBuiltSuccessfully)
+            return;
+
+        var publishNow = MessageBox.Show(
+            owner,
+            "The release package was built and verified locally.\r\n\r\n" +
+            "Open the publishing screen now?",
+            "Application release ready",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information);
+
+        if (publishNow == DialogResult.Yes)
+            await OpenPublisherAsync(owner);
     }
 
     private static async Task OpenPublisherAsync(Form owner)

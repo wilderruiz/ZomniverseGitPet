@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Reflection;
 
 namespace ZomniverseGitPet;
 
@@ -211,8 +212,35 @@ internal sealed class AboutForm : Form
 
     private static string GetVersion()
     {
-        var version = typeof(AboutForm).Assembly.GetName().Version;
-        return version is null ? Application.ProductVersion : $"{version.Major}.{version.Minor}.{version.Build}";
+        // <Version> in the SDK-style project is the release source of truth.
+        // InformationalVersion carries that value (and may append +commit).
+        var assembly = typeof(AboutForm).Assembly;
+        var informational = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion?
+            .Trim();
+
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            var metadata = informational.IndexOf('+');
+            return metadata >= 0
+                ? informational[..metadata]
+                : informational;
+        }
+
+        var product = Application.ProductVersion?.Trim();
+        if (!string.IsNullOrWhiteSpace(product))
+        {
+            var metadata = product.IndexOf('+');
+            return metadata >= 0
+                ? product[..metadata]
+                : product;
+        }
+
+        var version = assembly.GetName().Version;
+        return version is null
+            ? "Unknown"
+            : $"{version.Major}.{version.Minor}.{version.Build}";
     }
 
     private static string GetBuildDate()
