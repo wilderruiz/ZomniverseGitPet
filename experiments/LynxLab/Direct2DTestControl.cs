@@ -46,9 +46,6 @@ internal sealed class Direct2DTestControl : Control
     private IntPtr _rightArmorGeometry;
     private IntPtr _leftShoulderArmorGeometry;
     private IntPtr _rightShoulderArmorGeometry;
-    private IntPtr _leftBracerGeometry;
-    private IntPtr _rightBracerGeometry;
-
     private IntPtr _leftCollarGeometry;
     private IntPtr _rightCollarGeometry;
     private IntPtr _leftCollarFacetGeometry;
@@ -452,6 +449,7 @@ internal sealed class Direct2DTestControl : Control
         IntPtr shieldBrush = IntPtr.Zero;
         IntPtr shieldInsetBrush = IntPtr.Zero;
         IntPtr shieldBorderBrush = IntPtr.Zero;
+        IntPtr shieldInsetBorderBrush = IntPtr.Zero;
 
         try
         {
@@ -499,11 +497,12 @@ internal sealed class Direct2DTestControl : Control
                     Color.FromArgb(13, 18, 24),
                     armorPalette.Fur,
                     0.22f);
-            var armorMid =
+            var armorPanelTop =
                 Mix(
-                    Color.FromArgb(34, 46, 58),
-                    armorPalette.Accent,
-                    0.36f);
+                    Color.FromArgb(34, 44, 57),
+                    armorPalette.Fur,
+                    0.48f);
+            var armorMid = Mix(armorPanelTop, armorDark, 0.58f);
             var armorEdge =
                 Mix(
                     armorPalette.Accent,
@@ -528,21 +527,27 @@ internal sealed class Direct2DTestControl : Control
             shieldBrush =
                 CreateBrush(
                     Mix(
-                        Color.FromArgb(48, 75, 96),
-                        armorPalette.Accent,
-                        0.58f));
+                        Color.FromArgb(18, 31, 40),
+                        armorPalette.Fur,
+                        0.26f));
             shieldInsetBrush =
                 CreateBrush(
                     Mix(
-                        Color.FromArgb(35, 70, 79),
-                        armorPalette.Accent,
-                        0.62f));
+                        Color.FromArgb(22, 50, 57),
+                        armorPalette.Fur,
+                        0.28f));
             shieldBorderBrush =
                 CreateBrush(
                     Mix(
                         Color.FromArgb(201, 166, 249),
                         armorPalette.Eye,
-                        0.14f));
+                        0.08f));
+            shieldInsetBorderBrush =
+                CreateBrush(
+                    Mix(
+                        Color.FromArgb(161, 102, 235),
+                        armorPalette.Accent,
+                        0.10f));
 
             var viewport =
                 ViewportTransform(width, height);
@@ -660,20 +665,20 @@ internal sealed class Direct2DTestControl : Control
                 armorDarkBrush,
                 armorEdgeBrush,
                 1.0f);
-            FillAndStroke(
-                fillGeometry,
-                drawGeometry,
-                _leftBracerGeometry,
-                armorDarkBrush,
+
+            // Match the restrained upper-panel channels used by Guardian V9.
+            DrawLine(
+                drawLine,
                 armorEdgeBrush,
-                1.0f);
-            FillAndStroke(
-                fillGeometry,
-                drawGeometry,
-                _rightBracerGeometry,
-                armorDarkBrush,
+                54f, 97f,
+                65f, 101f,
+                0.8f);
+            DrawLine(
+                drawLine,
                 armorEdgeBrush,
-                1.0f);
+                106f, 97f,
+                95f, 101f,
+                0.8f);
 
             FillAndStroke(
                 fillGeometry,
@@ -824,11 +829,13 @@ internal sealed class Direct2DTestControl : Control
                 shieldBrush,
                 shieldBorderBrush,
                 1.35f);
-            fillGeometry(
-                _target,
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
                 _shieldInsetGeometry,
                 shieldInsetBrush,
-                IntPtr.Zero);
+                shieldInsetBorderBrush,
+                0.7f);
 
             drawLine(
                 _target,
@@ -850,6 +857,7 @@ internal sealed class Direct2DTestControl : Control
         }
         finally
         {
+            ReleaseCom(ref shieldInsetBorderBrush);
             ReleaseCom(ref shieldBorderBrush);
             ReleaseCom(ref shieldInsetBrush);
             ReleaseCom(ref shieldBrush);
@@ -1794,20 +1802,6 @@ internal sealed class Direct2DTestControl : Control
             CreatePathGeometry(leftShoulderArmor);
         _rightShoulderArmorGeometry =
             CreatePathGeometry(Mirror(leftShoulderArmor));
-
-        var leftBracer =
-            new[]
-            {
-                MoveTo(58.5f, 118),
-                Line(72.5f, 118),
-                Line(72.3f, 139),
-                Line(60, 139),
-                Close()
-            };
-        _leftBracerGeometry =
-            CreatePathGeometry(leftBracer);
-        _rightBracerGeometry =
-            CreatePathGeometry(Mirror(leftBracer));
 
         var leftCollar =
             new[]
@@ -3479,8 +3473,6 @@ internal sealed class Direct2DTestControl : Control
         ReleaseCom(ref _leftCollarFacetGeometry);
         ReleaseCom(ref _rightCollarGeometry);
         ReleaseCom(ref _leftCollarGeometry);
-        ReleaseCom(ref _rightBracerGeometry);
-        ReleaseCom(ref _leftBracerGeometry);
         ReleaseCom(ref _rightShoulderArmorGeometry);
         ReleaseCom(ref _leftShoulderArmorGeometry);
         ReleaseCom(ref _rightArmorGeometry);

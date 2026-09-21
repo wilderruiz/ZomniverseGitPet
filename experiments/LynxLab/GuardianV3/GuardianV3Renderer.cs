@@ -446,21 +446,6 @@ internal sealed class GuardianV3Renderer :
         g.DrawPath(armorPen, leftShoulder);
         g.DrawPath(armorPen, rightShoulder);
 
-        using var leftBracer = Path(
-            M(58.5f, 118), L(72.5f, 118),
-            L(72.3f, 139), L(60f, 139), Z());
-        using var rightBracer = Mirror(leftBracer);
-        using var bracerFill = new LinearGradientBrush(
-            new RectangleF(58, 118, 44, 22),
-            Mix(Color.FromArgb(36, 44, 54), palette.Accent, 0.26f),
-            Mix(Color.FromArgb(12, 16, 21), palette.Fur, 0.18f),
-            90f);
-
-        g.FillPath(bracerFill, leftBracer);
-        g.FillPath(bracerFill, rightBracer);
-        g.DrawPath(armorPen, leftBracer);
-        g.DrawPath(armorPen, rightBracer);
-
         using var channel = new Pen(
             Color.FromArgb(miniature ? 235 : 205, armorEdge),
             miniature ? 1.8f : 0.9f)
@@ -471,8 +456,6 @@ internal sealed class GuardianV3Renderer :
 
         g.DrawLine(channel, 54f, 97f, 65f, 101f);
         g.DrawLine(channel, 106f, 97f, 95f, 101f);
-        g.DrawLine(channel, 61f, 122f, 61f, 135f);
-        g.DrawLine(channel, 99f, 122f, 99f, 135f);
     }
 
     private static void DrawHead(Graphics g, SilhouetteColors c)
