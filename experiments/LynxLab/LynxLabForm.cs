@@ -32,7 +32,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — V6 Activity Behaviors";
+        Text = "Lynx Lab — V7 Whole-Body Activity";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -359,7 +359,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V6 activity behaviors layer the original GitPet semantics over the armored V5 base: thinking, preparing, sorting, packing, incoming/outgoing, reconcile, success, warning, failure and rest can be tested independently from repository state.",
+            Text = "Guardian V7 moves activity cues around the whole mascot so they remain readable at desktop size. Each activity smoothly blends the selected palette with a second mood palette; the pet keeps its purple identity while armor, fur undertones and perimeter effects transition together.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -406,9 +406,25 @@ internal sealed class LynxLabForm : Form
 
         if (_renderer is IActivityLynxRenderer activityRenderer)
         {
+            var activityElapsed = now - _activityChangedAtSeconds;
             activityRenderer.SetActivityFrame(
                 _activity,
-                now - _activityChangedAtSeconds);
+                activityElapsed);
+
+            if (_activity == LynxActivityState.None)
+            {
+                _paletteValue.Text = _canvas.Palette.Name;
+            }
+            else
+            {
+                var partner = LynxPalette.ActivityPartner(_activity);
+                var mix = LynxPalette.ActivityMix(
+                    _activity,
+                    activityElapsed);
+
+                _paletteValue.Text =
+                    $"{_canvas.Palette.Name} ↔ {partner.Name} · {(int)Math.Round(mix * 100f)}%";
+            }
         }
 
         _canvas.Invalidate();
@@ -528,7 +544,15 @@ internal sealed class LynxLabForm : Form
     {
         _canvas.Palette = palette;
         _desktopPreview.Palette = palette;
-        _paletteValue.Text = palette.Name;
+        if (_activity == LynxActivityState.None)
+        {
+            _paletteValue.Text = palette.Name;
+        }
+        else
+        {
+            var partner = LynxPalette.ActivityPartner(_activity);
+            _paletteValue.Text = $"{palette.Name} ↔ {partner.Name}";
+        }
     }
 
     private static Label SectionLabel(string text) =>
