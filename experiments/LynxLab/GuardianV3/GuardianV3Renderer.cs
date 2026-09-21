@@ -12,7 +12,7 @@ internal sealed class GuardianV3Renderer :
     private LynxActivityState _activity = LynxActivityState.None;
     private double _activityElapsed;
 
-    public string Name => "Guardian V7 armored · whole-body activity";
+    public string Name => "Guardian V8 armored · kinetic moods";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
@@ -45,6 +45,9 @@ internal sealed class GuardianV3Renderer :
             var activePalette = LynxPalette.Blend(
                 selectedPalette,
                 _activity,
+                _activityElapsed);
+            var armorPalette = ArmorTransitionPalette(
+                activePalette,
                 _activityElapsed);
             var colors = SilhouetteColors.FromPalette(activePalette);
             var miniature = Math.Min(bounds.Width, bounds.Height) <= 180;
@@ -87,16 +90,22 @@ internal sealed class GuardianV3Renderer :
                 DrawTorso(graphics, colors);
                 DrawHaunches(graphics, colors);
                 DrawForelegs(graphics, colors);
-                DrawBodyArmor(graphics, activePalette, state, _activity, miniature);
+                DrawBodyArmor(graphics, armorPalette, state, _activity, miniature);
                 DrawChestFur(graphics);
-                DrawCollarArmor(graphics, activePalette, state, _activity, miniature);
+                DrawCollarArmor(graphics, armorPalette, state, _activity, miniature);
                 var headSaved = graphics.Save();
                 try
                 {
                     ApplyHeadPose(graphics, expression);
                     DrawEars(graphics, colors, expression);
                     DrawHead(graphics, colors);
-                    DrawFace(graphics, activePalette, miniature, _animation.Blink, expression);
+                    DrawFace(
+                        graphics,
+                        activePalette,
+                        _activity,
+                        miniature,
+                        _animation.Blink,
+                        expression);
                 }
                 finally
                 {
@@ -105,7 +114,7 @@ internal sealed class GuardianV3Renderer :
 
                 DrawShield(
                     graphics,
-                    activePalette,
+                    armorPalette,
                     state,
                     _activity,
                     miniature,
