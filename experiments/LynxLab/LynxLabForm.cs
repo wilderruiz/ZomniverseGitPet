@@ -9,6 +9,7 @@ internal sealed class LynxLabForm : Form
     private readonly Label _viewportCaption;
     private readonly Label _rendererValue;
     private readonly Label _stateValue;
+    private readonly Label _activityValue;
     private readonly Label _paletteValue;
     private readonly Label _motionValue;
     private readonly Label _expressionValue;
@@ -19,6 +20,8 @@ internal sealed class LynxLabForm : Form
     private readonly System.Diagnostics.Stopwatch _animationClock =
         System.Diagnostics.Stopwatch.StartNew();
     private double _stateChangedAtSeconds;
+    private double _activityChangedAtSeconds;
+    private LynxActivityState _activity = LynxActivityState.None;
 
     public LynxLabForm()
     {
@@ -27,9 +30,9 @@ internal sealed class LynxLabForm : Form
             new HairyGuardianRenderer(),
             new GuardianV3Renderer()
         ];
-        _renderer = _renderers[0];
+        _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — Phase 0";
+        Text = "Lynx Lab — V6 Activity Behaviors";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -56,6 +59,7 @@ internal sealed class LynxLabForm : Form
         };
         _rendererValue = ValueLabel(_renderer.Name);
         _stateValue = ValueLabel("Idle");
+        _activityValue = ValueLabel("None");
         _paletteValue = ValueLabel(LynxPalette.Default.Name);
         _motionValue = ValueLabel("state loop");
         _expressionValue = ValueLabel("serious neutral");
@@ -272,6 +276,21 @@ internal sealed class LynxLabForm : Form
         }
 
         stack.Controls.Add(Spacer());
+        stack.Controls.Add(SectionLabel("SIMULATED ACTIVITY"));
+
+        foreach (var activity in Enum.GetValues<LynxActivityState>())
+        {
+            var button = LabButton(
+                activity == LynxActivityState.None
+                    ? "Clear activity"
+                    : activity.ToString());
+            button.Tag = activity;
+            button.Click += (_, _) =>
+                SetActivity((LynxActivityState)button.Tag);
+            stack.Controls.Add(button);
+        }
+
+        stack.Controls.Add(Spacer());
         stack.Controls.Add(SectionLabel("PALETTE"));
 
         var palette = new ComboBox
@@ -330,6 +349,7 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(KeyValueRow("Pet size", "160 × 160"));
         stack.Controls.Add(KeyValueRow("Desktop host", "240 × 246"));
         stack.Controls.Add(KeyValueRow("State", _stateValue));
+        stack.Controls.Add(KeyValueRow("Activity", _activityValue));
         stack.Controls.Add(KeyValueRow("Motion", _motionValue));
         stack.Controls.Add(KeyValueRow("Expression", _expressionValue));
         stack.Controls.Add(KeyValueRow("Palette", _paletteValue));
@@ -339,7 +359,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V5 armored pass: dramatic persistent state poses, graphite armor with palette/state lighting, no floor base, and a supersampled high-definition 160×160 desktop mascot preview.",
+            Text = "Guardian V6 activity behaviors layer the original GitPet semantics over the armored V5 base: thinking, preparing, sorting, packing, incoming/outgoing, reconcile, success, warning, failure and rest can be tested independently from repository state.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -369,19 +389,27 @@ internal sealed class LynxLabForm : Form
 
     private void AdvanceAnimation()
     {
-        if (_renderer is not IAnimatedLynxRenderer animated)
-            return;
-
         var now = _animationClock.Elapsed.TotalSeconds;
-        var frame = LynxAnimationFrame.FromSeconds(
-            now,
-            _canvas.State,
-            now - _stateChangedAtSeconds);
 
-        animated.SetAnimationFrame(frame);
-        _motionValue.Text = frame.TransitionAmount > 0.015f
-            ? "reacting → " + _canvas.State
-            : "state loop · " + _canvas.State;
+        if (_renderer is IAnimatedLynxRenderer animated)
+        {
+            var frame = LynxAnimationFrame.FromSeconds(
+                now,
+                _canvas.State,
+                now - _stateChangedAtSeconds);
+
+            animated.SetAnimationFrame(frame);
+            _motionValue.Text = frame.TransitionAmount > 0.015f
+                ? "reacting → " + _canvas.State
+                : "state loop · " + _canvas.State;
+        }
+
+        if (_renderer is IActivityLynxRenderer activityRenderer)
+        {
+            activityRenderer.SetActivityFrame(
+                _activity,
+                now - _activityChangedAtSeconds);
+        }
 
         _canvas.Invalidate();
 
@@ -394,7 +422,9 @@ internal sealed class LynxLabForm : Form
         _canvas.State = state;
         _desktopPreview.State = state;
         _stateValue.Text = state.ToString();
-        _expressionValue.Text = ExpressionName(state);
+        _expressionValue.Text = _activity == LynxActivityState.None
+            ? ExpressionName(state)
+            : ActivityExpressionName(_activity);
         _stateChangedAtSeconds = _animationClock.Elapsed.TotalSeconds;
 
         // Render the first reaction frame immediately rather than waiting for
@@ -402,13 +432,27 @@ internal sealed class LynxLabForm : Form
         AdvanceAnimation();
     }
 
+    private void SetActivity(LynxActivityState activity)
+    {
+        _activity = activity;
+        _activityChangedAtSeconds = _animationClock.Elapsed.TotalSeconds;
+        _activityValue.Text = ActivityName(activity);
+        _expressionValue.Text = activity == LynxActivityState.None
+            ? ExpressionName(_canvas.State)
+            : ActivityExpressionName(activity);
+        _desktopPreview.Activity = activity;
+
+        AdvanceAnimation();
+    }
+
     private void SetRenderer(ILynxRenderer renderer)
     {
         _renderer = renderer;
 
+        var now = _animationClock.Elapsed.TotalSeconds;
+
         if (renderer is IAnimatedLynxRenderer animated)
         {
-            var now = _animationClock.Elapsed.TotalSeconds;
             var frame = LynxAnimationFrame.FromSeconds(
                 now,
                 _canvas.State,
@@ -419,11 +463,53 @@ internal sealed class LynxLabForm : Form
                 : "state loop · " + _canvas.State;
         }
 
+        if (renderer is IActivityLynxRenderer activityRenderer)
+        {
+            activityRenderer.SetActivityFrame(
+                _activity,
+                now - _activityChangedAtSeconds);
+        }
+
         _canvas.Renderer = renderer;
         _desktopPreview.Renderer = renderer;
         _viewportCaption.Text = "LAB VIEWPORT  ·  " + renderer.Name;
         _rendererValue.Text = renderer.Name;
     }
+
+    private static string ActivityName(LynxActivityState activity) =>
+        activity switch
+        {
+            LynxActivityState.Thinking => "thinking / scanning",
+            LynxActivityState.Preparing => "preparing / inspecting",
+            LynxActivityState.Sorting => "sorting / staging",
+            LynxActivityState.Packing => "packing checkpoint",
+            LynxActivityState.Incoming => "incoming / received",
+            LynxActivityState.Outgoing => "outgoing / dispatching",
+            LynxActivityState.Reconciling => "reconciling histories",
+            LynxActivityState.Success => "success / completed",
+            LynxActivityState.Warning => "warning / needs attention",
+            LynxActivityState.Failure => "failure / needs help",
+            LynxActivityState.Resting => "resting / low activity",
+            _ => "none"
+        };
+
+    private static string ActivityExpressionName(
+        LynxActivityState activity) =>
+        activity switch
+        {
+            LynxActivityState.Thinking => "focused / analysing",
+            LynxActivityState.Preparing => "inspecting / deliberate",
+            LynxActivityState.Sorting => "busy / coordinated",
+            LynxActivityState.Packing => "determined / locking",
+            LynxActivityState.Incoming => "surprised / attentive",
+            LynxActivityState.Outgoing => "confident / dispatching",
+            LynxActivityState.Reconciling => "intense / calculating",
+            LynxActivityState.Success => "pleased / complete",
+            LynxActivityState.Warning => "concerned / cautious",
+            LynxActivityState.Failure => "frustrated / guarded",
+            LynxActivityState.Resting => "sleepy / relaxed",
+            _ => "base state"
+        };
 
     private static string ExpressionName(LynxVisualState state) =>
         state switch

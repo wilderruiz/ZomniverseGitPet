@@ -12,6 +12,22 @@ internal enum LynxVisualState
     Conflict
 }
 
+internal enum LynxActivityState
+{
+    None,
+    Thinking,
+    Preparing,
+    Sorting,
+    Packing,
+    Incoming,
+    Outgoing,
+    Reconciling,
+    Success,
+    Warning,
+    Failure,
+    Resting
+}
+
 internal sealed record LynxPalette(
     string Name,
     Color Fur,

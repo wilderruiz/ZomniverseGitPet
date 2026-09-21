@@ -245,3 +245,10 @@ internal interface IAnimatedLynxRenderer
 {
     void SetAnimationFrame(LynxAnimationFrame frame);
 }
+
+internal interface IActivityLynxRenderer
+{
+    void SetActivityFrame(
+        LynxActivityState activity,
+        double secondsSinceActivityChange);
+}
