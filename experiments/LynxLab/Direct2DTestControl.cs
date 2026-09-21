@@ -182,8 +182,11 @@ internal sealed class Direct2DTestControl : Control
                         Format = 0,
                         AlphaMode = 0
                     },
-                    DpiX = 0f,
-                    DpiY = 0f,
+                    // Direct2D coordinates are DIPs. Keep the render target
+                    // aligned with the WinForms control's current monitor DPI
+                    // so ClientSize pixels are converted exactly once.
+                    DpiX = Math.Max(96f, DeviceDpi),
+                    DpiY = Math.Max(96f, DeviceDpi),
                     Usage = 0,
                     MinLevel = 0
                 };
@@ -255,8 +258,14 @@ internal sealed class Direct2DTestControl : Control
             beginDraw(_target);
             clear(_target, ref background);
 
-            var width = Math.Max(1f, ClientSize.Width);
-            var height = Math.Max(1f, ClientSize.Height);
+            var dpi = Math.Max(96f, DeviceDpi);
+            var dipScale = 96f / dpi;
+            var width = Math.Max(
+                1f,
+                ClientSize.Width * dipScale);
+            var height = Math.Max(
+                1f,
+                ClientSize.Height * dipScale);
             var cx = width / 2f;
             var cy = height / 2f;
             var side = Math.Min(width, height);
@@ -613,7 +622,7 @@ internal sealed class Direct2DTestControl : Control
 
         _tailGeometry = CreatePathGeometry(
         [
-            Move(49, 143),
+            MoveTo(49, 143),
             Bezier(31, 147, 15, 138, 10, 124),
             Bezier(3, 106, 7, 88, 18, 74),
             Bezier(27, 63, 38, 58, 48, 60),
@@ -626,7 +635,7 @@ internal sealed class Direct2DTestControl : Control
 
         _torsoGeometry = CreatePathGeometry(
         [
-            Move(53, 84),
+            MoveTo(53, 84),
             Bezier(47, 92, 43, 103, 42, 117),
             Bezier(41, 132, 45, 144, 56, 151),
             Bezier(63, 156, 71, 158, 80, 158),
@@ -641,7 +650,7 @@ internal sealed class Direct2DTestControl : Control
         var leftHaunch =
             new[]
             {
-                Move(45, 113),
+                MoveTo(45, 113),
                 Bezier(38, 122, 38, 137, 45, 147),
                 Bezier(50, 154, 59, 156, 66, 151),
                 Bezier(69, 145, 68, 135, 65, 125),
@@ -656,7 +665,7 @@ internal sealed class Direct2DTestControl : Control
         var leftLeg =
             new[]
             {
-                Move(60, 99),
+                MoveTo(60, 99),
                 Bezier(57, 110, 57, 125, 59, 139),
                 Bezier(60, 146, 64, 150, 69, 151),
                 Bezier(72, 151, 74, 148, 74, 144),
@@ -671,7 +680,7 @@ internal sealed class Direct2DTestControl : Control
 
         _headGeometry = CreatePathGeometry(
         [
-            Move(46, 39),
+            MoveTo(46, 39),
             Bezier(52, 30, 62, 24, 72, 21),
             Line(70, 17),
             Line(78, 20),
@@ -700,7 +709,7 @@ internal sealed class Direct2DTestControl : Control
         var leftEar =
             new[]
             {
-                Move(46, 45),
+                MoveTo(46, 45),
                 Bezier(40, 35, 40, 20, 48, 6),
                 Bezier(58, 14, 64, 24, 66, 36),
                 Bezier(59, 40, 52, 43, 46, 45),
@@ -714,7 +723,7 @@ internal sealed class Direct2DTestControl : Control
         var leftInnerEar =
             new[]
             {
-                Move(48, 37),
+                MoveTo(48, 37),
                 Bezier(46, 28, 48, 18, 51, 12),
                 Bezier(57, 19, 60, 27, 61, 34),
                 Line(57, 31),
@@ -869,7 +878,7 @@ internal sealed class Direct2DTestControl : Control
     private static Point2F Mirror(Point2F point) =>
         new(160f - point.X, point.Y);
 
-    private static PathCommand Move(float x, float y) =>
+    private static PathCommand MoveTo(float x, float y) =>
         new(
             PathCommandKind.Move,
             new Point2F(x, y),
