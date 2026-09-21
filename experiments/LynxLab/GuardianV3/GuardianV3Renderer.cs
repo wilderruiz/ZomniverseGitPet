@@ -55,9 +55,19 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 DrawBodyArmor(graphics, palette, state, miniature);
                 DrawChestFur(graphics);
                 DrawCollarArmor(graphics, palette, state, miniature);
-                DrawEars(graphics, colors, expression);
-                DrawHead(graphics, colors);
-                DrawFace(graphics, palette, miniature, _animation.Blink, expression);
+                var headSaved = graphics.Save();
+                try
+                {
+                    ApplyHeadPose(graphics, expression);
+                    DrawEars(graphics, colors, expression);
+                    DrawHead(graphics, colors);
+                    DrawFace(graphics, palette, miniature, _animation.Blink, expression);
+                }
+                finally
+                {
+                    graphics.Restore(headSaved);
+                }
+
                 DrawShield(graphics, palette, state, miniature, _animation.ShieldPulse);
                 DrawRimLighting(graphics, colors, state, miniature);
             }
@@ -104,6 +114,19 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         g.TranslateTransform(80f, 145f, MatrixOrder.Append);
         g.ScaleTransform(1f, scaleY, MatrixOrder.Append);
         g.TranslateTransform(-80f, -145f, MatrixOrder.Append);
+    }
+
+    private static void ApplyHeadPose(Graphics g, ExpressionProfile expression)
+    {
+        if (Math.Abs(expression.HeadOffsetY) > 0.001f)
+            g.TranslateTransform(0f, expression.HeadOffsetY, MatrixOrder.Append);
+
+        if (Math.Abs(expression.HeadTiltDegrees) < 0.001f)
+            return;
+
+        g.TranslateTransform(80f, 79f, MatrixOrder.Append);
+        g.RotateTransform(expression.HeadTiltDegrees, MatrixOrder.Append);
+        g.TranslateTransform(-80f, -79f, MatrixOrder.Append);
     }
 
     private static void DrawGroundReference(Graphics g, SilhouetteColors c)
@@ -819,7 +842,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         float MouthCurve,
         float EarOutwardDegrees,
         float TailPoseDegrees,
-        float EyeHighlightOffsetY)
+        float EyeHighlightOffsetY,
+        float HeadTiltDegrees,
+        float HeadOffsetY)
     {
         public static ExpressionProfile For(
             LynxVisualState state,
@@ -828,60 +853,68 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             var expression = state switch
             {
                 LynxVisualState.Clean => new ExpressionProfile(
-                    0.96f, 1.00f,
-                    -0.6f, -2.4f,
-                    0.9f,
-                    2.4f, -1.2f,
-                    0.2f),
+                    0.84f, 1.02f,
+                    -2.0f, -4.0f,
+                    2.6f,
+                    5.0f, -3.0f,
+                    0.4f,
+                    0.0f, 0.8f),
 
                 LynxVisualState.Changes => new ExpressionProfile(
-                    1.06f, 1.05f,
-                    -1.5f, -2.8f,
-                    -0.8f,
-                    -1.0f, 1.4f,
-                    -0.2f),
+                    1.12f, 1.18f,
+                    -3.8f, -5.0f,
+                    -2.0f,
+                    -4.0f, 5.5f,
+                    -0.7f,
+                    -2.5f, -0.8f),
 
                 LynxVisualState.Attention => new ExpressionProfile(
-                    0.88f, 0.92f,
-                    0.2f, 1.0f,
-                    -1.8f,
-                    -2.1f, 0.4f,
-                    0f),
+                    0.70f, 0.82f,
+                    1.4f, 4.2f,
+                    -3.4f,
+                    -5.5f, 1.0f,
+                    0f,
+                    0.0f, -1.2f),
 
                 LynxVisualState.Save => new ExpressionProfile(
-                    0.94f, 1.00f,
-                    -0.8f, -2.2f,
-                    1.35f,
-                    1.4f, -0.5f,
-                    0.2f),
+                    0.80f, 1.04f,
+                    -2.2f, -3.7f,
+                    3.8f,
+                    3.6f, 2.8f,
+                    0.5f,
+                    2.2f, 0.8f),
 
                 LynxVisualState.Get => new ExpressionProfile(
-                    1.10f, 1.12f,
-                    -1.8f, -3.2f,
-                    0.0f,
-                    -1.6f, 1.8f,
-                    -0.4f),
+                    1.16f, 1.26f,
+                    -4.4f, -5.8f,
+                    0.7f,
+                    -5.5f, 7.0f,
+                    -0.8f,
+                    -4.0f, -1.0f),
 
                 LynxVisualState.Send => new ExpressionProfile(
-                    0.93f, 0.98f,
-                    -0.4f, -1.2f,
-                    1.05f,
-                    0.5f, 0.8f,
-                    0.1f),
+                    0.82f, 0.96f,
+                    -1.0f, -2.0f,
+                    3.2f,
+                    1.2f, 4.5f,
+                    0.2f,
+                    2.8f, -0.4f),
 
                 LynxVisualState.Conflict => new ExpressionProfile(
-                    0.76f, 0.86f,
-                    0.5f, 2.2f,
-                    -2.8f,
-                    -3.2f, -1.0f,
-                    0f),
+                    0.58f, 0.70f,
+                    2.8f, 6.0f,
+                    -4.8f,
+                    -7.0f, -4.5f,
+                    0f,
+                    0.0f, -1.8f),
 
                 _ => new ExpressionProfile(
-                    0.92f, 1.00f,
+                    0.90f, 1.00f,
                     0f, 0f,
-                    -1.1f,
+                    -1.4f,
                     0f, 0f,
-                    0f)
+                    0f,
+                    0.0f, 0.0f)
             };
 
             var boost = Math.Clamp(transitionAmount, 0f, 1f);
@@ -891,26 +924,31 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 BrowInnerDrop =
                     expression.BrowInnerDrop +
                     (state is LynxVisualState.Attention or LynxVisualState.Conflict
-                        ? 0.7f * boost
+                        ? 1.4f * boost
                         : 0f),
 
                 EarOutwardDegrees =
                     expression.EarOutwardDegrees +
                     (state == LynxVisualState.Get
-                        ? -0.7f * boost
-                        : 0f),
+                        ? -1.6f * boost
+                        : state == LynxVisualState.Changes
+                            ? -1.0f * boost
+                            : 0f),
 
                 MouthCurve =
                     expression.MouthCurve +
                     (state == LynxVisualState.Save
-                        ? 0.35f * boost
-                        : 0f)
+                        ? 0.8f * boost
+                        : state == LynxVisualState.Conflict
+                            ? -0.7f * boost
+                            : 0f)
             };
         }
     }
 
-    private static Color StateAccent(LynxVisualState state, LynxPalette palette) =>
-        state switch
+    private static Color StateAccent(LynxVisualState state, LynxPalette palette)
+    {
+        var semantic = state switch
         {
             LynxVisualState.Clean => Color.FromArgb(117, 226, 189),
             LynxVisualState.Changes => Color.FromArgb(239, 137, 158),
@@ -921,6 +959,12 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             LynxVisualState.Conflict => Color.FromArgb(228, 164, 108),
             _ => palette.Accent
         };
+
+        return Mix(
+            semantic,
+            palette.Accent,
+            state is LynxVisualState.Idle ? 0.0f : 0.34f);
+    }
 
     private static Pen Outline(SilhouetteColors c) =>
         new(c.Edge, 1.8f)
