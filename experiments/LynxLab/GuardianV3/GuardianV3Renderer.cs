@@ -575,6 +575,7 @@ internal sealed class GuardianV3Renderer :
     private static void DrawFace(
         Graphics g,
         LynxPalette palette,
+        LynxActivityState activity,
         bool miniature,
         float blink,
         ExpressionProfile expression)
@@ -595,8 +596,22 @@ internal sealed class GuardianV3Renderer :
             90f);
         g.FillPath(white, mask);
 
-        DrawFaceEye(g, palette, miniature, false, blink, expression);
-        DrawFaceEye(g, palette, miniature, true, blink, expression);
+        DrawFaceEye(
+            g,
+            palette,
+            activity,
+            miniature,
+            false,
+            blink,
+            expression);
+        DrawFaceEye(
+            g,
+            palette,
+            activity,
+            miniature,
+            true,
+            blink,
+            expression);
 
         using var nose = Path(
             M(75, 72), C(77, 70.5f, 83, 70.5f, 85, 72),
@@ -625,6 +640,7 @@ internal sealed class GuardianV3Renderer :
     private static void DrawFaceEye(
         Graphics g,
         LynxPalette palette,
+        LynxActivityState activity,
         bool miniature,
         bool right,
         float blink,
@@ -666,15 +682,46 @@ internal sealed class GuardianV3Renderer :
             var pupilHeight = 9f * eyeOpen * expression.PupilScale;
             var pupilY = 58.5f - pupilHeight / 2f;
 
-            using var iris = new SolidBrush(
-                Mix(Color.FromArgb(139, 70, 221), palette.Eye, 0.12f));
-
-            g.FillEllipse(
-                iris,
+            var irisRect = new RectangleF(
                 center - irisWidth / 2f,
                 irisY,
                 irisWidth,
                 irisHeight);
+
+            if (activity == LynxActivityState.Failure)
+            {
+                using var failureIris = new LinearGradientBrush(
+                    irisRect,
+                    Color.FromArgb(238, 58, 86),
+                    Color.FromArgb(142, 67, 224),
+                    right ? 180f : 0f);
+
+                g.FillEllipse(
+                    failureIris,
+                    irisRect);
+
+                using var failureCore = new SolidBrush(
+                    Color.FromArgb(175, 99, 52, 194));
+                g.FillEllipse(
+                    failureCore,
+                    center - pupilWidth * 0.72f,
+                    pupilY + pupilHeight * 0.08f,
+                    pupilWidth * 1.44f,
+                    pupilHeight * 0.84f);
+            }
+            else
+            {
+                using var iris = new SolidBrush(
+                    Mix(
+                        Color.FromArgb(139, 70, 221),
+                        palette.Eye,
+                        0.12f));
+
+                g.FillEllipse(
+                    iris,
+                    irisRect);
+            }
+
             g.FillEllipse(
                 dark,
                 center - pupilWidth / 2f,
@@ -1561,40 +1608,138 @@ internal sealed class GuardianV3Renderer :
 
             case LynxActivityState.Warning:
             {
-                using var triangle = new GraphicsPath();
-                triangle.AddPolygon(
-                [
-                    new PointF(80f, 3f),
-                    new PointF(89f, 18f),
-                    new PointF(71f, 18f)
-                ]);
-                g.DrawPath(primaryPen, triangle);
-                g.DrawLine(primaryPen, 80f, 8f, 80f, 12f);
-                g.FillEllipse(primaryBrush, 79f, 14.5f, 2f, 2f);
+                // Roughly three times the old marker size. It rocks around
+                // its center so the warning is obvious on the tiny mascot.
+                var tilt =
+                    (float)Math.Sin(elapsed * Math.PI * 2d / 1.15d) *
+                    11f;
+                var warningSaved = g.Save();
+
+                try
+                {
+                    g.TranslateTransform(
+                        -80f,
+                        -27f,
+                        MatrixOrder.Append);
+                    g.RotateTransform(
+                        tilt,
+                        MatrixOrder.Append);
+                    g.TranslateTransform(
+                        80f,
+                        27f,
+                        MatrixOrder.Append);
+
+                    var warningColor = Mix(
+                        Color.FromArgb(255, 201, 72),
+                        primary,
+                        0.18f);
+
+                    using var warningPen = new Pen(
+                        Color.FromArgb(
+                            miniature ? 250 : 225,
+                            warningColor),
+                        miniature ? 2.8f : 1.55f)
+                    {
+                        LineJoin = LineJoin.Round
+                    };
+                    using var warningBrush = new SolidBrush(
+                        Color.FromArgb(
+                            miniature ? 245 : 220,
+                            warningColor));
+
+                    using var triangle = new GraphicsPath();
+                    triangle.AddPolygon(
+                    [
+                        new PointF(80f, 1f),
+                        new PointF(107f, 48f),
+                        new PointF(53f, 48f)
+                    ]);
+
+                    g.DrawPath(warningPen, triangle);
+                    g.DrawLine(
+                        warningPen,
+                        80f,
+                        14f,
+                        80f,
+                        32f);
+                    g.FillEllipse(
+                        warningBrush,
+                        77.5f,
+                        37f,
+                        5f,
+                        5f);
+                }
+                finally
+                {
+                    g.Restore(warningSaved);
+                }
+
                 break;
             }
 
             case LynxActivityState.Failure:
             {
-                g.DrawLine(primaryPen, 6f, 36f, 20f, 50f);
-                g.DrawLine(primaryPen, 20f, 36f, 6f, 50f);
-                g.DrawLine(secondaryPen, 140f, 36f, 154f, 50f);
-                g.DrawLine(secondaryPen, 154f, 36f, 140f, 50f);
+                // Side failure marks pulse while the outer perimeter segments
+                // perform the actual crash-and-repel cycle.
+                var failurePulse =
+                    0.45f +
+                    0.55f * (float)Math.Abs(
+                        Math.Sin(elapsed * Math.PI * 2d / 0.86d));
+
+                using var failPen = new Pen(
+                    Color.FromArgb(
+                        (int)((miniature ? 245f : 205f) * failurePulse),
+                        Mix(
+                            Color.FromArgb(232, 57, 87),
+                            primary,
+                            0.30f)),
+                    miniature ? 2.35f : 1.25f)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round
+                };
+
+                g.DrawLine(failPen, 5f, 38f, 20f, 53f);
+                g.DrawLine(failPen, 20f, 38f, 5f, 53f);
+                g.DrawLine(failPen, 140f, 38f, 155f, 53f);
+                g.DrawLine(failPen, 155f, 38f, 140f, 53f);
                 break;
             }
 
             case LynxActivityState.Resting:
             {
-                var alpha = miniature ? 220 : 180;
-                using var restBrush = new SolidBrush(
-                    Color.FromArgb(alpha, primary));
-                using var font = new Font(
-                    "Segoe UI",
-                    miniature ? 7.2f : 5.0f,
-                    FontStyle.Bold);
+                // Each z drifts away from the head and fades completely
+                // before respawning near the pet.
+                for (var i = 0; i < 3; i++)
+                {
+                    var phase =
+                        (float)((elapsed * 0.26d + i * 0.31d) % 1d);
+                    var alpha =
+                        (int)((1f - phase) *
+                            (miniature ? 235f : 195f));
+                    var x = 118f + phase * 30f;
+                    var y = 56f - phase * 44f;
+                    var fontSize =
+                        (miniature ? 7.2f : 5.2f) +
+                        phase * (miniature ? 2.4f : 1.5f);
 
-                g.DrawString("z", font, restBrush, 126f, 42f);
-                g.DrawString("z", font, restBrush, 137f, 30f);
+                    using var restBrush = new SolidBrush(
+                        Color.FromArgb(
+                            Math.Max(0, alpha),
+                            Mix(primary, secondary, phase)));
+                    using var font = new Font(
+                        "Segoe UI",
+                        fontSize,
+                        FontStyle.Bold);
+
+                    g.DrawString(
+                        "z",
+                        font,
+                        restBrush,
+                        x,
+                        y);
+                }
+
                 break;
             }
         }
