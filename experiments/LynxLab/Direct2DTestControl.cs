@@ -299,20 +299,20 @@ internal sealed class Direct2DTestControl : Control
                 1f,
                 IntPtr.Zero);
 
-            // Keep traffic/effect motion behind the migrated silhouette.
-            DrawActivityRings(
-                drawEllipse,
-                drawLine,
-                accentBrush,
-                partnerBrush,
-                cx,
-                cy,
-                side);
+            // Activity motion is split around the mascot:
+            // perimeter fields behind, readable cues above.
+            DrawActivityBackground(
+                width,
+                height);
 
             DrawGuardianCore(
                 width,
                 height,
                 core);
+
+            DrawActivityForeground(
+                width,
+                height);
 
             var hr = endDraw(_target, out _, out _);
 
@@ -1865,131 +1865,1322 @@ internal sealed class Direct2DTestControl : Control
             default,
             default);
 
-    private void DrawActivityRings(
-        DrawEllipseDelegate drawEllipse,
-        DrawLineDelegate drawLine,
-        IntPtr accentBrush,
-        IntPtr partnerBrush,
-        float cx,
-        float cy,
-        float side)
+    private void DrawActivityBackground(
+        float width,
+        float height)
     {
+        if (_activity == LynxActivityState.None)
+            return;
+
+        var drawLine =
+            GetComDelegate<DrawLineDelegate>(_target, 15);
+        var drawEllipse =
+            GetComDelegate<DrawEllipseDelegate>(_target, 20);
+        var setTransform =
+            GetComDelegate<SetTransformDelegate>(_target, 30);
+
+        var colors = ResolveActivityColors();
+        var mix =
+            LynxPalette.ActivityMix(
+                _activity,
+                _seconds);
+        var rotation =
+            (float)((_seconds * 42d) % 360d);
         var pulse =
             0.5f +
-            0.5f * (float)Math.Sin(
-                _seconds * Math.PI * 2d / 2.4d);
+            0.5f *
+            (float)Math.Sin(
+                _seconds * Math.PI * 2d / 1.6d);
 
-        for (var i = 0; i < 3; i++)
+        var viewport =
+            ToD2D(ViewportTransform(width, height));
+        setTransform(_target, ref viewport);
+
+        try
         {
-            var phase =
-                (float)((
-                    _seconds * (0.38d + i * 0.17d) +
-                    i * 0.29d) % 1d);
+            switch (_activity)
+            {
+                case LynxActivityState.Thinking:
+                case LynxActivityState.Preparing:
+                {
+                    using var brushes =
+                        new ActivityBrushPair(
+                            this,
+                            colors.Primary,
+                            150,
+                            colors.Secondary,
+                            120);
 
-            if (_activity == LynxActivityState.Outgoing)
-                phase = 1f - phase;
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Primary,
+                        8f, 4f, 144f, 151f,
+                        rotation,
+                        118f,
+                        1.35f);
 
-            var radius =
-                side * (0.24f + phase * 0.20f);
-            var ring = new Ellipse(
-                new Point2F(cx, cy),
-                radius,
-                radius * 0.92f);
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Secondary,
+                        15f, 10f, 130f, 141f,
+                        rotation + 178f,
+                        82f,
+                        1.0f);
+                    break;
+                }
 
-            drawEllipse(
-                _target,
-                ref ring,
-                i % 2 == 0
-                    ? accentBrush
-                    : partnerBrush,
-                Math.Max(
-                    1f,
-                    side *
-                    (0.0035f + pulse * 0.0015f)),
-                IntPtr.Zero);
+                case LynxActivityState.Sorting:
+                {
+                    using var brushes =
+                        new ActivityBrushPair(
+                            this,
+                            colors.Primary,
+                            165,
+                            colors.Secondary,
+                            135);
+
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Primary,
+                        8f, 4f, 144f, 151f,
+                        rotation,
+                        72f,
+                        1.45f);
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Primary,
+                        8f, 4f, 144f, 151f,
+                        rotation + 120f,
+                        72f,
+                        1.45f);
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Primary,
+                        8f, 4f, 144f, 151f,
+                        rotation + 240f,
+                        72f,
+                        1.45f);
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Secondary,
+                        15f, 10f, 130f, 141f,
+                        -rotation * 0.72f,
+                        120f,
+                        1.0f);
+                    break;
+                }
+
+                case LynxActivityState.Packing:
+                {
+                    using var brush =
+                        new ActivityBrush(
+                            this,
+                            Mix(
+                                colors.Primary,
+                                colors.Secondary,
+                                mix),
+                            185);
+
+                    var inset =
+                        5f + pulse * 5f;
+
+                    DrawLine(
+                        drawLine,
+                        brush.Value,
+                        10f + inset, 44f,
+                        10f + inset, 118f,
+                        1.45f);
+                    DrawLine(
+                        drawLine,
+                        brush.Value,
+                        150f - inset, 44f,
+                        150f - inset, 118f,
+                        1.45f);
+                    DrawLine(
+                        drawLine,
+                        brush.Value,
+                        10f + inset, 44f,
+                        25f + inset, 44f,
+                        1.45f);
+                    DrawLine(
+                        drawLine,
+                        brush.Value,
+                        150f - inset, 44f,
+                        135f - inset, 44f,
+                        1.45f);
+                    DrawLine(
+                        drawLine,
+                        brush.Value,
+                        10f + inset, 118f,
+                        25f + inset, 118f,
+                        1.45f);
+                    DrawLine(
+                        drawLine,
+                        brush.Value,
+                        150f - inset, 118f,
+                        135f - inset, 118f,
+                        1.45f);
+                    break;
+                }
+
+                case LynxActivityState.Incoming:
+                case LynxActivityState.Outgoing:
+                {
+                    for (var i = 0; i < 3; i++)
+                    {
+                        var speed = i switch
+                        {
+                            0 => 0.62d,
+                            1 => 0.91d,
+                            _ => 1.24d
+                        };
+                        var offset = i switch
+                        {
+                            0 => 0.00d,
+                            1 => 0.37d,
+                            _ => 0.71d
+                        };
+
+                        var phase =
+                            (float)((
+                                _seconds * speed +
+                                offset) % 1d);
+                        var travel =
+                            _activity ==
+                            LynxActivityState.Incoming
+                                ? phase
+                                : 1f - phase;
+                        var fade =
+                            (float)Math.Sin(
+                                phase * Math.PI);
+
+                        var left =
+                            -3f +
+                            (18f - -3f) * travel;
+                        var top =
+                            -6f +
+                            (13f - -6f) * travel;
+                        var ringWidth =
+                            166f +
+                            (124f - 166f) * travel;
+                        var ringHeight =
+                            172f +
+                            (135f - 172f) * travel;
+
+                        var color =
+                            i % 2 == 0
+                                ? Mix(
+                                    colors.Primary,
+                                    colors.Secondary,
+                                    travel)
+                                : Mix(
+                                    colors.Secondary,
+                                    colors.Primary,
+                                    travel);
+
+                        using var brush =
+                            new ActivityBrush(
+                                this,
+                                color,
+                                (int)(190f * fade));
+
+                        var spin =
+                            (float)((
+                                _seconds *
+                                (24d + i * 8d)) %
+                                360d);
+
+                        DrawArcPolyline(
+                            drawLine,
+                            brush.Value,
+                            left,
+                            top,
+                            ringWidth,
+                            ringHeight,
+                            spin + i * 28f,
+                            145f,
+                            1.45f);
+                        DrawArcPolyline(
+                            drawLine,
+                            brush.Value,
+                            left,
+                            top,
+                            ringWidth,
+                            ringHeight,
+                            spin + 185f + i * 28f,
+                            145f,
+                            1.45f);
+                    }
+
+                    break;
+                }
+
+                case LynxActivityState.Reconciling:
+                {
+                    using var brushes =
+                        new ActivityBrushPair(
+                            this,
+                            colors.Primary,
+                            175,
+                            colors.Secondary,
+                            150);
+
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Primary,
+                        8f, 4f, 144f, 151f,
+                        rotation,
+                        148f,
+                        1.55f);
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Secondary,
+                        15f, 10f, 130f, 141f,
+                        -rotation,
+                        148f,
+                        1.2f);
+                    break;
+                }
+
+                case LynxActivityState.Success:
+                {
+                    using var brush =
+                        new ActivityBrush(
+                            this,
+                            Mix(
+                                colors.Primary,
+                                colors.Secondary,
+                                mix),
+                            145 +
+                            (int)(75f * pulse));
+
+                    var halo = new Ellipse(
+                        new Point2F(80f, 79.5f),
+                        72f,
+                        75.5f);
+
+                    drawEllipse(
+                        _target,
+                        ref halo,
+                        brush.Value,
+                        2.1f + pulse * 0.4f,
+                        IntPtr.Zero);
+                    break;
+                }
+
+                case LynxActivityState.Warning:
+                {
+                    using var brushes =
+                        new ActivityBrushPair(
+                            this,
+                            colors.Primary,
+                            205,
+                            colors.Secondary,
+                            175);
+
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Primary,
+                        8f, 4f, 144f, 151f,
+                        rotation,
+                        132f,
+                        1.8f);
+                    DrawArcPolyline(
+                        drawLine,
+                        brushes.Secondary,
+                        15f, 10f, 130f, 141f,
+                        180f -
+                        rotation * 1.18f,
+                        132f,
+                        1.4f);
+                    break;
+                }
+
+                case LynxActivityState.Failure:
+                {
+                    var phase =
+                        (float)((
+                            _seconds % 1.7d) /
+                            1.7d);
+                    var collision =
+                        phase <= 0.5f
+                            ? phase * 2f
+                            : (1f - phase) * 2f;
+
+                    var leftCenter =
+                        198f +
+                        72f * collision;
+                    var rightCenter =
+                        342f -
+                        72f * collision;
+
+                    using var failA =
+                        new ActivityBrush(
+                            this,
+                            Mix(
+                                Color.FromArgb(
+                                    226, 58, 86),
+                                colors.Primary,
+                                0.30f),
+                            225);
+                    using var failB =
+                        new ActivityBrush(
+                            this,
+                            Mix(
+                                Color.FromArgb(
+                                    141, 74, 222),
+                                colors.Secondary,
+                                0.30f),
+                            215);
+
+                    DrawArcPolyline(
+                        drawLine,
+                        failA.Value,
+                        8f, 4f, 144f, 151f,
+                        leftCenter - 24f,
+                        48f,
+                        2.0f);
+                    DrawArcPolyline(
+                        drawLine,
+                        failB.Value,
+                        8f, 4f, 144f, 151f,
+                        rightCenter - 24f,
+                        48f,
+                        1.8f);
+
+                    if (collision > 0.86f)
+                    {
+                        var impact =
+                            (collision - 0.86f) /
+                            0.14f;
+
+                        using var impactBrush =
+                            new ActivityBrush(
+                                this,
+                                Mix(
+                                    colors.Primary,
+                                    colors.Secondary,
+                                    0.5f),
+                                (int)(220f * impact));
+
+                        DrawLine(
+                            drawLine,
+                            impactBrush.Value,
+                            80f, 2f,
+                            80f, 13f,
+                            1.8f);
+                        DrawLine(
+                            drawLine,
+                            impactBrush.Value,
+                            73f, 6f,
+                            77f, 15f,
+                            1.6f);
+                        DrawLine(
+                            drawLine,
+                            impactBrush.Value,
+                            87f, 6f,
+                            83f, 15f,
+                            1.6f);
+                    }
+
+                    break;
+                }
+
+                case LynxActivityState.Resting:
+                {
+                    for (var i = 0; i < 3; i++)
+                    {
+                        var phase =
+                            (float)((
+                                _seconds * 0.28d +
+                                i / 3d) % 1d);
+                        var expand =
+                            4f + phase * 14f;
+                        var alpha =
+                            (int)(120f *
+                                (1f - phase));
+
+                        using var brush =
+                            new ActivityBrush(
+                                this,
+                                Mix(
+                                    colors.Primary,
+                                    colors.Secondary,
+                                    phase),
+                                alpha);
+
+                        DrawArcPolyline(
+                            drawLine,
+                            brush.Value,
+                            15f - expand,
+                            10f - expand,
+                            130f + expand * 2f,
+                            141f + expand * 2f,
+                            205f,
+                            130f,
+                            1.15f);
+                        DrawArcPolyline(
+                            drawLine,
+                            brush.Value,
+                            15f - expand,
+                            10f - expand,
+                            130f + expand * 2f,
+                            141f + expand * 2f,
+                            25f,
+                            130f,
+                            1.15f);
+                    }
+
+                    break;
+                }
+            }
         }
-
-        if (_activity is
-            LynxActivityState.Incoming or
-            LynxActivityState.Outgoing)
+        finally
         {
-            DrawTrafficLane(
-                drawLine,
-                accentBrush,
-                cx,
-                cy - side * 0.18f,
-                side,
-                1.45d,
-                0.05d);
-
-            DrawTrafficLane(
-                drawLine,
-                partnerBrush,
-                cx,
-                cy + side * 0.02f,
-                side,
-                0.82d,
-                0.43d);
-
-            DrawTrafficLane(
-                drawLine,
-                accentBrush,
-                cx,
-                cy + side * 0.20f,
-                side,
-                1.08d,
-                0.72d);
+            var identity = Matrix3x2F.Identity;
+            setTransform(_target, ref identity);
         }
     }
 
-    private void DrawTrafficLane(
-        DrawLineDelegate drawLine,
-        IntPtr brush,
-        float cx,
+    private void DrawActivityForeground(
+        float width,
+        float height)
+    {
+        if (_activity == LynxActivityState.None)
+            return;
+
+        var drawLine =
+            GetComDelegate<DrawLineDelegate>(_target, 15);
+        var fillEllipse =
+            GetComDelegate<FillEllipseDelegate>(_target, 21);
+        var fillRectangle =
+            GetComDelegate<FillRectangleDelegate>(_target, 17);
+        var drawRectangle =
+            GetComDelegate<DrawRectangleDelegate>(_target, 16);
+        var setTransform =
+            GetComDelegate<SetTransformDelegate>(_target, 30);
+
+        var colors = ResolveActivityColors();
+        var pulse =
+            0.5f +
+            0.5f *
+            (float)Math.Sin(
+                _seconds * Math.PI * 2d / 1.2d);
+
+        var viewport =
+            ToD2D(ViewportTransform(width, height));
+        setTransform(_target, ref viewport);
+
+        try
+        {
+            switch (_activity)
+            {
+                case LynxActivityState.Thinking:
+                case LynxActivityState.Preparing:
+                {
+                    for (var i = 0; i < 4; i++)
+                    {
+                        var angle =
+                            _seconds * 1.45d +
+                            i *
+                            Math.PI * 2d / 4d;
+                        var x =
+                            80f +
+                            (float)Math.Cos(angle) *
+                            67f;
+                        var y =
+                            80f +
+                            (float)Math.Sin(angle) *
+                            70f;
+
+                        using var brush =
+                            new ActivityBrush(
+                                this,
+                                i % 2 == 0
+                                    ? colors.Primary
+                                    : colors.Secondary,
+                                235);
+
+                        var dot = new Ellipse(
+                            new Point2F(x, y),
+                            1.7f,
+                            1.7f);
+
+                        fillEllipse(
+                            _target,
+                            ref dot,
+                            brush.Value);
+                    }
+
+                    var scanY =
+                        22f +
+                        (float)((
+                            _seconds * 26d) %
+                            116d);
+
+                    using var scan =
+                        new ActivityBrush(
+                            this,
+                            Mix(
+                                colors.Primary,
+                                colors.Secondary,
+                                0.5f),
+                            140);
+
+                    DrawLine(
+                        drawLine,
+                        scan.Value,
+                        25f, scanY,
+                        135f, scanY,
+                        1.0f);
+                    break;
+                }
+
+                case LynxActivityState.Sorting:
+                {
+                    var phase =
+                        (float)((
+                            _seconds * 34d) %
+                            118d);
+
+                    DrawDataChipD2D(
+                        fillRectangle,
+                        drawRectangle,
+                        7f,
+                        22f + phase,
+                        colors.Primary);
+                    DrawDataChipD2D(
+                        fillRectangle,
+                        drawRectangle,
+                        146f,
+                        140f - phase,
+                        colors.Secondary);
+                    DrawDataChipD2D(
+                        fillRectangle,
+                        drawRectangle,
+                        22f + phase * 0.82f,
+                        7f,
+                        colors.Primary);
+                    DrawDataChipD2D(
+                        fillRectangle,
+                        drawRectangle,
+                        132f - phase * 0.75f,
+                        149f,
+                        colors.Secondary);
+                    break;
+                }
+
+                case LynxActivityState.Packing:
+                {
+                    var inward =
+                        2f + pulse * 8f;
+
+                    using var brushes =
+                        new ActivityBrushPair(
+                            this,
+                            colors.Primary,
+                            235,
+                            colors.Secondary,
+                            220);
+
+                    DrawArrowD2D(
+                        drawLine,
+                        brushes.Primary,
+                        5f + inward, 62f,
+                        29f + inward, 62f,
+                        1.7f);
+                    DrawArrowD2D(
+                        drawLine,
+                        brushes.Secondary,
+                        155f - inward, 62f,
+                        131f - inward, 62f,
+                        1.7f);
+                    DrawArrowD2D(
+                        drawLine,
+                        brushes.Primary,
+                        10f + inward, 122f,
+                        34f + inward, 122f,
+                        1.7f);
+                    DrawArrowD2D(
+                        drawLine,
+                        brushes.Secondary,
+                        150f - inward, 122f,
+                        126f - inward, 122f,
+                        1.7f);
+                    break;
+                }
+
+                case LynxActivityState.Incoming:
+                case LynxActivityState.Outgoing:
+                {
+                    var incoming =
+                        _activity ==
+                        LynxActivityState.Incoming;
+
+                    DrawTrafficArrowD2D(
+                        drawLine,
+                        colors.Primary,
+                        incoming,
+                        false,
+                        43f,
+                        1.52d,
+                        0.02d);
+                    DrawTrafficArrowD2D(
+                        drawLine,
+                        colors.Secondary,
+                        incoming,
+                        true,
+                        43f,
+                        0.68d,
+                        0.44d);
+
+                    DrawTrafficArrowD2D(
+                        drawLine,
+                        colors.Secondary,
+                        incoming,
+                        false,
+                        91f,
+                        0.96d,
+                        0.21d);
+                    DrawTrafficArrowD2D(
+                        drawLine,
+                        colors.Primary,
+                        incoming,
+                        true,
+                        91f,
+                        1.31d,
+                        0.67d);
+
+                    DrawTrafficArrowD2D(
+                        drawLine,
+                        colors.Primary,
+                        incoming,
+                        false,
+                        132f,
+                        0.74d,
+                        0.56d);
+                    DrawTrafficArrowD2D(
+                        drawLine,
+                        colors.Secondary,
+                        incoming,
+                        true,
+                        132f,
+                        1.15d,
+                        0.11d);
+                    break;
+                }
+
+                case LynxActivityState.Reconciling:
+                {
+                    for (var i = 0; i < 6; i++)
+                    {
+                        var angle =
+                            _seconds * 1.65d +
+                            i *
+                            Math.PI * 2d / 6d;
+                        var x =
+                            80f +
+                            (float)Math.Cos(angle) *
+                            69f;
+                        var y =
+                            81f +
+                            (float)Math.Sin(angle) *
+                            71f;
+
+                        using var brush =
+                            new ActivityBrush(
+                                this,
+                                i % 2 == 0
+                                    ? colors.Primary
+                                    : colors.Secondary,
+                                230);
+
+                        var dot = new Ellipse(
+                            new Point2F(x, y),
+                            1.55f,
+                            1.55f);
+
+                        fillEllipse(
+                            _target,
+                            ref dot,
+                            brush.Value);
+                    }
+
+                    break;
+                }
+
+                case LynxActivityState.Success:
+                {
+                    for (var i = 0; i < 5; i++)
+                    {
+                        var angle =
+                            -Math.PI / 2d +
+                            i *
+                            Math.PI * 2d / 5d;
+                        var radius =
+                            67f +
+                            pulse * 4f;
+                        var x =
+                            80f +
+                            (float)Math.Cos(angle) *
+                            radius;
+                        var y =
+                            80f +
+                            (float)Math.Sin(angle) *
+                            radius;
+
+                        using var brush =
+                            new ActivityBrush(
+                                this,
+                                i % 2 == 0
+                                    ? colors.Primary
+                                    : colors.Secondary,
+                                235);
+
+                        var dot = new Ellipse(
+                            new Point2F(x, y),
+                            1.8f,
+                            1.8f);
+
+                        fillEllipse(
+                            _target,
+                            ref dot,
+                            brush.Value);
+                    }
+
+                    break;
+                }
+
+                case LynxActivityState.Warning:
+                {
+                    var tilt =
+                        (float)Math.Sin(
+                            _seconds *
+                            Math.PI * 2d /
+                            1.15d) *
+                        11f;
+
+                    var p1 =
+                        RotatePoint(
+                            new Point2F(80f, 1f),
+                            new Point2F(80f, 27f),
+                            tilt);
+                    var p2 =
+                        RotatePoint(
+                            new Point2F(107f, 48f),
+                            new Point2F(80f, 27f),
+                            tilt);
+                    var p3 =
+                        RotatePoint(
+                            new Point2F(53f, 48f),
+                            new Point2F(80f, 27f),
+                            tilt);
+
+                    using var warning =
+                        new ActivityBrush(
+                            this,
+                            Mix(
+                                Color.FromArgb(
+                                    255, 201, 72),
+                                colors.Primary,
+                                0.18f),
+                            250);
+
+                    DrawLine(
+                        drawLine,
+                        warning.Value,
+                        p1.X, p1.Y,
+                        p2.X, p2.Y,
+                        2.35f);
+                    DrawLine(
+                        drawLine,
+                        warning.Value,
+                        p2.X, p2.Y,
+                        p3.X, p3.Y,
+                        2.35f);
+                    DrawLine(
+                        drawLine,
+                        warning.Value,
+                        p3.X, p3.Y,
+                        p1.X, p1.Y,
+                        2.35f);
+
+                    var top =
+                        RotatePoint(
+                            new Point2F(80f, 14f),
+                            new Point2F(80f, 27f),
+                            tilt);
+                    var bottom =
+                        RotatePoint(
+                            new Point2F(80f, 32f),
+                            new Point2F(80f, 27f),
+                            tilt);
+
+                    DrawLine(
+                        drawLine,
+                        warning.Value,
+                        top.X, top.Y,
+                        bottom.X, bottom.Y,
+                        2.5f);
+
+                    var dotCenter =
+                        RotatePoint(
+                            new Point2F(80f, 39.5f),
+                            new Point2F(80f, 27f),
+                            tilt);
+                    var dot =
+                        new Ellipse(
+                            dotCenter,
+                            2.5f,
+                            2.5f);
+
+                    fillEllipse(
+                        _target,
+                        ref dot,
+                        warning.Value);
+                    break;
+                }
+
+                case LynxActivityState.Failure:
+                {
+                    var failurePulse =
+                        0.45f +
+                        0.55f *
+                        (float)Math.Abs(
+                            Math.Sin(
+                                _seconds *
+                                Math.PI * 2d /
+                                0.86d));
+
+                    using var fail =
+                        new ActivityBrush(
+                            this,
+                            Mix(
+                                Color.FromArgb(
+                                    232, 57, 87),
+                                colors.Primary,
+                                0.30f),
+                            (int)(245f *
+                                failurePulse));
+
+                    DrawLine(
+                        drawLine,
+                        fail.Value,
+                        5f, 38f,
+                        20f, 53f,
+                        2.0f);
+                    DrawLine(
+                        drawLine,
+                        fail.Value,
+                        20f, 38f,
+                        5f, 53f,
+                        2.0f);
+                    DrawLine(
+                        drawLine,
+                        fail.Value,
+                        140f, 38f,
+                        155f, 53f,
+                        2.0f);
+                    DrawLine(
+                        drawLine,
+                        fail.Value,
+                        155f, 38f,
+                        140f, 53f,
+                        2.0f);
+                    break;
+                }
+
+                case LynxActivityState.Resting:
+                {
+                    for (var i = 0; i < 3; i++)
+                    {
+                        var phase =
+                            (float)((
+                                _seconds * 0.26d +
+                                i * 0.31d) % 1d);
+                        var alpha =
+                            (int)(
+                                (1f - phase) *
+                                235f);
+                        var x =
+                            118f +
+                            phase * 30f;
+                        var y =
+                            56f -
+                            phase * 44f;
+                        var size =
+                            5.5f +
+                            phase * 3.2f;
+
+                        using var brush =
+                            new ActivityBrush(
+                                this,
+                                Mix(
+                                    colors.Primary,
+                                    colors.Secondary,
+                                    phase),
+                                alpha);
+
+                        DrawZGlyph(
+                            drawLine,
+                            brush.Value,
+                            x,
+                            y,
+                            size,
+                            1.55f);
+                    }
+
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            var identity = Matrix3x2F.Identity;
+            setTransform(_target, ref identity);
+        }
+    }
+
+    private ActivityColors ResolveActivityColors()
+    {
+        var active =
+            LynxPalette.Blend(
+                _palette,
+                _activity,
+                _seconds);
+        var partner =
+            LynxPalette.ActivityPartner(
+                _activity);
+        var semantic =
+            ResolveStateAccent(
+                _state,
+                _activity,
+                active);
+
+        var selected =
+            Mix(
+                _palette.Accent,
+                semantic,
+                0.22f);
+        var partnerAccent =
+            Mix(
+                partner.Accent,
+                semantic,
+                0.22f);
+        var amount =
+            LynxPalette.ActivityMix(
+                _activity,
+                _seconds);
+
+        return new ActivityColors(
+            Primary: Mix(
+                selected,
+                partnerAccent,
+                amount),
+            Secondary: Mix(
+                partnerAccent,
+                selected,
+                amount));
+    }
+
+    private void DrawDataChipD2D(
+        FillRectangleDelegate fillRectangle,
+        DrawRectangleDelegate drawRectangle,
+        float x,
         float y,
-        float side,
+        Color color)
+    {
+        using var fill =
+            new ActivityBrush(
+                this,
+                color,
+                185);
+        using var edge =
+            new ActivityBrush(
+                this,
+                color,
+                235);
+
+        var rect =
+            new RectF(
+                x,
+                y,
+                x + 6.5f,
+                y + 3.2f);
+
+        fillRectangle(
+            _target,
+            ref rect,
+            fill.Value);
+        drawRectangle(
+            _target,
+            ref rect,
+            edge.Value,
+            0.8f,
+            IntPtr.Zero);
+    }
+
+    private void DrawTrafficArrowD2D(
+        DrawLineDelegate drawLine,
+        Color color,
+        bool incoming,
+        bool fromRight,
+        float y,
         double speed,
         double offset)
     {
         var phase =
-            (float)((_seconds * speed + offset) % 1d);
+            (float)((
+                _seconds * speed +
+                offset) % 1d);
+        var fade =
+            (float)Math.Sin(
+                phase * Math.PI);
+        var alpha =
+            Math.Max(
+                0,
+                (int)(248f * fade));
 
-        var incoming = _activity == LynxActivityState.Incoming;
-        var fromX = incoming
-            ? cx - side * 0.42f
-            : cx - side * 0.18f;
-        var toX = incoming
-            ? cx - side * 0.18f
-            : cx - side * 0.42f;
+        const float outerLeft = -7f;
+        const float innerLeft = 31f;
+        const float innerRight = 129f;
+        const float outerRight = 167f;
 
-        var x = fromX + (toX - fromX) * phase;
-        var length = Math.Max(7f, side * 0.035f);
-        var p0 = new Point2F(
-            incoming ? x - length : x + length,
-            y);
-        var p1 = new Point2F(x, y);
+        float tailX;
+        float headX;
 
+        if (incoming)
+        {
+            if (fromRight)
+            {
+                headX =
+                    outerRight +
+                    (innerRight -
+                     outerRight) * phase;
+                tailX = headX + 10f;
+            }
+            else
+            {
+                headX =
+                    outerLeft +
+                    (innerLeft -
+                     outerLeft) * phase;
+                tailX = headX - 10f;
+            }
+        }
+        else
+        {
+            if (fromRight)
+            {
+                headX =
+                    innerRight +
+                    (outerRight -
+                     innerRight) * phase;
+                tailX = headX - 10f;
+            }
+            else
+            {
+                headX =
+                    innerLeft +
+                    (outerLeft -
+                     innerLeft) * phase;
+                tailX = headX + 10f;
+            }
+        }
+
+        using var brush =
+            new ActivityBrush(
+                this,
+                color,
+                alpha);
+
+        DrawArrowD2D(
+            drawLine,
+            brush.Value,
+            tailX,
+            y,
+            headX,
+            y,
+            1.75f);
+    }
+
+    private void DrawArrowD2D(
+        DrawLineDelegate drawLine,
+        IntPtr brush,
+        float x1,
+        float y1,
+        float x2,
+        float y2,
+        float strokeWidth)
+    {
+        DrawLine(
+            drawLine,
+            brush,
+            x1, y1,
+            x2, y2,
+            strokeWidth);
+
+        var direction =
+            Math.Sign(x2 - x1);
+
+        if (direction == 0)
+            return;
+
+        DrawLine(
+            drawLine,
+            brush,
+            x2, y2,
+            x2 - direction * 4f,
+            y2 - 3f,
+            strokeWidth);
+        DrawLine(
+            drawLine,
+            brush,
+            x2, y2,
+            x2 - direction * 4f,
+            y2 + 3f,
+            strokeWidth);
+    }
+
+    private void DrawArcPolyline(
+        DrawLineDelegate drawLine,
+        IntPtr brush,
+        float left,
+        float top,
+        float width,
+        float height,
+        float startDegrees,
+        float sweepDegrees,
+        float strokeWidth)
+    {
+        const int segments = 28;
+        var previous =
+            PointOnEllipse(
+                left,
+                top,
+                width,
+                height,
+                startDegrees);
+
+        for (var i = 1; i <= segments; i++)
+        {
+            var amount =
+                i / (float)segments;
+            var current =
+                PointOnEllipse(
+                    left,
+                    top,
+                    width,
+                    height,
+                    startDegrees +
+                    sweepDegrees * amount);
+
+            DrawLine(
+                drawLine,
+                brush,
+                previous.X,
+                previous.Y,
+                current.X,
+                current.Y,
+                strokeWidth);
+
+            previous = current;
+        }
+    }
+
+    private static Point2F PointOnEllipse(
+        float left,
+        float top,
+        float width,
+        float height,
+        float degrees)
+    {
+        var radians =
+            degrees *
+            MathF.PI / 180f;
+        var cx =
+            left + width / 2f;
+        var cy =
+            top + height / 2f;
+
+        return new Point2F(
+            cx +
+            MathF.Cos(radians) *
+            width / 2f,
+            cy +
+            MathF.Sin(radians) *
+            height / 2f);
+    }
+
+    private static Point2F RotatePoint(
+        Point2F point,
+        Point2F pivot,
+        float degrees)
+    {
+        var radians =
+            degrees *
+            MathF.PI / 180f;
+        var cos =
+            MathF.Cos(radians);
+        var sin =
+            MathF.Sin(radians);
+        var x =
+            point.X - pivot.X;
+        var y =
+            point.Y - pivot.Y;
+
+        return new Point2F(
+            pivot.X +
+            x * cos -
+            y * sin,
+            pivot.Y +
+            x * sin +
+            y * cos);
+    }
+
+    private void DrawZGlyph(
+        DrawLineDelegate drawLine,
+        IntPtr brush,
+        float x,
+        float y,
+        float size,
+        float strokeWidth)
+    {
+        DrawLine(
+            drawLine,
+            brush,
+            x, y,
+            x + size, y,
+            strokeWidth);
+        DrawLine(
+            drawLine,
+            brush,
+            x + size, y,
+            x, y + size,
+            strokeWidth);
+        DrawLine(
+            drawLine,
+            brush,
+            x, y + size,
+            x + size, y + size,
+            strokeWidth);
+    }
+
+    private void DrawLine(
+        DrawLineDelegate drawLine,
+        IntPtr brush,
+        float x1,
+        float y1,
+        float x2,
+        float y2,
+        float strokeWidth)
+    {
         drawLine(
             _target,
-            p0,
-            p1,
+            new Point2F(x1, y1),
+            new Point2F(x2, y2),
             brush,
-            Math.Max(1.4f, side * 0.006f),
-            IntPtr.Zero);
-
-        // Mirror lane from the other side.
-        var mirrorX = cx * 2f - x;
-        var mp0 = new Point2F(
-            incoming ? mirrorX + length : mirrorX - length,
-            y);
-        var mp1 = new Point2F(mirrorX, y);
-
-        drawLine(
-            _target,
-            mp0,
-            mp1,
-            brush,
-            Math.Max(1.4f, side * 0.006f),
+            strokeWidth,
             IntPtr.Zero);
     }
 
