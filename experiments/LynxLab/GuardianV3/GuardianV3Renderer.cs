@@ -12,7 +12,7 @@ internal sealed class GuardianV3Renderer :
     private LynxActivityState _activity = LynxActivityState.None;
     private double _activityElapsed;
 
-    public string Name => "Guardian V6 armored · activity behaviors";
+    public string Name => "Guardian V7 armored · whole-body activity";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
@@ -41,8 +41,23 @@ internal sealed class GuardianV3Renderer :
             graphics.TranslateTransform(bounds.Left, bounds.Top);
             graphics.ScaleTransform(bounds.Width / DesignSize, bounds.Height / DesignSize);
 
-            var colors = SilhouetteColors.FromPalette(palette);
+            var selectedPalette = palette;
+            var activePalette = LynxPalette.Blend(
+                selectedPalette,
+                _activity,
+                _activityElapsed);
+            var colors = SilhouetteColors.FromPalette(activePalette);
             var miniature = Math.Min(bounds.Width, bounds.Height) <= 180;
+
+            DrawActivityField(
+                graphics,
+                selectedPalette,
+                activePalette,
+                state,
+                _activity,
+                _activityElapsed,
+                miniature);
+
             var expression = ApplyActivityExpression(
                 ExpressionProfile.For(state, _animation.TransitionAmount),
                 _activity,
@@ -72,16 +87,16 @@ internal sealed class GuardianV3Renderer :
                 DrawTorso(graphics, colors);
                 DrawHaunches(graphics, colors);
                 DrawForelegs(graphics, colors);
-                DrawBodyArmor(graphics, palette, state, _activity, miniature);
+                DrawBodyArmor(graphics, activePalette, state, _activity, miniature);
                 DrawChestFur(graphics);
-                DrawCollarArmor(graphics, palette, state, _activity, miniature);
+                DrawCollarArmor(graphics, activePalette, state, _activity, miniature);
                 var headSaved = graphics.Save();
                 try
                 {
                     ApplyHeadPose(graphics, expression);
                     DrawEars(graphics, colors, expression);
                     DrawHead(graphics, colors);
-                    DrawFace(graphics, palette, miniature, _animation.Blink, expression);
+                    DrawFace(graphics, activePalette, miniature, _animation.Blink, expression);
                 }
                 finally
                 {
@@ -90,7 +105,7 @@ internal sealed class GuardianV3Renderer :
 
                 DrawShield(
                     graphics,
-                    palette,
+                    activePalette,
                     state,
                     _activity,
                     miniature,
@@ -98,13 +113,14 @@ internal sealed class GuardianV3Renderer :
                 DrawRimLighting(
                     graphics,
                     colors,
-                    palette,
+                    activePalette,
                     state,
                     _activity,
                     miniature);
                 DrawActivityEffect(
                     graphics,
-                    palette,
+                    selectedPalette,
+                    activePalette,
                     state,
                     _activity,
                     _activityElapsed,
