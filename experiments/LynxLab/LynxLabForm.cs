@@ -16,6 +16,7 @@ internal sealed class LynxLabForm : Form
     private readonly System.Windows.Forms.Timer _animationTimer;
     private readonly System.Diagnostics.Stopwatch _animationClock =
         System.Diagnostics.Stopwatch.StartNew();
+    private double _stateChangedAtSeconds;
 
     public LynxLabForm()
     {
@@ -332,7 +333,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "The approved Hairy Guardian is now rendered live from vector geometry. Palette changes preserve the purple identity while state accents remain testable. Direct2D comes later.",
+            Text = "Guardian V3 Animation Phase 2 is state-aware: breathing, blink cadence, tail motion and shield rhythm now change with simulated Git state. Direct2D comes later.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -365,8 +366,12 @@ internal sealed class LynxLabForm : Form
         if (_renderer is not IAnimatedLynxRenderer animated)
             return;
 
+        var now = _animationClock.Elapsed.TotalSeconds;
         animated.SetAnimationFrame(
-            LynxAnimationFrame.FromSeconds(_animationClock.Elapsed.TotalSeconds));
+            LynxAnimationFrame.FromSeconds(
+                now,
+                _canvas.State,
+                now - _stateChangedAtSeconds));
 
         _canvas.Invalidate();
 
@@ -379,6 +384,11 @@ internal sealed class LynxLabForm : Form
         _canvas.State = state;
         _desktopPreview.State = state;
         _stateValue.Text = state.ToString();
+        _stateChangedAtSeconds = _animationClock.Elapsed.TotalSeconds;
+
+        // Render the first reaction frame immediately rather than waiting for
+        // the next 33 ms timer tick.
+        AdvanceAnimation();
     }
 
     private void SetRenderer(ILynxRenderer renderer)
@@ -387,8 +397,12 @@ internal sealed class LynxLabForm : Form
 
         if (renderer is IAnimatedLynxRenderer animated)
         {
+            var now = _animationClock.Elapsed.TotalSeconds;
             animated.SetAnimationFrame(
-                LynxAnimationFrame.FromSeconds(_animationClock.Elapsed.TotalSeconds));
+                LynxAnimationFrame.FromSeconds(
+                    now,
+                    _canvas.State,
+                    now - _stateChangedAtSeconds));
         }
 
         _canvas.Renderer = renderer;

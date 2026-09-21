@@ -7,7 +7,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
     private const float DesignSize = 160f;
     private LynxAnimationFrame _animation = LynxAnimationFrame.Static;
 
-    public string Name => "Guardian V3 layered · animation phase 1";
+    public string Name => "Guardian V3 layered · animation phase 2";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
@@ -57,8 +57,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 DrawEars(graphics, colors);
                 DrawHead(graphics, colors);
                 DrawFace(graphics, palette, miniature, _animation.Blink);
-                DrawShield(graphics, palette, miniature, _animation.ShieldPulse);
-                DrawRimLighting(graphics, colors, miniature);
+                DrawShield(graphics, palette, state, miniature, _animation.ShieldPulse);
+                DrawRimLighting(graphics, colors, state, miniature);
             }
             finally
             {
@@ -530,14 +530,19 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         }
     }
 
-    private static void DrawShield(Graphics g, LynxPalette palette, bool miniature, float pulse)
+    private static void DrawShield(
+        Graphics g,
+        LynxPalette palette,
+        LynxVisualState state,
+        bool miniature,
+        float pulse)
     {
         var saved = g.Save();
         try
         {
             // Seat the badge against the collar while retaining the exposed chest ruff.
             g.TranslateTransform(0, -1.5f);
-            DrawShieldBadge(g, palette, miniature, pulse);
+            DrawShieldBadge(g, palette, state, miniature, pulse);
         }
         finally
         {
@@ -545,16 +550,22 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         }
     }
 
-    private static void DrawShieldBadge(Graphics g, LynxPalette palette, bool miniature, float pulse)
+    private static void DrawShieldBadge(
+        Graphics g,
+        LynxPalette palette,
+        LynxVisualState state,
+        bool miniature,
+        float pulse)
     {
         using var shield = Path(
             M(80, 96), L(91, 101), L(89, 113),
             L(80, 121), L(71, 113), L(69, 101), Z());
         var violet = Mix(Color.FromArgb(161, 102, 235), palette.Accent, 0.10f);
+        var stateAccent = StateAccent(state, palette);
         pulse = Math.Clamp(pulse, 0f, 1f);
         var haloAlpha = 24 + (int)Math.Round(36f * pulse);
         var haloWidth = (miniature ? 3.2f : 2.8f) + 0.45f * pulse;
-        using var halo = new Pen(Color.FromArgb(haloAlpha, violet), haloWidth)
+        using var halo = new Pen(Color.FromArgb(haloAlpha, stateAccent), haloWidth)
         {
             LineJoin = LineJoin.Round
         };
@@ -596,9 +607,15 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         ]);
     }
 
-    private static void DrawRimLighting(Graphics g, SilhouetteColors c, bool miniature)
+    private static void DrawRimLighting(
+        Graphics g,
+        SilhouetteColors c,
+        LynxVisualState state,
+        bool miniature)
     {
-        using var rim = new Pen(Color.FromArgb(miniature ? 115 : 145, c.EarInner),
+        var stateAccent = StateAccent(state, LynxPalette.Default);
+        var rimColor = Mix(c.EarInner, stateAccent, state is LynxVisualState.Idle ? 0.0f : 0.18f);
+        using var rim = new Pen(Color.FromArgb(miniature ? 115 : 145, rimColor),
             miniature ? 1.15f : 0.8f)
         {
             StartCap = LineCap.Round,
@@ -619,6 +636,19 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             g.DrawPath(rim, leg);
         }
     }
+
+    private static Color StateAccent(LynxVisualState state, LynxPalette palette) =>
+        state switch
+        {
+            LynxVisualState.Clean => Color.FromArgb(117, 226, 189),
+            LynxVisualState.Changes => Color.FromArgb(239, 137, 158),
+            LynxVisualState.Attention => Color.FromArgb(255, 110, 127),
+            LynxVisualState.Save => Color.FromArgb(117, 226, 189),
+            LynxVisualState.Get => Color.FromArgb(114, 200, 255),
+            LynxVisualState.Send => Color.FromArgb(170, 150, 255),
+            LynxVisualState.Conflict => Color.FromArgb(228, 164, 108),
+            _ => palette.Accent
+        };
 
     private static Pen Outline(SilhouetteColors c) =>
         new(c.Edge, 1.8f)
