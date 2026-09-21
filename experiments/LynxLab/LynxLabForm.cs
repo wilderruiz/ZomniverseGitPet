@@ -32,7 +32,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — V8 Kinetic Moods";
+        Text = "Lynx Lab — V9 Traffic Flow";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -359,7 +359,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V8 kinetic moods: Warning counter-rotates perimeter traces with a large rocking alert; Failure converges and repels with red/purple eyes; Resting emits fading outward rings and drifting z glyphs; tail motion is stronger; armor continuously transitions Midnight Blue ↔ Forest Emerald.",
+            Text = "Guardian V9 traffic flow: Incoming perimeter waves contract toward the mascot while independent arrows arrive at different speeds and fade at contact; Outgoing reverses the same traffic outward. V8 warning, failure, resting, tail and armor behaviors remain intact.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
