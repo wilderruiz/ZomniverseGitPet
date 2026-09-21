@@ -18,6 +18,7 @@ GitPet's UI is plain WinForms — no XAML, no third-party UI framework — built
 | `GuardianStatusChip` | Small colored status pills (branch, health, sync state). |
 | `PetChromeButton`, `OnboardingButton` | Custom-painted rounded-rectangle buttons (GDI+ `GraphicsPath`) used where a standard WinForms `Button` wouldn't match the theme. |
 | `PetMessageBubble` | The speech-bubble style guidance shown next to the desktop pet. |
+| `PetDirect2DControl` | Production 160 × 160 live Guardian surface. Uses native Direct2D path geometry and state/activity animation; `PetForm` falls back to embedded PNG assets if Direct2D initialization or rendering fails. |
 | `SafeSplitContainer` (aliased in for every `SplitContainer` via `SplitContainerAliases.cs`) | A defensive subclass working around a known WinForms exception when a splitter is briefly given an invalid size (e.g. during a DPI change or fast resize). |
 
 ## The Guardian workboard
