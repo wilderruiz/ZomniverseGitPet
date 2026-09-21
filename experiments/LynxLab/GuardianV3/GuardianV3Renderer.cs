@@ -69,7 +69,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 }
 
                 DrawShield(graphics, palette, state, miniature, _animation.ShieldPulse);
-                DrawRimLighting(graphics, colors, state, miniature);
+                DrawRimLighting(graphics, colors, palette, state, miniature);
             }
             finally
             {
@@ -792,10 +792,11 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
     private static void DrawRimLighting(
         Graphics g,
         SilhouetteColors c,
+        LynxPalette palette,
         LynxVisualState state,
         bool miniature)
     {
-        var stateAccent = StateAccent(state, LynxPalette.Default);
+        var stateAccent = StateAccent(state, palette);
         var rimColor = Mix(c.EarInner, stateAccent, state is LynxVisualState.Idle ? 0.0f : 0.18f);
         using var rim = new Pen(Color.FromArgb(miniature ? 115 : 145, rimColor),
             miniature ? 1.15f : 0.8f)
