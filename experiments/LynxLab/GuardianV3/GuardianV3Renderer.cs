@@ -2,14 +2,27 @@ using System.Drawing.Drawing2D;
 
 namespace LynxLab;
 
-internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
+internal sealed class GuardianV3Renderer :
+    ILynxRenderer,
+    IAnimatedLynxRenderer,
+    IActivityLynxRenderer
 {
     private const float DesignSize = 160f;
     private LynxAnimationFrame _animation = LynxAnimationFrame.Static;
+    private LynxActivityState _activity = LynxActivityState.None;
+    private double _activityElapsed;
 
-    public string Name => "Guardian V5 armored · dramatic state pass";
+    public string Name => "Guardian V6 armored · activity behaviors";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
+
+    public void SetActivityFrame(
+        LynxActivityState activity,
+        double secondsSinceActivityChange)
+    {
+        _activity = activity;
+        _activityElapsed = Math.Max(0d, secondsSinceActivityChange);
+    }
 
     public void Draw(
         Graphics graphics,
@@ -30,12 +43,19 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
 
             var colors = SilhouetteColors.FromPalette(palette);
             var miniature = Math.Min(bounds.Width, bounds.Height) <= 180;
-            var expression = ExpressionProfile.For(state, _animation.TransitionAmount);
+            var expression = ApplyActivityExpression(
+                ExpressionProfile.For(state, _animation.TransitionAmount),
+                _activity,
+                _activityElapsed);
 
             var tailSaved = graphics.Save();
             try
             {
-                ApplyTailSway(graphics, _animation.TailSwayDegrees + expression.TailPoseDegrees);
+                ApplyTailSway(
+                    graphics,
+                    _animation.TailSwayDegrees +
+                    expression.TailPoseDegrees +
+                    ActivityTailOffset(_activity, _activityElapsed));
                 DrawTail(graphics, colors);
             }
             finally
@@ -52,9 +72,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 DrawTorso(graphics, colors);
                 DrawHaunches(graphics, colors);
                 DrawForelegs(graphics, colors);
-                DrawBodyArmor(graphics, palette, state, miniature);
+                DrawBodyArmor(graphics, palette, state, _activity, miniature);
                 DrawChestFur(graphics);
-                DrawCollarArmor(graphics, palette, state, miniature);
+                DrawCollarArmor(graphics, palette, state, _activity, miniature);
                 var headSaved = graphics.Save();
                 try
                 {
@@ -68,8 +88,27 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                     graphics.Restore(headSaved);
                 }
 
-                DrawShield(graphics, palette, state, miniature, _animation.ShieldPulse);
-                DrawRimLighting(graphics, colors, palette, state, miniature);
+                DrawShield(
+                    graphics,
+                    palette,
+                    state,
+                    _activity,
+                    miniature,
+                    _animation.ShieldPulse);
+                DrawRimLighting(
+                    graphics,
+                    colors,
+                    palette,
+                    state,
+                    _activity,
+                    miniature);
+                DrawActivityEffect(
+                    graphics,
+                    palette,
+                    state,
+                    _activity,
+                    _activityElapsed,
+                    miniature);
             }
             finally
             {
@@ -290,9 +329,10 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         Graphics g,
         LynxPalette palette,
         LynxVisualState state,
+        LynxActivityState activity,
         bool miniature)
     {
-        var stateAccent = StateAccent(state, palette);
+        var stateAccent = CombinedAccent(state, activity, palette);
         var armorDark = Color.FromArgb(18, 19, 25);
         var armorMid = Mix(Color.FromArgb(38, 35, 49), palette.Fur, 0.18f);
         var armorEdge = Mix(palette.Accent, stateAccent, 0.45f);
@@ -674,6 +714,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         Graphics g,
         LynxPalette palette,
         LynxVisualState state,
+        LynxActivityState activity,
         bool miniature)
     {
         // The upper edge follows the jaw; the lower edge forms rigid plates.
@@ -681,7 +722,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             M(57, 90), L(66, 95), L(80, 99), L(80, 108),
             L(65, 106), L(53, 100), L(55, 94), Z());
         using var rightPanel = Mirror(leftPanel);
-        var stateAccent = StateAccent(state, palette);
+        var stateAccent = CombinedAccent(state, activity, palette);
         using var armor = new LinearGradientBrush(new RectangleF(53, 90, 54, 18),
             Mix(Color.FromArgb(47, 45, 58), palette.Fur, 0.10f), Color.FromArgb(11, 12, 17), 90f);
         using var edge = new Pen(
@@ -716,6 +757,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         Graphics g,
         LynxPalette palette,
         LynxVisualState state,
+        LynxActivityState activity,
         bool miniature,
         float pulse)
     {
@@ -724,7 +766,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         {
             // Seat the badge against the collar while retaining the exposed chest ruff.
             g.TranslateTransform(0, -1.5f);
-            DrawShieldBadge(g, palette, state, miniature, pulse);
+            DrawShieldBadge(g, palette, state, activity, miniature, pulse);
         }
         finally
         {
@@ -736,6 +778,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         Graphics g,
         LynxPalette palette,
         LynxVisualState state,
+        LynxActivityState activity,
         bool miniature,
         float pulse)
     {
@@ -743,7 +786,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             M(80, 96), L(91, 101), L(89, 113),
             L(80, 121), L(71, 113), L(69, 101), Z());
         var violet = Mix(Color.FromArgb(161, 102, 235), palette.Accent, 0.10f);
-        var stateAccent = StateAccent(state, palette);
+        var stateAccent = CombinedAccent(state, activity, palette);
         pulse = Math.Clamp(pulse, 0f, 1f);
         var haloAlpha = 24 + (int)Math.Round(36f * pulse);
         var haloWidth = (miniature ? 3.2f : 2.8f) + 0.45f * pulse;
@@ -794,9 +837,10 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         SilhouetteColors c,
         LynxPalette palette,
         LynxVisualState state,
+        LynxActivityState activity,
         bool miniature)
     {
-        var stateAccent = StateAccent(state, palette);
+        var stateAccent = CombinedAccent(state, activity, palette);
         var rimColor = Mix(c.EarInner, stateAccent, state is LynxVisualState.Idle ? 0.0f : 0.18f);
         using var rim = new Pen(Color.FromArgb(miniature ? 115 : 145, rimColor),
             miniature ? 1.15f : 0.8f)
@@ -819,6 +863,378 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             g.DrawPath(rim, leg);
         }
     }
+
+    private static ExpressionProfile ApplyActivityExpression(
+        ExpressionProfile expression,
+        LynxActivityState activity,
+        double elapsed)
+    {
+        var breathe = (float)Math.Sin(elapsed * Math.PI * 1.35);
+
+        return activity switch
+        {
+            LynxActivityState.Thinking => expression with
+            {
+                EyeOpenness = 0.78f,
+                PupilScale = 0.88f,
+                BrowLift = 0.8f,
+                BrowInnerDrop = 2.6f,
+                MouthCurve = -0.7f,
+                EarOutwardDegrees = -2.8f,
+                HeadTiltDegrees = -2.2f + breathe * 0.7f,
+                HeadOffsetY = -0.8f
+            },
+
+            LynxActivityState.Preparing => expression with
+            {
+                EyeOpenness = 0.84f,
+                PupilScale = 0.92f,
+                BrowLift = 0.1f,
+                BrowInnerDrop = 1.8f,
+                MouthCurve = -0.4f,
+                EarOutwardDegrees = -3.6f,
+                HeadTiltDegrees = 1.8f,
+                HeadOffsetY = -0.8f
+            },
+
+            LynxActivityState.Sorting => expression with
+            {
+                EyeOpenness = 0.94f,
+                PupilScale = 1.02f,
+                BrowLift = -1.0f,
+                BrowInnerDrop = -1.4f,
+                MouthCurve = 0.4f,
+                EarOutwardDegrees = -2.2f,
+                HeadTiltDegrees = breathe * 1.1f,
+                HeadOffsetY = -0.4f
+            },
+
+            LynxActivityState.Packing => expression with
+            {
+                EyeOpenness = 0.80f,
+                PupilScale = 0.94f,
+                BrowLift = 0.2f,
+                BrowInnerDrop = 1.2f,
+                MouthCurve = 1.2f,
+                EarOutwardDegrees = -1.0f,
+                HeadTiltDegrees = 0f,
+                HeadOffsetY = -0.5f
+            },
+
+            LynxActivityState.Incoming => expression with
+            {
+                EyeOpenness = 1.14f,
+                PupilScale = 1.22f,
+                BrowLift = -4.0f,
+                BrowInnerDrop = -5.0f,
+                MouthCurve = 0.2f,
+                EarOutwardDegrees = -5.8f,
+                HeadTiltDegrees = -4.4f,
+                HeadOffsetY = -1.3f
+            },
+
+            LynxActivityState.Outgoing => expression with
+            {
+                EyeOpenness = 0.82f,
+                PupilScale = 0.96f,
+                BrowLift = -1.4f,
+                BrowInnerDrop = -2.0f,
+                MouthCurve = 2.8f,
+                EarOutwardDegrees = 0.4f,
+                HeadTiltDegrees = 3.0f,
+                HeadOffsetY = -0.3f
+            },
+
+            LynxActivityState.Reconciling => expression with
+            {
+                EyeOpenness = 0.62f,
+                PupilScale = 0.76f,
+                BrowLift = 2.0f,
+                BrowInnerDrop = 5.2f,
+                MouthCurve = -3.6f,
+                EarOutwardDegrees = -5.4f,
+                HeadTiltDegrees = 0f,
+                HeadOffsetY = -1.4f
+            },
+
+            LynxActivityState.Success => expression with
+            {
+                EyeOpenness = 0.76f,
+                PupilScale = 1.02f,
+                BrowLift = -2.8f,
+                BrowInnerDrop = -4.4f,
+                MouthCurve = 4.8f,
+                EarOutwardDegrees = 3.2f,
+                HeadTiltDegrees = 2.4f,
+                HeadOffsetY = 0.2f
+            },
+
+            LynxActivityState.Warning => expression with
+            {
+                EyeOpenness = 0.88f,
+                PupilScale = 0.94f,
+                BrowLift = 0.8f,
+                BrowInnerDrop = 2.8f,
+                MouthCurve = -3.0f,
+                EarOutwardDegrees = 5.8f,
+                HeadTiltDegrees = -2.0f,
+                HeadOffsetY = 0.8f
+            },
+
+            LynxActivityState.Failure => expression with
+            {
+                EyeOpenness = 0.56f,
+                PupilScale = 0.72f,
+                BrowLift = 3.0f,
+                BrowInnerDrop = 6.2f,
+                MouthCurve = -5.2f,
+                EarOutwardDegrees = 7.2f,
+                HeadTiltDegrees = 0f,
+                HeadOffsetY = 1.6f
+            },
+
+            LynxActivityState.Resting => expression with
+            {
+                EyeOpenness = 0.22f,
+                PupilScale = 0.80f,
+                BrowLift = -2.0f,
+                BrowInnerDrop = -4.0f,
+                MouthCurve = 1.8f,
+                EarOutwardDegrees = 7.5f,
+                HeadTiltDegrees = -5.0f,
+                HeadOffsetY = 2.2f
+            },
+
+            _ => expression
+        };
+    }
+
+    private static float ActivityTailOffset(
+        LynxActivityState activity,
+        double elapsed)
+    {
+        var wave = (float)Math.Sin(elapsed * Math.PI * 2d / 1.8d);
+
+        return activity switch
+        {
+            LynxActivityState.Thinking => wave * 0.5f,
+            LynxActivityState.Preparing => wave * 0.8f,
+            LynxActivityState.Sorting => wave * 2.8f,
+            LynxActivityState.Packing => wave * 1.2f,
+            LynxActivityState.Incoming => 6.0f + wave * 2.4f,
+            LynxActivityState.Outgoing => 4.0f + wave * 1.6f,
+            LynxActivityState.Reconciling => wave * 0.15f,
+            LynxActivityState.Success => 5.0f + wave * 1.4f,
+            LynxActivityState.Warning => -3.0f,
+            LynxActivityState.Failure => -5.0f,
+            LynxActivityState.Resting => -7.0f,
+            _ => 0f
+        };
+    }
+
+    private static void DrawActivityEffect(
+        Graphics g,
+        LynxPalette palette,
+        LynxVisualState state,
+        LynxActivityState activity,
+        double elapsed,
+        bool miniature)
+    {
+        if (activity == LynxActivityState.None)
+            return;
+
+        var accent = CombinedAccent(state, activity, palette);
+        var pulse = 0.5f + 0.5f * (float)Math.Sin(elapsed * Math.PI * 2d / 1.2d);
+        var strong = Color.FromArgb(
+            miniature ? 235 : 210,
+            accent);
+
+        using var pen = new Pen(
+            strong,
+            miniature ? 1.9f : 1.0f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round
+        };
+        using var brush = new SolidBrush(strong);
+
+        switch (activity)
+        {
+            case LynxActivityState.Thinking:
+            case LynxActivityState.Preparing:
+            {
+                var sweep = (float)((elapsed * 42d) % 30d);
+                g.DrawArc(pen, 65, 91, 30, 30, 195 + sweep, 72);
+                for (var i = 0; i < 3; i++)
+                {
+                    var angle = elapsed * 1.7 + i * Math.PI * 2d / 3d;
+                    var x = 80f + (float)Math.Cos(angle) * 17f;
+                    var y = 106f + (float)Math.Sin(angle) * 13f;
+                    var size = miniature ? 2.5f : 1.8f;
+                    g.FillEllipse(brush, x - size / 2f, y - size / 2f, size, size);
+                }
+                break;
+            }
+
+            case LynxActivityState.Sorting:
+            {
+                var phase = (float)((elapsed * 34d) % 24d);
+                DrawDataChip(g, 48f + phase, 111f, accent, miniature);
+                DrawDataChip(g, 88f - phase * 0.55f, 121f, accent, miniature);
+                DrawDataChip(g, 56f + phase * 0.35f, 131f, accent, miniature);
+                break;
+            }
+
+            case LynxActivityState.Packing:
+            {
+                var inward = 4f + pulse * 6f;
+                g.DrawLine(pen, 52f + inward, 110f, 69f, 110f);
+                g.DrawLine(pen, 108f - inward, 110f, 91f, 110f);
+                g.DrawLine(pen, 58f + inward, 117f, 71f, 114f);
+                g.DrawLine(pen, 102f - inward, 117f, 89f, 114f);
+                break;
+            }
+
+            case LynxActivityState.Incoming:
+            {
+                DrawArrow(g, pen, 43f, 103f, 66f, 103f);
+                DrawArrow(g, pen, 117f, 103f, 94f, 103f);
+                break;
+            }
+
+            case LynxActivityState.Outgoing:
+            {
+                DrawArrow(g, pen, 66f, 103f, 43f, 103f);
+                DrawArrow(g, pen, 94f, 103f, 117f, 103f);
+                break;
+            }
+
+            case LynxActivityState.Reconciling:
+            {
+                DrawArrow(g, pen, 48f, 106f, 73f, 106f);
+                DrawArrow(g, pen, 112f, 106f, 87f, 106f);
+                using var center = new Pen(
+                    Color.FromArgb(150 + (int)(80f * pulse), accent),
+                    miniature ? 2.3f : 1.3f);
+                g.DrawEllipse(center, 75f, 101f, 10f, 10f);
+                break;
+            }
+
+            case LynxActivityState.Success:
+            {
+                using var halo = new Pen(
+                    Color.FromArgb(100 + (int)(100f * pulse), accent),
+                    miniature ? 3.2f : 2.0f);
+                g.DrawEllipse(halo, 67f, 94f, 26f, 30f);
+                break;
+            }
+
+            case LynxActivityState.Warning:
+            {
+                using var triangle = new GraphicsPath();
+                triangle.AddPolygon(
+                [
+                    new PointF(80f, 91f),
+                    new PointF(88f, 104f),
+                    new PointF(72f, 104f)
+                ]);
+                g.DrawPath(pen, triangle);
+                g.DrawLine(pen, 80f, 95f, 80f, 99f);
+                g.FillEllipse(brush, 79.1f, 101f, 1.8f, 1.8f);
+                break;
+            }
+
+            case LynxActivityState.Failure:
+            {
+                g.DrawLine(pen, 73f, 101f, 87f, 115f);
+                g.DrawLine(pen, 87f, 101f, 73f, 115f);
+                break;
+            }
+
+            case LynxActivityState.Resting:
+            {
+                var alpha = miniature ? 190 : 150;
+                using var restBrush = new SolidBrush(
+                    Color.FromArgb(alpha, accent));
+                using var font = new Font(
+                    "Segoe UI",
+                    miniature ? 5.5f : 4.2f,
+                    FontStyle.Bold);
+                g.DrawString("z", font, restBrush, 106f, 52f);
+                g.DrawString("z", font, restBrush, 113f, 45f);
+                break;
+            }
+        }
+    }
+
+    private static void DrawDataChip(
+        Graphics g,
+        float x,
+        float y,
+        Color accent,
+        bool miniature)
+    {
+        var width = miniature ? 7f : 6f;
+        var height = miniature ? 3.4f : 2.8f;
+        using var fill = new SolidBrush(Color.FromArgb(175, accent));
+        using var edge = new Pen(
+            Color.FromArgb(220, accent),
+            miniature ? 0.9f : 0.6f);
+        g.FillRectangle(fill, x, y, width, height);
+        g.DrawRectangle(edge, x, y, width, height);
+    }
+
+    private static void DrawArrow(
+        Graphics g,
+        Pen pen,
+        float x1,
+        float y1,
+        float x2,
+        float y2)
+    {
+        g.DrawLine(pen, x1, y1, x2, y2);
+
+        var direction = Math.Sign(x2 - x1);
+        if (direction == 0)
+            return;
+
+        g.DrawLine(pen, x2, y2, x2 - direction * 4f, y2 - 3f);
+        g.DrawLine(pen, x2, y2, x2 - direction * 4f, y2 + 3f);
+    }
+
+    private static Color ActivityAccent(
+        LynxActivityState activity,
+        LynxPalette palette)
+    {
+        var semantic = activity switch
+        {
+            LynxActivityState.Thinking or
+            LynxActivityState.Preparing => Color.FromArgb(114, 200, 255),
+
+            LynxActivityState.Sorting or
+            LynxActivityState.Packing => Color.FromArgb(170, 150, 255),
+
+            LynxActivityState.Incoming => Color.FromArgb(120, 216, 223),
+            LynxActivityState.Outgoing => Color.FromArgb(170, 150, 255),
+            LynxActivityState.Reconciling => Color.FromArgb(240, 189, 97),
+            LynxActivityState.Success => Color.FromArgb(87, 215, 160),
+            LynxActivityState.Warning => Color.FromArgb(240, 189, 97),
+            LynxActivityState.Failure => Color.FromArgb(242, 117, 134),
+            LynxActivityState.Resting => Color.FromArgb(140, 115, 232),
+            _ => palette.Accent
+        };
+
+        return Mix(semantic, palette.Accent, 0.34f);
+    }
+
+    private static Color CombinedAccent(
+        LynxVisualState state,
+        LynxActivityState activity,
+        LynxPalette palette) =>
+        activity == LynxActivityState.None
+            ? StateAccent(state, palette)
+            : ActivityAccent(activity, palette);
 
     private static void RotatePathAround(
         GraphicsPath path,
