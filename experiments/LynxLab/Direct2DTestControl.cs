@@ -6,9 +6,9 @@ namespace LynxLab;
 /// <summary>
 /// First real Direct2D render target in Lynx Lab.
 ///
-/// Migration 2 keeps the proven HWND render target and adds the Guardian's
-/// identity layers to the native Direct2D core: muzzle/chest, face expression,
-/// armor, collar and shield. The GDI+ V9 viewport remains the visual reference.
+/// Migration 3 adds activity-effect parity to the native Direct2D Guardian:
+/// traffic, warning/failure motion, resting drift, scan/sort/pack cues,
+/// reconcile orbits and success effects. GDI+ V9 remains the visual reference.
 /// </summary>
 internal sealed class Direct2DTestControl : Control
 {
@@ -238,7 +238,7 @@ internal sealed class Direct2DTestControl : Control
                 }
             }
 
-            SetStatus("DIRECT2D GUARDIAN MIGRATION 2 ✓");
+            SetStatus("DIRECT2D GUARDIAN MIGRATION 3 ✓");
             return true;
         }
         catch (Exception ex)
@@ -334,7 +334,7 @@ internal sealed class Direct2DTestControl : Control
             _frameCount++;
             if (_frameCount == 1 || _frameCount % 120 == 0)
                 SetStatus(
-                    $"DIRECT2D GUARDIAN MIGRATION 2 ✓ · {_frameCount} frames");
+                    $"DIRECT2D GUARDIAN MIGRATION 3 ✓ · {_frameCount} frames");
         }
         finally
         {
@@ -3374,6 +3374,72 @@ internal sealed class Direct2DTestControl : Control
 
     private const int D2DERR_RECREATE_TARGET =
         unchecked((int)0x8899000C);
+
+    private sealed class ActivityBrush : IDisposable
+    {
+        private IntPtr _value;
+
+        public ActivityBrush(
+            Direct2DTestControl owner,
+            Color color,
+            int alpha)
+        {
+            alpha = Math.Clamp(alpha, 0, 255);
+            _value =
+                owner.CreateBrush(
+                    Color.FromArgb(
+                        alpha,
+                        color));
+        }
+
+        public IntPtr Value => _value;
+
+        public void Dispose()
+        {
+            ReleaseCom(ref _value);
+        }
+    }
+
+    private sealed class ActivityBrushPair : IDisposable
+    {
+        private readonly ActivityBrush _primary;
+        private readonly ActivityBrush _secondary;
+
+        public ActivityBrushPair(
+            Direct2DTestControl owner,
+            Color primary,
+            int primaryAlpha,
+            Color secondary,
+            int secondaryAlpha)
+        {
+            _primary =
+                new ActivityBrush(
+                    owner,
+                    primary,
+                    primaryAlpha);
+            _secondary =
+                new ActivityBrush(
+                    owner,
+                    secondary,
+                    secondaryAlpha);
+        }
+
+        public IntPtr Primary =>
+            _primary.Value;
+
+        public IntPtr Secondary =>
+            _secondary.Value;
+
+        public void Dispose()
+        {
+            _secondary.Dispose();
+            _primary.Dispose();
+        }
+    }
+
+    private readonly record struct ActivityColors(
+        Color Primary,
+        Color Secondary);
 
     private readonly record struct DirectExpression(
         float EyeOpenness,
