@@ -1312,6 +1312,24 @@ internal sealed class Direct2DTestControl : Control
 
     private void ReleaseFactory()
     {
+        ReleaseCom(ref _shieldInsetGeometry);
+        ReleaseCom(ref _shieldGeometry);
+        ReleaseCom(ref _rightCollarFacetGeometry);
+        ReleaseCom(ref _leftCollarFacetGeometry);
+        ReleaseCom(ref _rightCollarGeometry);
+        ReleaseCom(ref _leftCollarGeometry);
+        ReleaseCom(ref _rightBracerGeometry);
+        ReleaseCom(ref _leftBracerGeometry);
+        ReleaseCom(ref _rightShoulderArmorGeometry);
+        ReleaseCom(ref _leftShoulderArmorGeometry);
+        ReleaseCom(ref _rightArmorGeometry);
+        ReleaseCom(ref _leftArmorGeometry);
+        ReleaseCom(ref _noseGeometry);
+        ReleaseCom(ref _rightEyeGeometry);
+        ReleaseCom(ref _leftEyeGeometry);
+        ReleaseCom(ref _faceMaskGeometry);
+        ReleaseCom(ref _chestGeometry);
+
         ReleaseCom(ref _rightInnerEarGeometry);
         ReleaseCom(ref _leftInnerEarGeometry);
         ReleaseCom(ref _rightEarGeometry);
