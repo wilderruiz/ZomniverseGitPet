@@ -88,9 +88,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
     private static void ApplyTailSway(Graphics g, float degrees)
     {
         // Pivot low on the tail so the root stays planted while the plume moves.
-        g.TranslateTransform(48f, 140f, MatrixOrder.Append);
-        g.RotateTransform(degrees, MatrixOrder.Append);
         g.TranslateTransform(-48f, -140f, MatrixOrder.Append);
+        g.RotateTransform(degrees, MatrixOrder.Append);
+        g.TranslateTransform(48f, 140f, MatrixOrder.Append);
     }
 
     private static void ApplyTransitionOffset(Graphics g, float offsetY)
@@ -111,9 +111,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         var bob = -breath * 0.38f;
 
         g.TranslateTransform(0f, bob, MatrixOrder.Append);
-        g.TranslateTransform(80f, 145f, MatrixOrder.Append);
-        g.ScaleTransform(1f, scaleY, MatrixOrder.Append);
         g.TranslateTransform(-80f, -145f, MatrixOrder.Append);
+        g.ScaleTransform(1f, scaleY, MatrixOrder.Append);
+        g.TranslateTransform(80f, 145f, MatrixOrder.Append);
     }
 
     private static void ApplyHeadPose(Graphics g, ExpressionProfile expression)
@@ -124,9 +124,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         if (Math.Abs(expression.HeadTiltDegrees) < 0.001f)
             return;
 
-        g.TranslateTransform(80f, 79f, MatrixOrder.Append);
-        g.RotateTransform(expression.HeadTiltDegrees, MatrixOrder.Append);
         g.TranslateTransform(-80f, -79f, MatrixOrder.Append);
+        g.RotateTransform(expression.HeadTiltDegrees, MatrixOrder.Append);
+        g.TranslateTransform(80f, 79f, MatrixOrder.Append);
     }
 
     private static void DrawGroundReference(Graphics g, SilhouetteColors c)
