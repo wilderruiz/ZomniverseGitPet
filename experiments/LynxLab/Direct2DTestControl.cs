@@ -315,66 +315,7 @@ internal sealed class Direct2DTestControl : Control
     }
 
 
-    private void DrawActivityRings(
-        DrawEllipseDelegate drawEllipse,
-        DrawLineDelegate drawLine,
-        IntPtr accentBrush,
-        IntPtr partnerBrush,
-        float cx,
-        float cy,
-        float side)
-    {
-        var pulse =
-            0.5f +
-            0.5f * (float)Math.Sin(_seconds * Math.PI * 2d / 2.4d);
-
-        for (var i = 0; i < 3; i++)
-        {
-            var phase =
-                (float)((_seconds * (0.38d + i * 0.17d) + i * 0.29d) % 1d);
-
-            if (_activity == LynxActivityState.Outgoing)
-                phase = 1f - phase;
-
-            var radius =
-                side * (0.24f + phase * 0.20f);
-            var ring = new Ellipse(
-                new Point2F(cx, cy),
-                radius,
-                radius * 0.92f);
-
-            drawEllipse(
-                _target,
-                ref ring,
-                i % 2 == 0 ? accentBrush : partnerBrush,
-                Math.Max(1f, side * (0.0035f + pulse * 0.0015f)),
-                IntPtr.Zero);
-        }
-
-        if (_activity is LynxActivityState.Incoming or LynxActivityState.Outgoing)
-        {
-            DrawTrafficLane(
-                drawLine,
-                accentBrush,
-                cx,
-                cy - side * 0.18f,
-                side,
-                1.45d,
-                0.05d);
-
-            DrawTrafficLane(
-                drawLine,
-                partnerBrush,
-                cx,
-                cy + side * 0.02f,
-                side,
-                0.82d,
-                0.43d);
-
-            DrawTrafficLane(
-                drawLine,
-                accentBrush,
-     private void DrawGuardianCore(
+    private void DrawGuardianCore(
         float width,
         float height,
         CoreColors colors)
@@ -962,7 +903,76 @@ internal sealed class Direct2DTestControl : Control
             default,
             default);
 
-               cx,
+    private void DrawActivityRings(
+        DrawEllipseDelegate drawEllipse,
+        DrawLineDelegate drawLine,
+        IntPtr accentBrush,
+        IntPtr partnerBrush,
+        float cx,
+        float cy,
+        float side)
+    {
+        var pulse =
+            0.5f +
+            0.5f * (float)Math.Sin(
+                _seconds * Math.PI * 2d / 2.4d);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var phase =
+                (float)((
+                    _seconds * (0.38d + i * 0.17d) +
+                    i * 0.29d) % 1d);
+
+            if (_activity == LynxActivityState.Outgoing)
+                phase = 1f - phase;
+
+            var radius =
+                side * (0.24f + phase * 0.20f);
+            var ring = new Ellipse(
+                new Point2F(cx, cy),
+                radius,
+                radius * 0.92f);
+
+            drawEllipse(
+                _target,
+                ref ring,
+                i % 2 == 0
+                    ? accentBrush
+                    : partnerBrush,
+                Math.Max(
+                    1f,
+                    side *
+                    (0.0035f + pulse * 0.0015f)),
+                IntPtr.Zero);
+        }
+
+        if (_activity is
+            LynxActivityState.Incoming or
+            LynxActivityState.Outgoing)
+        {
+            DrawTrafficLane(
+                drawLine,
+                accentBrush,
+                cx,
+                cy - side * 0.18f,
+                side,
+                1.45d,
+                0.05d);
+
+            DrawTrafficLane(
+                drawLine,
+                partnerBrush,
+                cx,
+                cy + side * 0.02f,
+                side,
+                0.82d,
+                0.43d);
+
+            DrawTrafficLane(
+                drawLine,
+                accentBrush,
+                cx,
                 cy + side * 0.20f,
                 side,
                 1.08d,
