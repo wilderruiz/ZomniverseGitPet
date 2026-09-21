@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-09-22
+
+- Rebuilt the main Guardian into a dark graphite **Command Center** with the four-quadrant **SAVE / GET / SEND / RECONCILE** workboard, clearer repository/branch status, improved operation controls, and the current project selector.
+- Added safer project and publishing workflows, including scoped logical projects, allow-list publishing boundaries, standalone-project publishing, reconciliation support, GitHub connection/setup flows, and stronger release provenance checks.
+- Added the new live purple **Guardian desktop pet** and promoted its validated Direct2D renderer into the production application.
+- The production pet now reacts to repository and operation state with animated **Thinking, Preparing, Sorting, Packing, Incoming, Outgoing, Reconciling, Success, Warning, Failure, and Resting** behaviors.
+- Added whole-pet activity effects such as independently timed incoming/outgoing traffic, scanning/orbit motion, sorting chips, counter-rotating warning traces, collision/recoil failure motion, drifting sleep glyphs, stronger tail movement, and smooth mood/palette transitions.
+- Added animated dark armor that transitions between cool blue and **Forest Emerald** while preserving the selected palette identity.
+- Added a Direct2D hardware-capability path with DPI-aware rendering and automatic fallback to the previous PNG/GDI+ pet if native rendering fails.
+- Added DEV vs installed-release identity handling, safer application channel handoff, installed-only self-update support, installer/release packaging, SHA-256 release manifests, and GitHub Release publishing safeguards.
+- Expanded first-run onboarding, project switching, connection management, repository activity feedback, file review, documentation, and regression coverage.
+- Added the isolated **Lynx Lab** development harness used to validate the Guardian renderer and 160×160 production-size behavior before promotion into the application.
+- Bumped the application version to **0.5.0**.
+
+
 ## 0.4.0 - 2026-09-09
 
 - Added an advisory **Major update?** detector for unusually large or structural project changes. GitPet looks at file counts, line churn, added/removed files, schema/database/dependency paths, format migrations, and local/remote divergence, then asks rather than declaring that a change is major.
