@@ -50,7 +50,7 @@ internal sealed class ApplicationReleaseBuildForm : Form
             Padding = new Padding(24, 10, 24, 8),
             Text = "◇  PREPARE APPLICATION RELEASE",
             BackColor = GuardianTheme.SurfaceRaised,
-            ForeColor = GuardianTheme.Mint,
+            ForeColor = GuardianTheme.Send,
             Font = new Font("Segoe UI", 14, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
         }, 0, 0);
@@ -128,7 +128,7 @@ internal sealed class ApplicationReleaseBuildForm : Form
             "Build release",
             120,
             GuardianTheme.Violet,
-            GuardianTheme.Mint);
+            GuardianTheme.Send);
         _build.Click += async (_, _) => await BuildAsync();
 
         buttons.Controls.Add(_close);
@@ -354,7 +354,7 @@ internal sealed class ApplicationReleaseBuildForm : Form
         if (!string.IsNullOrWhiteSpace(message))
         {
             _status.Text = message;
-            _status.ForeColor = GuardianTheme.Cyan;
+            _status.ForeColor = GuardianTheme.Info;
         }
     }
 
