@@ -7,6 +7,7 @@ internal sealed class LynxDesktopPreviewForm : Form
     private ILynxRenderer _renderer;
     private LynxPalette _palette = LynxPalette.Default;
     private LynxVisualState _state = LynxVisualState.Idle;
+    private LynxActivityState _activity = LynxActivityState.None;
     private bool _debugOverlay;
     private Point _dragOrigin;
     private Point _windowOrigin;
@@ -59,6 +60,16 @@ internal sealed class LynxDesktopPreviewForm : Form
         set
         {
             _state = value;
+            Invalidate();
+        }
+    }
+
+    public LynxActivityState Activity
+    {
+        get => _activity;
+        set
+        {
+            _activity = value;
             Invalidate();
         }
     }
@@ -167,8 +178,28 @@ internal sealed class LynxDesktopPreviewForm : Form
         g.DrawString(sub, subFont, subBrush, new PointF(13, 34));
     }
 
-    private (string Title, string Sub) StateText() =>
-        _state switch
+    private (string Title, string Sub) StateText()
+    {
+        if (_activity != LynxActivityState.None)
+        {
+            return _activity switch
+            {
+                LynxActivityState.Thinking => ("● THINKING", "scanning repository state"),
+                LynxActivityState.Preparing => ("● CHECKING", "inspecting files"),
+                LynxActivityState.Sorting => ("● WORKING", "sorting files for staging"),
+                LynxActivityState.Packing => ("● PACKING SAVE", "building local checkpoint"),
+                LynxActivityState.Incoming => ("● YOU GOT SOMETHING", "incoming updates"),
+                LynxActivityState.Outgoing => ("● SENDING UPDATES", "dispatching saved work"),
+                LynxActivityState.Reconciling => ("● RECONCILING", "combining histories"),
+                LynxActivityState.Success => ("● COMPLETED ✓", "operation finished"),
+                LynxActivityState.Warning => ("● NEEDS ATTENTION", "review required"),
+                LynxActivityState.Failure => ("● OPERATION FAILED", "open Guardian"),
+                LynxActivityState.Resting => ("● RESTING", "low activity"),
+                _ => ("● LYNX LAB", "idle baseline")
+            };
+        }
+
+        return _state switch
         {
             LynxVisualState.Clean => ("● CLEAN", "repository healthy"),
             LynxVisualState.Changes => ("● CHANGES DETECTED", "ready to review"),
@@ -179,9 +210,34 @@ internal sealed class LynxDesktopPreviewForm : Form
             LynxVisualState.Conflict => ("● RECONCILE", "conflict simulation"),
             _ => ("● LYNX LAB", "idle baseline")
         };
+    }
 
-    private Color StateColor() =>
-        _state switch
+    private Color StateColor()
+    {
+        if (_activity != LynxActivityState.None)
+        {
+            var semantic = _activity switch
+            {
+                LynxActivityState.Thinking or
+                LynxActivityState.Preparing => Color.FromArgb(0x78, 0xA9, 0xFF),
+
+                LynxActivityState.Sorting or
+                LynxActivityState.Packing => Color.FromArgb(0xA7, 0x8B, 0xFA),
+
+                LynxActivityState.Incoming => Color.FromArgb(0x78, 0xD8, 0xDF),
+                LynxActivityState.Outgoing => Color.FromArgb(0xA7, 0x8B, 0xFA),
+                LynxActivityState.Reconciling => Color.FromArgb(0xF0, 0xBD, 0x61),
+                LynxActivityState.Success => Color.FromArgb(0x57, 0xD7, 0xA0),
+                LynxActivityState.Warning => Color.FromArgb(0xF0, 0xBD, 0x61),
+                LynxActivityState.Failure => Color.FromArgb(0xF2, 0x75, 0x86),
+                LynxActivityState.Resting => Color.FromArgb(0x8C, 0x73, 0xE8),
+                _ => _palette.Accent
+            };
+
+            return MixColor(semantic, _palette.Accent, 0.30f);
+        }
+
+        return _state switch
         {
             LynxVisualState.Clean => Color.FromArgb(0x57, 0xD7, 0xA0),
             LynxVisualState.Changes => _palette.Eye,
@@ -192,6 +248,19 @@ internal sealed class LynxDesktopPreviewForm : Form
             LynxVisualState.Conflict => Color.FromArgb(0xF0, 0xBD, 0x61),
             _ => _palette.Accent
         };
+    }
+
+    private static Color MixColor(Color a, Color b, float bWeight)
+    {
+        bWeight = Math.Clamp(bWeight, 0f, 1f);
+        var aWeight = 1f - bWeight;
+        return Color.FromArgb(
+            (int)(a.A * aWeight + b.A * bWeight),
+            (int)(a.R * aWeight + b.R * bWeight),
+            (int)(a.G * aWeight + b.G * bWeight),
+            (int)(a.B * aWeight + b.B * bWeight));
+    }
+
 
     private static GraphicsPath RoundedRectangle(Rectangle rect, int radius)
     {
