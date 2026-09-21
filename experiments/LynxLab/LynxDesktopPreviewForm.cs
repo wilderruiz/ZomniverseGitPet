@@ -89,12 +89,50 @@ internal sealed class LynxDesktopPreviewForm : Form
 
         try
         {
-            _renderer.Draw(
-                e.Graphics,
-                new Rectangle(40, 78, 160, 160),
-                _palette,
-                _state,
-                _debugOverlay);
+            // Supersample the pet at 3x and downscale into the real 160x160
+            // desktop footprint. This preserves eye, brow, armor and shield
+            // detail instead of making the miniature look raster-jagged.
+            const int targetSize = 160;
+            const int supersample = 3;
+
+            using var buffer = new Bitmap(
+                targetSize * supersample,
+                targetSize * supersample,
+                System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+
+            using (var petGraphics = Graphics.FromImage(buffer))
+            {
+                petGraphics.Clear(Color.Transparent);
+                petGraphics.SmoothingMode = SmoothingMode.AntiAlias;
+                petGraphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                petGraphics.CompositingQuality = CompositingQuality.HighQuality;
+                petGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+
+                _renderer.Draw(
+                    petGraphics,
+                    new Rectangle(0, 0, buffer.Width, buffer.Height),
+                    _palette,
+                    _state,
+                    _debugOverlay);
+            }
+
+            var oldInterpolation = e.Graphics.InterpolationMode;
+            var oldPixelOffset = e.Graphics.PixelOffsetMode;
+            var oldCompositing = e.Graphics.CompositingQuality;
+
+            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            e.Graphics.CompositingQuality = CompositingQuality.HighQuality;
+
+            e.Graphics.DrawImage(
+                buffer,
+                new Rectangle(40, 78, targetSize, targetSize),
+                new Rectangle(0, 0, buffer.Width, buffer.Height),
+                GraphicsUnit.Pixel);
+
+            e.Graphics.InterpolationMode = oldInterpolation;
+            e.Graphics.PixelOffsetMode = oldPixelOffset;
+            e.Graphics.CompositingQuality = oldCompositing;
         }
         catch (Exception ex)
         {
