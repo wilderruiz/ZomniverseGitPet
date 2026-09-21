@@ -358,9 +358,18 @@ internal sealed class GuardianV3Renderer :
         bool miniature)
     {
         var stateAccent = CombinedAccent(state, activity, palette);
-        var armorDark = Color.FromArgb(18, 19, 25);
-        var armorMid = Mix(Color.FromArgb(38, 35, 49), palette.Fur, 0.18f);
-        var armorEdge = Mix(palette.Accent, stateAccent, 0.45f);
+        var armorDark = Mix(
+            Color.FromArgb(14, 19, 25),
+            palette.Fur,
+            0.18f);
+        var armorMid = Mix(
+            Color.FromArgb(34, 44, 57),
+            palette.Fur,
+            0.48f);
+        var armorEdge = Mix(
+            palette.Accent,
+            stateAccent,
+            0.30f);
 
         using var leftChest = Path(
             M(49, 92), L(63, 96), L(73, 105),
@@ -391,8 +400,8 @@ internal sealed class GuardianV3Renderer :
         using var rightShoulder = Mirror(leftShoulder);
         using var shoulderFill = new LinearGradientBrush(
             new RectangleF(48, 87, 64, 15),
-            Color.FromArgb(54, 52, 66),
-            Color.FromArgb(17, 17, 23),
+            Mix(Color.FromArgb(41, 50, 62), palette.Accent, 0.30f),
+            Mix(Color.FromArgb(14, 18, 24), palette.Fur, 0.20f),
             25f);
 
         g.FillPath(shoulderFill, leftShoulder);
@@ -406,8 +415,8 @@ internal sealed class GuardianV3Renderer :
         using var rightBracer = Mirror(leftBracer);
         using var bracerFill = new LinearGradientBrush(
             new RectangleF(58, 118, 44, 22),
-            Color.FromArgb(41, 38, 51),
-            Color.FromArgb(15, 15, 20),
+            Mix(Color.FromArgb(36, 44, 54), palette.Accent, 0.26f),
+            Mix(Color.FromArgb(12, 16, 21), palette.Fur, 0.18f),
             90f);
 
         g.FillPath(bracerFill, leftBracer);
@@ -748,8 +757,11 @@ internal sealed class GuardianV3Renderer :
             L(65, 106), L(53, 100), L(55, 94), Z());
         using var rightPanel = Mirror(leftPanel);
         var stateAccent = CombinedAccent(state, activity, palette);
-        using var armor = new LinearGradientBrush(new RectangleF(53, 90, 54, 18),
-            Mix(Color.FromArgb(47, 45, 58), palette.Fur, 0.10f), Color.FromArgb(11, 12, 17), 90f);
+        using var armor = new LinearGradientBrush(
+            new RectangleF(53, 90, 54, 18),
+            Mix(Color.FromArgb(39, 49, 59), palette.Accent, 0.34f),
+            Mix(Color.FromArgb(10, 14, 19), palette.Fur, 0.18f),
+            90f);
         using var edge = new Pen(
             Color.FromArgb(220, Mix(palette.Accent, stateAccent, 0.50f)),
             miniature ? 1.65f : 0.95f)
@@ -821,8 +833,11 @@ internal sealed class GuardianV3Renderer :
         };
         // A single low-opacity edge accent keeps the emblem legible on white fur.
         g.DrawPath(halo, shield);
-        using var fill = new LinearGradientBrush(new RectangleF(69, 96, 22, 25),
-            Color.FromArgb(112, 66, 167), Color.FromArgb(48, 23, 83), 65f);
+        using var fill = new LinearGradientBrush(
+            new RectangleF(69, 96, 22, 25),
+            Mix(Color.FromArgb(48, 75, 96), palette.Accent, 0.58f),
+            Mix(Color.FromArgb(18, 31, 40), palette.Fur, 0.34f),
+            65f);
         using var border = new Pen(Mix(Color.FromArgb(201, 166, 249), palette.Eye, 0.08f),
             miniature ? 1.8f : 1.25f)
         {
@@ -834,8 +849,11 @@ internal sealed class GuardianV3Renderer :
         using var inset = Path(
             M(80, 99), L(88, 103), L(86.5f, 111.5f),
             L(80, 117.5f), L(73.5f, 111.5f), L(72, 103), Z());
-        using var innerFill = new LinearGradientBrush(new RectangleF(72, 99, 16, 19),
-            Mix(Color.FromArgb(140, 76, 212), palette.Accent, 0.08f), Color.FromArgb(77, 33, 138), 90f);
+        using var innerFill = new LinearGradientBrush(
+            new RectangleF(72, 99, 16, 19),
+            Mix(Color.FromArgb(66, 104, 126), palette.Accent, 0.60f),
+            Mix(Color.FromArgb(22, 50, 57), palette.Fur, 0.35f),
+            90f);
         g.FillPath(innerFill, inset);
         if (!miniature)
         {
@@ -1038,23 +1056,65 @@ internal sealed class GuardianV3Renderer :
         LynxActivityState activity,
         double elapsed)
     {
-        var wave = (float)Math.Sin(elapsed * Math.PI * 2d / 1.8d);
+        var wave =
+            (float)Math.Sin(elapsed * Math.PI * 2d / 1.8d);
+        var fastWave =
+            (float)Math.Sin(elapsed * Math.PI * 2d / 0.92d);
+        var slowWave =
+            (float)Math.Sin(elapsed * Math.PI * 2d / 3.8d);
 
         return activity switch
         {
-            LynxActivityState.Thinking => wave * 0.5f,
-            LynxActivityState.Preparing => wave * 0.8f,
-            LynxActivityState.Sorting => wave * 2.8f,
-            LynxActivityState.Packing => wave * 1.2f,
-            LynxActivityState.Incoming => 6.0f + wave * 2.4f,
-            LynxActivityState.Outgoing => 4.0f + wave * 1.6f,
-            LynxActivityState.Reconciling => wave * 0.15f,
-            LynxActivityState.Success => 5.0f + wave * 1.4f,
-            LynxActivityState.Warning => -3.0f,
-            LynxActivityState.Failure => -5.0f,
-            LynxActivityState.Resting => -7.0f,
-            _ => 0f
+            LynxActivityState.Thinking => wave * 1.6f,
+            LynxActivityState.Preparing => wave * 2.1f,
+            LynxActivityState.Sorting => wave * 5.2f,
+            LynxActivityState.Packing => wave * 3.0f,
+            LynxActivityState.Incoming => 7.0f + wave * 4.2f,
+            LynxActivityState.Outgoing => 5.0f + wave * 3.4f,
+            LynxActivityState.Reconciling => fastWave * 2.6f,
+            LynxActivityState.Success => 6.0f + wave * 3.7f,
+            LynxActivityState.Warning => -3.0f + fastWave * 3.2f,
+            LynxActivityState.Failure => -5.0f + fastWave * 4.6f,
+            LynxActivityState.Resting => -7.0f + slowWave * 2.2f,
+            _ => slowWave * 1.4f
         };
+    }
+
+    private static LynxPalette ArmorTransitionPalette(
+        LynxPalette identity,
+        double elapsed)
+    {
+        var blue = LynxPalette.All.First(palette =>
+            string.Equals(
+                palette.Name,
+                "Midnight Blue",
+                StringComparison.Ordinal));
+        var emerald = LynxPalette.All.First(palette =>
+            string.Equals(
+                palette.Name,
+                "Forest Emerald",
+                StringComparison.Ordinal));
+
+        var mix =
+            0.5f +
+            0.5f * (float)Math.Sin(
+                elapsed * Math.PI * 2d / 4.8d);
+
+        Color BlendArmor(Color blueColor, Color greenColor, Color identityColor)
+        {
+            var mood = Mix(blueColor, greenColor, mix);
+            return Mix(mood, identityColor, 0.18f);
+        }
+
+        return new LynxPalette(
+            "Armor Blue ↔ Forest Emerald",
+            BlendArmor(blue.Fur, emerald.Fur, identity.Fur),
+            BlendArmor(blue.Ear, emerald.Ear, identity.Ear),
+            BlendArmor(blue.Edge, emerald.Edge, identity.Edge),
+            BlendArmor(blue.Eye, emerald.Eye, identity.Eye),
+            BlendArmor(blue.Accent, emerald.Accent, identity.Accent),
+            BlendArmor(blue.Muzzle, emerald.Muzzle, identity.Muzzle),
+            BlendArmor(blue.Detail, emerald.Detail, identity.Detail));
     }
 
     private static void DrawActivityField(
