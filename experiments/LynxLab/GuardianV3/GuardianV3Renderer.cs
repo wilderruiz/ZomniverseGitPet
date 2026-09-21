@@ -7,7 +7,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
     private const float DesignSize = 160f;
     private LynxAnimationFrame _animation = LynxAnimationFrame.Static;
 
-    public string Name => "Guardian V3 layered · expression phase 4";
+    public string Name => "Guardian V5 armored · dramatic state pass";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
@@ -32,8 +32,6 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             var miniature = Math.Min(bounds.Width, bounds.Height) <= 180;
             var expression = ExpressionProfile.For(state, _animation.TransitionAmount);
 
-            DrawGroundReference(graphics, colors);
-
             var tailSaved = graphics.Save();
             try
             {
@@ -54,8 +52,9 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
                 DrawTorso(graphics, colors);
                 DrawHaunches(graphics, colors);
                 DrawForelegs(graphics, colors);
+                DrawBodyArmor(graphics, palette, state, miniature);
                 DrawChestFur(graphics);
-                DrawCollarArmor(graphics, palette, miniature);
+                DrawCollarArmor(graphics, palette, state, miniature);
                 DrawEars(graphics, colors, expression);
                 DrawHead(graphics, colors);
                 DrawFace(graphics, palette, miniature, _animation.Blink, expression);
@@ -262,6 +261,84 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
 
         g.FillPath(pawFill, paw);
         g.DrawPath(edge, paw);
+    }
+
+    private static void DrawBodyArmor(
+        Graphics g,
+        LynxPalette palette,
+        LynxVisualState state,
+        bool miniature)
+    {
+        var stateAccent = StateAccent(state, palette);
+        var armorDark = Color.FromArgb(18, 19, 25);
+        var armorMid = Mix(Color.FromArgb(38, 35, 49), palette.Fur, 0.18f);
+        var armorEdge = Mix(palette.Accent, stateAccent, 0.45f);
+
+        using var leftChest = Path(
+            M(49, 92), L(63, 96), L(73, 105),
+            L(69, 127), L(60, 139), L(53, 131),
+            L(48, 110), Z());
+        using var rightChest = Mirror(leftChest);
+
+        using var chestFill = new LinearGradientBrush(
+            new RectangleF(47, 92, 66, 49),
+            armorMid,
+            armorDark,
+            90f);
+        using var armorPen = new Pen(
+            Color.FromArgb(miniature ? 220 : 190, armorEdge),
+            miniature ? 1.55f : 0.95f)
+        {
+            LineJoin = LineJoin.Bevel
+        };
+
+        g.FillPath(chestFill, leftChest);
+        g.FillPath(chestFill, rightChest);
+        g.DrawPath(armorPen, leftChest);
+        g.DrawPath(armorPen, rightChest);
+
+        using var leftShoulder = Path(
+            M(48, 91), L(58, 87), L(70, 94),
+            L(63, 101), L(53, 98), Z());
+        using var rightShoulder = Mirror(leftShoulder);
+        using var shoulderFill = new LinearGradientBrush(
+            new RectangleF(48, 87, 64, 15),
+            Color.FromArgb(54, 52, 66),
+            Color.FromArgb(17, 17, 23),
+            25f);
+
+        g.FillPath(shoulderFill, leftShoulder);
+        g.FillPath(shoulderFill, rightShoulder);
+        g.DrawPath(armorPen, leftShoulder);
+        g.DrawPath(armorPen, rightShoulder);
+
+        using var leftBracer = Path(
+            M(58.5f, 118), L(72.5f, 118),
+            L(72.3f, 139), L(60f, 139), Z());
+        using var rightBracer = Mirror(leftBracer);
+        using var bracerFill = new LinearGradientBrush(
+            new RectangleF(58, 118, 44, 22),
+            Color.FromArgb(41, 38, 51),
+            Color.FromArgb(15, 15, 20),
+            90f);
+
+        g.FillPath(bracerFill, leftBracer);
+        g.FillPath(bracerFill, rightBracer);
+        g.DrawPath(armorPen, leftBracer);
+        g.DrawPath(armorPen, rightBracer);
+
+        using var channel = new Pen(
+            Color.FromArgb(miniature ? 235 : 205, armorEdge),
+            miniature ? 1.8f : 0.9f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+
+        g.DrawLine(channel, 54f, 97f, 65f, 101f);
+        g.DrawLine(channel, 106f, 97f, 95f, 101f);
+        g.DrawLine(channel, 61f, 122f, 61f, 135f);
+        g.DrawLine(channel, 99f, 122f, 99f, 135f);
     }
 
     private static void DrawHead(Graphics g, SilhouetteColors c)
@@ -570,16 +647,23 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
     }
 
 
-    private static void DrawCollarArmor(Graphics g, LynxPalette palette, bool miniature)
+    private static void DrawCollarArmor(
+        Graphics g,
+        LynxPalette palette,
+        LynxVisualState state,
+        bool miniature)
     {
         // The upper edge follows the jaw; the lower edge forms rigid plates.
         using var leftPanel = Path(
             M(57, 90), L(66, 95), L(80, 99), L(80, 108),
             L(65, 106), L(53, 100), L(55, 94), Z());
         using var rightPanel = Mirror(leftPanel);
+        var stateAccent = StateAccent(state, palette);
         using var armor = new LinearGradientBrush(new RectangleF(53, 90, 54, 18),
-            Mix(Color.FromArgb(62, 51, 79), palette.Fur, 0.08f), Color.FromArgb(20, 15, 30), 90f);
-        using var edge = new Pen(Color.FromArgb(108, 87, 140), miniature ? 1.4f : 0.85f)
+            Mix(Color.FromArgb(47, 45, 58), palette.Fur, 0.10f), Color.FromArgb(11, 12, 17), 90f);
+        using var edge = new Pen(
+            Color.FromArgb(220, Mix(palette.Accent, stateAccent, 0.50f)),
+            miniature ? 1.65f : 0.95f)
         {
             LineJoin = LineJoin.Bevel
         };
@@ -591,7 +675,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         using var leftFacet = Path(
             M(56, 96), L(64, 100), L(69, 104), L(61, 102), Z());
         using var rightFacet = Mirror(leftFacet);
-        using var purple = new SolidBrush(Mix(Color.FromArgb(129, 73, 204), palette.Accent, 0.10f));
+        using var purple = new SolidBrush(Mix(palette.Accent, stateAccent, 0.30f));
         g.FillPath(purple, leftFacet);
         g.FillPath(purple, rightFacet);
 
