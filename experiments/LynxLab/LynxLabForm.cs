@@ -10,6 +10,7 @@ internal sealed class LynxLabForm : Form
     private readonly Label _rendererValue;
     private readonly Label _stateValue;
     private readonly Label _paletteValue;
+    private readonly Label _motionValue;
     private readonly CheckBox _desktopPreviewToggle;
     private readonly CheckBox _debugToggle;
     private readonly CheckBox _topMostToggle;
@@ -55,6 +56,7 @@ internal sealed class LynxLabForm : Form
         _rendererValue = ValueLabel(_renderer.Name);
         _stateValue = ValueLabel("Idle");
         _paletteValue = ValueLabel(LynxPalette.Default.Name);
+        _motionValue = ValueLabel("state loop");
         _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
         _debugToggle = LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
@@ -326,6 +328,7 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(KeyValueRow("Pet size", "160 × 160"));
         stack.Controls.Add(KeyValueRow("Desktop host", "240 × 246"));
         stack.Controls.Add(KeyValueRow("State", _stateValue));
+        stack.Controls.Add(KeyValueRow("Motion", _motionValue));
         stack.Controls.Add(KeyValueRow("Palette", _paletteValue));
 
         var note = new Label
@@ -333,7 +336,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V3 Animation Phase 2 is state-aware: breathing, blink cadence, tail motion and shield rhythm now change with simulated Git state. Direct2D comes later.",
+            Text = "Guardian V3 Animation Phase 3 adds restrained one-shot reactions when Git state changes, then settles back into the Phase 2 state-aware loop. Direct2D comes later.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -367,11 +370,15 @@ internal sealed class LynxLabForm : Form
             return;
 
         var now = _animationClock.Elapsed.TotalSeconds;
-        animated.SetAnimationFrame(
-            LynxAnimationFrame.FromSeconds(
-                now,
-                _canvas.State,
-                now - _stateChangedAtSeconds));
+        var frame = LynxAnimationFrame.FromSeconds(
+            now,
+            _canvas.State,
+            now - _stateChangedAtSeconds);
+
+        animated.SetAnimationFrame(frame);
+        _motionValue.Text = frame.TransitionAmount > 0.015f
+            ? "reacting → " + _canvas.State
+            : "state loop · " + _canvas.State;
 
         _canvas.Invalidate();
 
@@ -398,11 +405,14 @@ internal sealed class LynxLabForm : Form
         if (renderer is IAnimatedLynxRenderer animated)
         {
             var now = _animationClock.Elapsed.TotalSeconds;
-            animated.SetAnimationFrame(
-                LynxAnimationFrame.FromSeconds(
-                    now,
-                    _canvas.State,
-                    now - _stateChangedAtSeconds));
+            var frame = LynxAnimationFrame.FromSeconds(
+                now,
+                _canvas.State,
+                now - _stateChangedAtSeconds);
+            animated.SetAnimationFrame(frame);
+            _motionValue.Text = frame.TransitionAmount > 0.015f
+                ? "reacting → " + _canvas.State
+                : "state loop · " + _canvas.State;
         }
 
         _canvas.Renderer = renderer;

@@ -7,7 +7,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
     private const float DesignSize = 160f;
     private LynxAnimationFrame _animation = LynxAnimationFrame.Static;
 
-    public string Name => "Guardian V3 layered · animation phase 2";
+    public string Name => "Guardian V3 layered · animation phase 3";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
@@ -47,6 +47,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
             var bodySaved = graphics.Save();
             try
             {
+                ApplyTransitionOffset(graphics, _animation.BodyOffsetY);
                 ApplyBreathing(graphics, _animation.Breath);
 
                 DrawTorso(graphics, colors);
@@ -80,6 +81,17 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         g.TranslateTransform(48f, 140f, MatrixOrder.Append);
         g.RotateTransform(degrees, MatrixOrder.Append);
         g.TranslateTransform(-48f, -140f, MatrixOrder.Append);
+    }
+
+    private static void ApplyTransitionOffset(Graphics g, float offsetY)
+    {
+        // Phase 3 transition reactions are intentionally sub-pixel at desktop
+        // scale. The ground and tail root stay fixed while the body briefly
+        // settles/lifts, then returns exactly to its state-loop baseline.
+        if (Math.Abs(offsetY) < 0.001f)
+            return;
+
+        g.TranslateTransform(0f, offsetY, MatrixOrder.Append);
     }
 
     private static void ApplyBreathing(Graphics g, float breath)
