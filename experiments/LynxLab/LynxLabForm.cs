@@ -41,7 +41,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — Direct2D Guardian Migration 3";
+        Text = "Lynx Lab — Direct2D Guardian Migration 4";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -272,7 +272,7 @@ internal sealed class LynxLabForm : Form
 
         split.Panel2.Controls.Add(
             BackendPanel(
-                "DIRECT2D / GUARDIAN MIGRATION 3",
+                "DIRECT2D / GUARDIAN MIGRATION 4",
                 _direct2DCanvas,
                 Color.FromArgb(0x57, 0xD7, 0xA0)));
 
@@ -494,7 +494,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Direct2D Guardian Migration 3: the native Guardian now carries the V9 whole-pet activity language — incoming/outgoing packet traffic, thinking scan, sorting data chips, packing motion, reconcile orbits, success halo, counter-rotating warning with rocking alert, failure crash/recoil, and resting rings/z drift. GDI+ V9 remains beside it for parity checks.",
+            Text = "Direct2D Guardian Migration 4 adds full native activity FX parity: independently phased incoming/outgoing traffic, deliberate whole-pet scanning, asynchronous sorting chips, inward packing, opposing reconcile flows, success halo, counter-rotating warning with rocking alert, failure crash/recoil, and resting rings/z drift. GDI+ V9 remains beside it for parity checks.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);

@@ -6,9 +6,10 @@ namespace LynxLab;
 /// <summary>
 /// First real Direct2D render target in Lynx Lab.
 ///
-/// Migration 3 adds activity-effect parity to the native Direct2D Guardian:
-/// traffic, warning/failure motion, resting drift, scan/sort/pack cues,
-/// reconcile orbits and success effects. GDI+ V9 remains the visual reference.
+/// Migration 4 completes native activity-effect parity for the Direct2D Guardian:
+/// independently phased whole-pet traffic, scanning, sorting, packing,
+/// reconciliation, success, warning, failure and resting effects. GDI+ V9
+/// remains the visual reference.
 /// </summary>
 internal sealed class Direct2DTestControl : Control
 {
@@ -244,7 +245,7 @@ internal sealed class Direct2DTestControl : Control
                 }
             }
 
-            SetStatus("DIRECT2D GUARDIAN MIGRATION 3 ✓");
+            SetStatus("DIRECT2D GUARDIAN MIGRATION 4 ✓");
             return true;
         }
         catch (Exception ex)
@@ -340,7 +341,7 @@ internal sealed class Direct2DTestControl : Control
             _frameCount++;
             if (_frameCount == 1 || _frameCount % 120 == 0)
                 SetStatus(
-                    $"DIRECT2D GUARDIAN MIGRATION 3 ✓ · {_frameCount} frames");
+                    $"DIRECT2D GUARDIAN MIGRATION 4 ✓ · {_frameCount} frames");
         }
         finally
         {
@@ -1054,9 +1055,14 @@ internal sealed class Direct2DTestControl : Control
 
         return activity switch
         {
+            LynxActivityState.Thinking => slow * 1.7f,
+            LynxActivityState.Preparing => slow * 2.2f,
             LynxActivityState.Sorting => slow * 5.0f,
+            LynxActivityState.Packing => slow * 3.0f,
             LynxActivityState.Incoming => 5.5f + slow * 4.0f,
             LynxActivityState.Outgoing => 4.0f + slow * 3.2f,
+            LynxActivityState.Reconciling => fast * 2.7f,
+            LynxActivityState.Success => 5.0f + slow * 3.4f,
             LynxActivityState.Warning => -2.5f + fast * 3.0f,
             LynxActivityState.Failure => -4.5f + fast * 4.2f,
             LynxActivityState.Resting => -6.0f + slow * 1.8f,
@@ -2021,6 +2027,11 @@ internal sealed class Direct2DTestControl : Control
                 case LynxActivityState.Thinking:
                 case LynxActivityState.Preparing:
                 {
+                    var deliberate =
+                        _activity == LynxActivityState.Preparing;
+                    var scanRotation =
+                        rotation * (deliberate ? 0.62f : 1f);
+
                     using var brushes =
                         new ActivityBrushPair(
                             this,
@@ -2033,7 +2044,7 @@ internal sealed class Direct2DTestControl : Control
                         drawLine,
                         brushes.Primary,
                         8f, 4f, 144f, 151f,
-                        rotation,
+                        scanRotation,
                         118f,
                         1.35f);
 
@@ -2041,7 +2052,7 @@ internal sealed class Direct2DTestControl : Control
                         drawLine,
                         brushes.Secondary,
                         15f, 10f, 130f, 141f,
-                        rotation + 178f,
+                        scanRotation + 178f,
                         82f,
                         1.0f);
                     break;
@@ -2496,10 +2507,15 @@ internal sealed class Direct2DTestControl : Control
                 case LynxActivityState.Thinking:
                 case LynxActivityState.Preparing:
                 {
+                    var deliberate =
+                        _activity == LynxActivityState.Preparing;
+                    var orbitSpeed = deliberate ? 0.92d : 1.45d;
+                    var scanSpeed = deliberate ? 17d : 26d;
+
                     for (var i = 0; i < 4; i++)
                     {
                         var angle =
-                            _seconds * 1.45d +
+                            _seconds * orbitSpeed +
                             i *
                             Math.PI * 2d / 4d;
                         var x =
@@ -2533,7 +2549,7 @@ internal sealed class Direct2DTestControl : Control
                     var scanY =
                         22f +
                         (float)((
-                            _seconds * 26d) %
+                            _seconds * scanSpeed) %
                             116d);
 
                     using var scan =
@@ -2556,33 +2572,33 @@ internal sealed class Direct2DTestControl : Control
 
                 case LynxActivityState.Sorting:
                 {
-                    var phase =
-                        (float)((
-                            _seconds * 34d) %
-                            118d);
+                    var phaseA = ActivityTravel(_seconds, 0.31d, 0.03d);
+                    var phaseB = ActivityTravel(_seconds, 0.22d, 0.41d);
+                    var phaseC = ActivityTravel(_seconds, 0.37d, 0.68d);
+                    var phaseD = ActivityTravel(_seconds, 0.26d, 0.19d);
 
                     DrawDataChipD2D(
                         fillRectangle,
                         drawRectangle,
                         7f,
-                        22f + phase,
+                        18f + phaseA * 120f,
                         colors.Primary);
                     DrawDataChipD2D(
                         fillRectangle,
                         drawRectangle,
                         146f,
-                        140f - phase,
+                        142f - phaseB * 120f,
                         colors.Secondary);
                     DrawDataChipD2D(
                         fillRectangle,
                         drawRectangle,
-                        22f + phase * 0.82f,
+                        18f + phaseC * 118f,
                         7f,
                         colors.Primary);
                     DrawDataChipD2D(
                         fillRectangle,
                         drawRectangle,
-                        132f - phase * 0.75f,
+                        136f - phaseD * 118f,
                         149f,
                         colors.Secondary);
                     break;
@@ -2692,8 +2708,10 @@ internal sealed class Direct2DTestControl : Control
                 {
                     for (var i = 0; i < 6; i++)
                     {
+                        var direction =
+                            i % 2 == 0 ? 1d : -1d;
                         var angle =
-                            _seconds * 1.65d +
+                            _seconds * 1.65d * direction +
                             i *
                             Math.PI * 2d / 6d;
                         var x =
@@ -2733,6 +2751,7 @@ internal sealed class Direct2DTestControl : Control
                     {
                         var angle =
                             -Math.PI / 2d +
+                            _seconds * 0.72d +
                             i *
                             Math.PI * 2d / 5d;
                         var radius =
@@ -3037,6 +3056,12 @@ internal sealed class Direct2DTestControl : Control
             0.8f,
             IntPtr.Zero);
     }
+
+    private static float ActivityTravel(
+        double seconds,
+        double speed,
+        double offset) =>
+        (float)((seconds * speed + offset) % 1d);
 
     private void DrawTrafficArrowD2D(
         DrawLineDelegate drawLine,
