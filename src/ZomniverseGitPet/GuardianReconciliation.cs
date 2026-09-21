@@ -16,6 +16,12 @@ internal static class GuardianReconciliation
             return;
         }
 
+        if (StandaloneProjectPublishing.IsLogicalProject(config, config.RepositoryPath))
+        {
+            await BeginStandaloneFileReconciliationAsync(owner, config, git);
+            return;
+        }
+
         await GuardianSyncState.RefreshAsync(true);
         var snapshot = GuardianSyncState.Current;
         if (!snapshot.HasRepository || !snapshot.HasRemote || !snapshot.OnlineReachable)
@@ -192,6 +198,159 @@ internal static class GuardianReconciliation
         }
 
         await MarkReadyAsync(owner);
+    }
+
+    private static async Task BeginStandaloneFileReconciliationAsync(
+        Form? owner,
+        AppConfig config,
+        GitService git)
+    {
+        var repositoryPath = config.RepositoryPath!;
+        var status = await git.GetStatusAsync(repositoryPath);
+        if (!status.Healthy)
+        {
+            SetState(owner, SaveOperationPhase.Failed, "GitPet could not verify the standalone project.");
+            MessageBox.Show(owner,
+                "GitPet could not verify the standalone project before reconciliation.\r\n\r\n" + status.Error,
+                "Reconciliation unavailable",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (status.Files.Count > 0)
+        {
+            SetState(owner, SaveOperationPhase.Warning, "Save local changes before standalone reconciliation.");
+            MessageBox.Show(owner,
+                $"You have {FriendlyGitState.Count(status.Files.Count, "unsaved change")} on this PC.\r\n\r\n" +
+                "Save or discard them before reconciling the standalone project files.",
+                "Save first",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        var link = StandaloneProjectPublishing.GetLink(config);
+        if (link is null)
+        {
+            SetState(owner, SaveOperationPhase.Warning, "No standalone project remote is connected.");
+            return;
+        }
+
+        SetState(owner, SaveOperationPhase.Preparing, "Checking standalone project files...");
+        var inspection = await StandaloneProjectPublishing.InspectRemoteAsync(
+            config,
+            git,
+            repositoryPath,
+            fetchRemote: true);
+
+        if (!inspection.OnlineReachable)
+        {
+            SetState(owner, SaveOperationPhase.Warning, "The standalone online repository cannot be reached.");
+            MessageBox.Show(owner,
+                "GitPet cannot reconcile the standalone project until its online repository can be reached.\r\n\r\n" +
+                inspection.Message,
+                "Reconciliation unavailable",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        if (!inspection.RemoteBranchExists)
+        {
+            SetState(owner, SaveOperationPhase.Warning, "The standalone branch does not exist online.");
+            MessageBox.Show(owner,
+                $"The standalone repository does not currently have branch '{link.Branch}'.",
+                "Reconciliation unavailable",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        if (inspection.Changes.Count == 0)
+        {
+            await GuardianSyncState.RefreshAsync(false);
+            if (owner is GuardianForm currentGuardian) await currentGuardian.RefreshAsync();
+            SetState(owner, SaveOperationPhase.Completed, "No standalone online file changes remain.");
+            return;
+        }
+
+        using var confirmation = new GuardianConfirmDialog(
+            "Reconcile project files?",
+            "RECONCILE PROJECT FILES",
+            $"The standalone online project has {inspection.Changes.Count} incoming file change" +
+            $"{(inspection.Changes.Count == 1 ? "" : "s")}.\r\n\r\n" +
+            "This project intentionally uses an independent Git history. GitPet will NOT merge Git histories.\r\n\r\n" +
+            "Instead, choose the complete local or online version for each incoming file. " +
+            "Chosen online versions will be copied into the local project as UNSAVED changes for Review and Save.\r\n\r\n" +
+            "Nothing will be sent online.",
+            "Choose files",
+            "Not now",
+            dialogSize: new Size(800, 540),
+            resizable: true,
+            scrollable: true,
+            confirmWidth: 150);
+
+        if (confirmation.ShowDialog(owner) != DialogResult.Yes)
+        {
+            SetState(owner, SaveOperationPhase.Cancelled);
+            return;
+        }
+
+        var paths = inspection.Changes
+            .Select(change => change.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        using var choices = new ReconcileConflictsForm(
+            paths,
+            title: "Reconcile standalone project files",
+            introText:
+                "STANDALONE PROJECT — FILE-LEVEL RECONCILIATION\r\n\r\n" +
+                "These files changed in the independent project-only online repository. " +
+                "Choose which complete file version GitPet should keep locally. " +
+                "No Git histories will be merged and nothing will be sent online.",
+            fileHeader: "INCOMING PROJECT FILE");
+
+        if (choices.ShowDialog(owner) != DialogResult.OK)
+        {
+            SetState(owner, SaveOperationPhase.Cancelled);
+            return;
+        }
+
+        SetState(owner, SaveOperationPhase.Staging, "Applying selected standalone file versions...");
+        var result = await StandaloneProjectPublishing.ReconcileFilesAsync(
+            config,
+            git,
+            choices.Choices);
+
+        if (!result.Success)
+        {
+            SetState(owner, SaveOperationPhase.Failed, result.Message);
+            MessageBox.Show(owner,
+                result.Message,
+                "Standalone reconciliation stopped",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        await GuardianSyncState.RefreshAsync(false);
+        if (owner is GuardianForm guardian) await guardian.RefreshAsync();
+
+        SetState(owner, SaveOperationPhase.Completed, "Standalone project files are ready for Review and Save.");
+
+        using var ready = new GuardianConfirmDialog(
+            "Review, then Save",
+            "PROJECT FILES READY ✓",
+            result.Message,
+            "OK",
+            showCancel: false,
+            dialogSize: new Size(760, 470),
+            resizable: true,
+            scrollable: true);
+        ready.ShowDialog(owner);
     }
 
     public static async Task SaveAsync(Form? owner)

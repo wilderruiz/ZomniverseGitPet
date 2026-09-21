@@ -295,6 +295,25 @@ internal static class StandaloneProjectPublishingRegression
             }
 
             /* ==========================================================================
+               PATCH: STANDALONE FILE RECONCILIATION REGRESSION
+               DATE.TIME: 2026-09-21
+               Independent project histories reconcile by file choice, never parent merge.
+               ========================================================================== */
+            var reconcileChanges = StandaloneProjectPublishing.ParseRemoteChanges(
+                "M\thome/CHANGELOG.md\n" +
+                "D\thome/old.php\n" +
+                "R100\thome/old-name.php\thome/new-name.php\n");
+            var reconcilePaths = reconcileChanges
+                .Select(change => change.Path)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (!reconcilePaths.SequenceEqual(
+                    new[] { "home/CHANGELOG.md", "home/new-name.php", "home/old.php" },
+                    StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Standalone file reconciliation did not preserve incoming project paths.");
+
+            /* ==========================================================================
                PATCH: STANDALONE GET BOUNDARY REGRESSION
                DATE.TIME: 2026-09-20 17:46 +03:00
                Incoming remote changes must remain inside the logical-project scope.

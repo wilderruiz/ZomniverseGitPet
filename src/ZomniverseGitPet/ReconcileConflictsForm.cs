@@ -15,9 +15,13 @@ internal sealed class ReconcileConflictsForm : Form
     public IReadOnlyDictionary<string, ReconcileChoice> Choices { get; private set; } =
         new Dictionary<string, ReconcileChoice>(StringComparer.OrdinalIgnoreCase);
 
-    public ReconcileConflictsForm(IReadOnlyList<string> conflicts)
+    public ReconcileConflictsForm(
+        IReadOnlyList<string> conflicts,
+        string? title = null,
+        string? introText = null,
+        string? fileHeader = null)
     {
-        Text = "Reconcile changed files";
+        Text = title ?? "Reconcile changed files";
         StartPosition = FormStartPosition.CenterParent;
         Size = new Size(820, 560);
         MinimumSize = new Size(680, 440);
@@ -41,15 +45,16 @@ internal sealed class ReconcileConflictsForm : Form
         var intro = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "LOCAL + ONLINE CHANGED\r\n\r\n" +
-                   "These files were changed differently in both places. Choose which complete file version GitPet should keep. " +
-                   "Non-conflicting files are already being combined. Nothing will be sent online.",
+            Text = introText ??
+                   ("LOCAL + ONLINE CHANGED\r\n\r\n" +
+                    "These files were changed differently in both places. Choose which complete file version GitPet should keep. " +
+                    "Non-conflicting files are already being combined. Nothing will be sent online."),
             ForeColor = GuardianTheme.MutedInk,
             Font = new Font("Segoe UI", 9.5f),
             TextAlign = ContentAlignment.MiddleLeft
         };
 
-        ConfigureGrid();
+        ConfigureGrid(fileHeader);
         foreach (var conflict in conflicts) _grid.Rows.Add(conflict, null);
 
         var buttons = new FlowLayoutPanel
@@ -97,7 +102,7 @@ internal sealed class ReconcileConflictsForm : Form
         CancelButton = cancel;
     }
 
-    private void ConfigureGrid()
+    private void ConfigureGrid(string? fileHeader)
     {
         _grid.Dock = DockStyle.Fill;
         _grid.ReadOnly = false;
@@ -123,7 +128,7 @@ internal sealed class ReconcileConflictsForm : Form
         var fileColumn = new DataGridViewTextBoxColumn
         {
             Name = "File",
-            HeaderText = "CONFLICTING FILE",
+            HeaderText = fileHeader ?? "CONFLICTING FILE",
             ReadOnly = true,
             FillWeight = 62
         };

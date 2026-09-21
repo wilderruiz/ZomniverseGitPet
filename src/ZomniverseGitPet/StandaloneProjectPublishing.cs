@@ -59,6 +59,14 @@ internal sealed record StandaloneProjectReceiveResult(
     string WorkspacePath = "",
     string RemoteUrl = "");
 
+internal sealed record StandaloneProjectReconcileResult(
+    bool Success,
+    string Message,
+    int AppliedOnlineCount = 0,
+    int KeptLocalCount = 0,
+    string WorkspacePath = "",
+    string RemoteUrl = "");
+
 internal sealed record StandaloneProjectRemoteInspection(
     bool OnlineReachable,
     bool RemoteBranchExists,
@@ -946,6 +954,312 @@ internal static class StandaloneProjectPublishing
             }
             catch
             {
+            }
+        }
+    }
+
+    public static async Task<StandaloneProjectReconcileResult> ReconcileFilesAsync(
+        AppConfig config,
+        GitService git,
+        IReadOnlyDictionary<string, ReconcileChoice> choices,
+        CancellationToken token = default)
+    {
+        var project = config.GetActiveProject();
+        var repositoryRoot = config.RepositoryPath;
+        if (project is null || string.IsNullOrWhiteSpace(repositoryRoot) || !Directory.Exists(repositoryRoot))
+            return new(false, "Choose a logical GitPet project before reconciling project files.");
+        if (!IsLogicalProject(config, repositoryRoot))
+            return new(false, "This project uses shared Git history, so standard reconciliation should be used instead.");
+
+        var link = GetLink(config);
+        if (link is null)
+            return new(false, "Connect this GitPet project to its own online repository first.");
+
+        var status = await git.GetStatusAsync(repositoryRoot, token);
+        if (!status.Healthy)
+            return new(false, "GitPet could not verify the project before file reconciliation.\r\n\r\n" + status.Error);
+        if (status.Files.Count > 0)
+            return new(false, "Save or discard current local changes before reconciling project-only online files.");
+
+        var workspace = GetWorkspacePath(project, link.Branch);
+        var gitDirectory = Path.Combine(workspace, ".git");
+        if (!Directory.Exists(gitDirectory))
+        {
+            return new(false,
+                "The standalone publishing workspace has no local baseline yet.\r\n\r\nUse Get first to establish the project-only baseline.",
+                WorkspacePath: workspace,
+                RemoteUrl: link.RemoteUrl);
+        }
+
+        var stagingRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ZomniverseGitPet",
+            "Receiving",
+            project.Id,
+            "reconcile-" + Guid.NewGuid().ToString("N"));
+        var backupRoot = stagingRoot + "-backup";
+
+        using var workspaceLease = await EnterWorkspaceAsync(workspace, token);
+        string? originalWorkspaceHead = null;
+
+        try
+        {
+            var remote = await git.RunGitAsync(workspace, ["remote", "get-url", "origin"], cancellationToken: token);
+            CommandResult remoteResult;
+            if (!remote.Success || string.IsNullOrWhiteSpace(remote.Output))
+                remoteResult = await git.RunGitAsync(workspace, ["remote", "add", "origin", link.RemoteUrl], cancellationToken: token);
+            else if (!RemoteEquals(remote.Output.Trim(), link.RemoteUrl))
+                remoteResult = await git.RunGitAsync(workspace, ["remote", "set-url", "origin", link.RemoteUrl], cancellationToken: token);
+            else
+                remoteResult = new CommandResult(0, remote.Output);
+
+            if (!remoteResult.Success)
+                return new(false, "GitPet could not configure the standalone reconciliation source.\r\n\r\n" + remoteResult.Output,
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+            var head = await git.RunGitAsync(workspace, ["rev-parse", "--verify", "HEAD"], cancellationToken: token);
+            if (!head.Success || string.IsNullOrWhiteSpace(head.Output))
+                return new(false, "GitPet could not read the standalone reconciliation baseline.",
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+            originalWorkspaceHead = head.Output.Trim();
+
+            var fetch = await git.RunGitAsync(
+                workspace,
+                BuildFetchArguments(link.Branch, quiet: false),
+                TimeSpan.FromMinutes(5),
+                token);
+            if (!fetch.Success)
+                return new(false, "GitPet could not fetch the project-only online repository.\r\n\r\n" + fetch.Output,
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+            var remoteRef = RemoteTrackingRef(link.Branch);
+            var remoteHead = await git.RunGitAsync(
+                workspace,
+                ["rev-parse", "--verify", remoteRef],
+                TimeSpan.FromSeconds(12),
+                token);
+            if (!remoteHead.Success)
+                return new(false, $"The standalone repository does not have a readable '{link.Branch}' branch.",
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+            var diff = await git.RunGitAsync(
+                workspace,
+                ["diff", "--name-status", "--find-renames", "HEAD", remoteRef],
+                TimeSpan.FromSeconds(30),
+                token);
+            if (!diff.Success)
+                return new(false, "GitPet could not compare the standalone baseline with the online project.\r\n\r\n" + diff.Output,
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+            var changes = ParseRemoteChanges(diff.Output);
+            if (changes.Count == 0)
+                return new(true, "The project-only online repository no longer has incoming file changes.",
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+            var escaped = changes
+                .SelectMany(change => string.IsNullOrWhiteSpace(change.PreviousPath)
+                    ? new[] { change.Path }
+                    : new[] { change.PreviousPath, change.Path })
+                .Where(path => !IsPathInsideProjectScope(config, repositoryRoot, path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (escaped.Length > 0)
+            {
+                return new(false,
+                    "Reconciliation blocked: the standalone repository contains incoming changes outside this project's configured scope.\r\n\r\n" +
+                    string.Join("\r\n", escaped),
+                    WorkspacePath: workspace,
+                    RemoteUrl: link.RemoteUrl);
+            }
+
+            var unresolved = changes
+                .Select(change => change.Path)
+                .Where(path => !choices.ContainsKey(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (unresolved.Length > 0)
+            {
+                return new(false,
+                    "GitPet needs a local/online choice for every incoming standalone file.\r\n\r\n" +
+                    string.Join("\r\n", unresolved),
+                    WorkspacePath: workspace,
+                    RemoteUrl: link.RemoteUrl);
+            }
+
+            var resetRemote = await git.RunGitAsync(
+                workspace,
+                ["reset", "--hard", remoteRef],
+                TimeSpan.FromMinutes(1),
+                token);
+            if (!resetRemote.Success)
+                return new(false, "GitPet could not materialize the standalone online snapshot.\r\n\r\n" + resetRemote.Output,
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+            var cleanRemote = await git.RunGitAsync(
+                workspace,
+                ["clean", "-fdx"],
+                TimeSpan.FromMinutes(1),
+                token);
+            if (!cleanRemote.Success)
+                return new(false, "GitPet could not clean the standalone online snapshot.\r\n\r\n" + cleanRemote.Output,
+                    WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
+
+            Directory.CreateDirectory(stagingRoot);
+            Directory.CreateDirectory(backupRoot);
+
+            var affectedPaths = changes
+                .SelectMany(change => string.IsNullOrWhiteSpace(change.PreviousPath)
+                    ? new[] { change.Path }
+                    : new[] { change.PreviousPath, change.Path })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var originallyMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var relative in affectedPaths)
+            {
+                token.ThrowIfCancellationRequested();
+                var localPath = ResolveInside(repositoryRoot, relative);
+                if (!File.Exists(localPath))
+                {
+                    originallyMissing.Add(relative);
+                    continue;
+                }
+
+                var backupPath = ResolveInside(backupRoot, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
+                File.Copy(localPath, backupPath, true);
+            }
+
+            foreach (var change in changes)
+            {
+                token.ThrowIfCancellationRequested();
+                if (choices[change.Path] != ReconcileChoice.Online) continue;
+                if (change.Status.StartsWith("D", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var remoteSource = ResolveInside(workspace, change.Path);
+                if (!File.Exists(remoteSource))
+                    throw new IOException("The selected online file could not be materialized: " + change.Path);
+
+                var staged = ResolveInside(stagingRoot, change.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(staged)!);
+                File.Copy(remoteSource, staged, true);
+            }
+
+            var appliedOnline = 0;
+            var keptLocal = 0;
+
+            try
+            {
+                foreach (var change in changes)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    if (choices[change.Path] == ReconcileChoice.Local)
+                    {
+                        keptLocal++;
+                        continue;
+                    }
+
+                    appliedOnline++;
+
+                    if (!string.IsNullOrWhiteSpace(change.PreviousPath) &&
+                        !change.PreviousPath.Equals(change.Path, StringComparison.OrdinalIgnoreCase) &&
+                        change.Status.StartsWith("R", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var previous = ResolveInside(repositoryRoot, change.PreviousPath);
+                        if (File.Exists(previous)) File.Delete(previous);
+                    }
+
+                    var destination = ResolveInside(repositoryRoot, change.Path);
+                    if (change.Status.StartsWith("D", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (File.Exists(destination)) File.Delete(destination);
+                        continue;
+                    }
+
+                    var staged = ResolveInside(stagingRoot, change.Path);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    File.Copy(staged, destination, true);
+                }
+            }
+            catch
+            {
+                foreach (var relative in affectedPaths)
+                {
+                    var localPath = ResolveInside(repositoryRoot, relative);
+                    var backupPath = ResolveInside(backupRoot, relative);
+
+                    if (File.Exists(backupPath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                        File.Copy(backupPath, localPath, true);
+                    }
+                    else if (originallyMissing.Contains(relative) && File.Exists(localPath))
+                    {
+                        File.Delete(localPath);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(originalWorkspaceHead))
+                {
+                    await git.RunGitAsync(
+                        workspace,
+                        ["reset", "--hard", originalWorkspaceHead],
+                        TimeSpan.FromMinutes(1),
+                        CancellationToken.None);
+                }
+
+                throw;
+            }
+
+            return new(true,
+                $"Standalone file reconciliation prepared.\r\n\r\n" +
+                $"Online versions applied: {appliedOnline}\r\n" +
+                $"Local versions kept: {keptLocal}\r\n\r\n" +
+                "No Git histories were merged. The resulting project files are local working-tree changes for Review and Save.",
+                appliedOnline,
+                keptLocal,
+                workspace,
+                link.RemoteUrl);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (!string.IsNullOrWhiteSpace(originalWorkspaceHead) && Directory.Exists(gitDirectory))
+            {
+                try
+                {
+                    await git.RunGitAsync(
+                        workspace,
+                        ["reset", "--hard", originalWorkspaceHead],
+                        TimeSpan.FromMinutes(1),
+                        CancellationToken.None);
+                }
+                catch
+                {
+                }
+            }
+
+            return new(false,
+                "GitPet could not reconcile the standalone project files safely.\r\n\r\n" + ex.Message,
+                WorkspacePath: workspace,
+                RemoteUrl: link.RemoteUrl);
+        }
+        finally
+        {
+            foreach (var temp in new[] { stagingRoot, backupRoot })
+            {
+                try
+                {
+                    if (Directory.Exists(temp)) Directory.Delete(temp, true);
+                }
+                catch
+                {
+                }
             }
         }
     }
