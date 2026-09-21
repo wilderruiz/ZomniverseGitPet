@@ -187,14 +187,16 @@ internal sealed class ApplicationReleaseBuildForm : Form
             return;
         }
 
-        var confirm = MessageBox.Show(
-            this,
-            "Build the ZomniverseGitPet release package now?\r\n\r\n" +
+        using var confirmation = new GuardianConfirmDialog(
+            "Prepare application release",
+            "BUILD THE ZOMNIVERSE GITPET RELEASE PACKAGE NOW?",
             "GitPet will require a clean working tree, run the full Release build and regression suite, create the portable build and installer, and calculate release hashes.\r\n\r\n" +
             "This prepares files only. It does not publish a GitHub Release.",
-            "Prepare application release",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Information);
+            confirmText: "Yes",
+            cancelText: "No",
+            dialogSize: new Size(720, 390));
+
+        var confirm = confirmation.ShowDialog(this);
 
         if (confirm != DialogResult.Yes)
             return;
