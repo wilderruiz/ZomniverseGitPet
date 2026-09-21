@@ -6,7 +6,6 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$solutionPath = Join-Path $repositoryRoot 'ZomniverseGitPet.sln'
 $projectPath = Join-Path $repositoryRoot 'src\ZomniverseGitPet\ZomniverseGitPet.csproj'
 $testsPath = Join-Path $repositoryRoot 'tests\ZomniverseGitPet.Tests\ZomniverseGitPet.Tests.csproj'
 $installerScript = Join-Path $repositoryRoot 'installer\ZomniverseGitPet.iss'
@@ -50,10 +49,21 @@ $releaseBase = Join-Path $repositoryParent 'ZomniverseGitPet_Releases'
 $releaseRoot = Join-Path $releaseBase ("packages\{0}" -f $version)
 $stagingRoot = Join-Path $releaseBase ("staging\{0}" -f $version)
 
-# Keep every release build intermediate/output outside the source repository.
-# This avoids file-lock collisions with VS Code, DEV builds, test discovery,
-# or a running developer copy of GitPet.
-$artifactsRoot = Join-Path $releaseBase ("artifacts\{0}" -f $version)
+# Use a per-user, commit-specific build workspace. Building the whole solution
+# against one shared artifacts root proved vulnerable to intermittent Windows
+# access-denied races. Release validation now builds the shipping app and the
+# regression harness sequentially, each with its own isolated artifacts tree.
+$buildBase = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    Join-Path $env:LOCALAPPDATA 'ZomniverseGitPet\ReleaseBuild'
+}
+else {
+    Join-Path ([System.IO.Path]::GetTempPath()) 'ZomniverseGitPet\ReleaseBuild'
+}
+$buildKey = "{0}\{1}" -f $version, $sourceCommit.Substring(0, 12)
+$releaseBuildRoot = Join-Path $buildBase $buildKey
+$appArtifactsRoot = Join-Path $releaseBuildRoot 'app'
+$testArtifactsRoot = Join-Path $releaseBuildRoot 'tests'
+$publishArtifactsRoot = Join-Path $releaseBuildRoot 'publish'
 $testAssemblyName = 'ZomniverseGitPet.Tests.dll'
 $publishDirectory = Join-Path $stagingRoot 'publish'
 $installerDirectory = Join-Path $releaseRoot 'installer'
@@ -142,23 +152,34 @@ Write-Host "Source: $sourceBranch @ $sourceCommit"
 Write-Host ''
 
 if (-not $SkipTests) {
-    Write-Host '1/4  Building solution in isolated release artifacts...'
+    Write-Host '1/4  Building production app and regression harness...'
 
-    if (Test-Path -LiteralPath $artifactsRoot) {
-        Remove-Item -LiteralPath $artifactsRoot -Recurse -Force
+    if (Test-Path -LiteralPath $releaseBuildRoot) {
+        Remove-Item -LiteralPath $releaseBuildRoot -Recurse -Force
     }
-    New-Item -ItemType Directory -Force -Path $artifactsRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path $appArtifactsRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path $testArtifactsRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path $publishArtifactsRoot | Out-Null
 
+    Write-Host '      Building ZomniverseGitPet...'
     Invoke-CheckedCommand dotnet `
-        'build' $solutionPath `
+        'build' $projectPath `
         '--configuration' 'Release' `
-        '--artifacts-path' $artifactsRoot
+        '--artifacts-path' $appArtifactsRoot `
+        '-m:1'
+
+    Write-Host '      Building regression harness...'
+    Invoke-CheckedCommand dotnet `
+        'build' $testsPath `
+        '--configuration' 'Release' `
+        '--artifacts-path' $testArtifactsRoot `
+        '-m:1'
 
     Write-Host ''
-    Write-Host '2/4  Running regression suite from isolated artifacts...'
+    Write-Host '2/4  Running regression suite from isolated test artifacts...'
 
     $testAssembly = Get-ChildItem `
-        -LiteralPath $artifactsRoot `
+        -LiteralPath $testArtifactsRoot `
         -Recurse `
         -File `
         -Filter $testAssemblyName |
@@ -177,6 +198,11 @@ if (-not $SkipTests) {
 else {
     Write-Host '1/4  Build/tests skipped by request.'
     Write-Host '2/4  Regression suite skipped by request.'
+
+    if (Test-Path -LiteralPath $releaseBuildRoot) {
+        Remove-Item -LiteralPath $releaseBuildRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $publishArtifactsRoot | Out-Null
 }
 
 <#
@@ -202,7 +228,7 @@ Invoke-CheckedCommand dotnet `
     '--runtime' 'win-x64' `
     '--self-contained' 'true' `
     '-p:PublishSingleFile=true' `
-    '--artifacts-path' $artifactsRoot `
+    '--artifacts-path' $publishArtifactsRoot `
     '--output' $publishDirectory
 
 if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
@@ -278,8 +304,13 @@ $packageInfoPath = Join-Path $releaseRoot 'PACKAGE-INFO.txt'
 if (Test-Path -LiteralPath $stagingRoot) {
     Remove-Item -LiteralPath $stagingRoot -Recurse -Force
 }
-if (Test-Path -LiteralPath $artifactsRoot) {
-    Remove-Item -LiteralPath $artifactsRoot -Recurse -Force
+if (Test-Path -LiteralPath $releaseBuildRoot) {
+    try {
+        Remove-Item -LiteralPath $releaseBuildRoot -Recurse -Force -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "Release package succeeded, but temporary build artifacts could not be removed yet: $($_.Exception.Message)"
+    }
 }
 
 Write-Host ''
