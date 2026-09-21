@@ -1,0 +1,277 @@
+<div id="zgitpet-status-mockup">
+  <style>
+    #zgitpet-status-mockup {
+      width: 100%;
+      padding: 18px;
+      color: #f4f0f9;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      box-sizing: border-box;
+    }
+    #zgitpet-status-mockup * { box-sizing: border-box; }
+    #zgitpet-status-mockup .zg-window {
+      overflow: hidden;
+      background: #120f18;
+      border: 1px solid #ff329e;
+      border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .35);
+    }
+    #zgitpet-status-mockup .zg-titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 44px;
+      padding: 0 16px;
+      background: #1b1624;
+      color: #f4f0f9;
+    }
+    #zgitpet-status-mockup .zg-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 500;
+    }
+    #zgitpet-status-mockup .zg-title img {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+    }
+    #zgitpet-status-mockup .zg-window-actions {
+      display: flex;
+      gap: 22px;
+      color: #b0a6be;
+    }
+    #zgitpet-status-mockup .zg-menubar {
+      display: flex;
+      gap: 28px;
+      padding: 8px 18px;
+      background: #231c2f;
+      color: #d8d0e2;
+    }
+    #zgitpet-status-mockup .zg-status-shell {
+      padding: 18px;
+      background: #231c2f;
+    }
+    #zgitpet-status-mockup .zg-status-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px 28px;
+      padding: 20px 22px;
+      background: #1b1624;
+      border: 1px solid #4d3e65;
+      border-radius: 12px;
+    }
+    #zgitpet-status-mockup .zg-repository {
+      min-width: 0;
+    }
+    #zgitpet-status-mockup .zg-repository-name {
+      margin: 0 0 13px;
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: 500;
+      letter-spacing: .02em;
+    }
+    #zgitpet-status-mockup .zg-repository-name span {
+      color: #b0a6be;
+      padding: 0 8px;
+    }
+    #zgitpet-status-mockup .zg-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+    #zgitpet-status-mockup .zg-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 13px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    #zgitpet-status-mockup .zg-chip-health {
+      color: #50dda0;
+      background: #143d2b;
+      border: 1px solid #27865d;
+    }
+    #zgitpet-status-mockup .zg-chip-branch {
+      color: #88b7ff;
+      background: #172d4c;
+      border: 1px solid #3568a6;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+    #zgitpet-status-mockup .zg-chip-changes {
+      color: #ffd071;
+      background: #493315;
+      border: 1px solid #8b6425;
+    }
+    #zgitpet-status-mockup .zg-guardian {
+      display: inline-flex;
+      align-items: center;
+      align-self: start;
+      gap: 9px;
+      min-height: 36px;
+      padding: 6px 14px;
+      color: #50dda0;
+      background: #143d2b;
+      border: 1px solid #27865d;
+      border-radius: 999px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    #zgitpet-status-mockup .zg-guardian-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #50dda0;
+      box-shadow: 0 0 12px rgba(80, 221, 160, .65);
+    }
+    #zgitpet-status-mockup .zg-details {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px 24px;
+      align-items: end;
+      padding-top: 15px;
+      border-top: 1px solid #3a2f4c;
+    }
+    #zgitpet-status-mockup .zg-commit {
+      color: #c0b6cd;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      line-height: 1.7;
+    }
+    #zgitpet-status-mockup .zg-commit strong {
+      color: #f4f0f9;
+      font-weight: 500;
+    }
+    #zgitpet-status-mockup .zg-summary {
+      color: #f783c1;
+      text-align: right;
+      white-space: nowrap;
+    }
+    #zgitpet-status-mockup .zg-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      padding: 13px 18px;
+      background: #1b1624;
+      border-top: 1px solid #2f263d;
+      border-bottom: 1px solid #2f263d;
+    }
+    #zgitpet-status-mockup .zg-toolbar button {
+      min-height: 34px;
+      padding: 5px 14px;
+      color: #f4f0f9;
+      background: #2a2139;
+      border: 1px solid #4d3e65;
+      border-radius: 9px;
+      font: inherit;
+      font-weight: 500;
+    }
+    #zgitpet-status-mockup .zg-toolbar .zg-github {
+      color: #dffff0;
+      background: #16412e;
+      border-color: #36a975;
+    }
+    #zgitpet-status-mockup .zg-toolbar .zg-save {
+      background: #7545bd;
+      border-color: #ff63b6;
+    }
+    #zgitpet-status-mockup .zg-content-preview {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-height: 170px;
+      padding: 14px 18px 22px;
+      background: #120f18;
+    }
+    #zgitpet-status-mockup .zg-column {
+      border: 1px solid #3a2f4c;
+      background: #1b1624;
+    }
+    #zgitpet-status-mockup .zg-column-heading {
+      display: flex;
+      justify-content: space-between;
+      padding: 9px 12px;
+      font-weight: 500;
+      color: #f783c1;
+      background: #482041;
+    }
+    #zgitpet-status-mockup .zg-column-blue .zg-column-heading {
+      color: #88b7ff;
+      background: #1b3458;
+    }
+    #zgitpet-status-mockup .zg-column-body {
+      padding: 18px 12px;
+      color: #8c809c;
+    }
+    @media (max-width: 700px) {
+      #zgitpet-status-mockup { padding: 8px; }
+      #zgitpet-status-mockup .zg-status-panel { grid-template-columns: 1fr; }
+      #zgitpet-status-mockup .zg-guardian { justify-self: start; }
+      #zgitpet-status-mockup .zg-details { grid-template-columns: 1fr; }
+      #zgitpet-status-mockup .zg-summary { text-align: left; white-space: normal; }
+      #zgitpet-status-mockup .zg-content-preview { grid-template-columns: 1fr; }
+    }
+  </style>
+
+  <section class="zg-window" aria-label="ZomniverseGitPet Guardian status panel mockup">
+    <div class="zg-titlebar">
+      <div class="zg-title">
+        <img src="file:///I:/Dropbox/WORK_LAPTOP/Programming/ZomniverseGitPet/src/ZomniverseGitPet/Assets/Pet/pet_happy_01.png" alt="">
+        <span>DEV-ZGitPet Guardian</span>
+      </div>
+      <div class="zg-window-actions" aria-hidden="true"><span>—</span><span>□</span><span>×</span></div>
+    </div>
+    <nav class="zg-menubar" aria-label="Application menu">
+      <span>Project setup</span><span>Milestones</span><span>Help</span>
+    </nav>
+
+    <header class="zg-status-shell">
+      <div class="zg-status-panel">
+        <div class="zg-repository">
+          <h2 class="zg-repository-name">ZOMNIVERSE GITPET <span>/</span> ZOMNIVERSEGITPET</h2>
+          <div class="zg-chips" aria-label="Repository status">
+            <span class="zg-chip zg-chip-health">● HEALTHY</span>
+            <span class="zg-chip zg-chip-branch">BRANCH&nbsp; feature/sync-control-panel</span>
+            <span class="zg-chip zg-chip-changes">2 CHANGES</span>
+          </div>
+        </div>
+        <div class="zg-guardian"><span class="zg-guardian-dot"></span>GUARDIAN ACTIVE</div>
+        <div class="zg-details">
+          <div class="zg-commit">
+            <div>LATEST&nbsp; <strong>41389a6</strong> — checkpoint: 2026-09-11 12:47</div>
+            <div>2 unsaved changes · 1 saved update ready to send</div>
+          </div>
+          <div class="zg-summary">Watching this repository</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="zg-toolbar" aria-label="Repository actions">
+      <button class="zg-github" type="button">GitHub ✓</button>
+      <button type="button">Projects ▾</button>
+      <button type="button">Refresh</button>
+      <button type="button">Review</button>
+      <button type="button">Tests</button>
+      <button class="zg-save" type="button">Save</button>
+      <button type="button">Get ↓</button>
+      <button type="button">Send ↑</button>
+      <button type="button">History</button>
+      <button type="button">Health</button>
+    </div>
+
+    <div class="zg-content-preview" aria-hidden="true">
+      <div class="zg-column">
+        <div class="zg-column-heading"><span>SAVE — CHANGES ON THIS PC</span><span>2 TO SAVE</span></div>
+        <div class="zg-column-body">Changed files appear here</div>
+      </div>
+      <div class="zg-column zg-column-blue">
+        <div class="zg-column-heading"><span>GET — WAITING TO COME IN</span><span>CLEAR</span></div>
+        <div class="zg-column-body">Incoming updates appear here</div>
+      </div>
+    </div>
+  </section>
+</div>

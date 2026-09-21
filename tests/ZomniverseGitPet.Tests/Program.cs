@@ -2,6 +2,34 @@ using ZomniverseGitPet;
 
 var failures = new List<string>();
 
+Check("standalone Get stays disabled when project is current", () =>
+{
+    var current = new GuardianSyncSnapshot(true, "main", 0, 0, 0, true, true, true, false);
+    return !StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        current, onlineMode: true, linked: true, noLocalBaseline: false, operationRunning: false);
+});
+
+Check("standalone Get enables for incoming project changes", () =>
+{
+    var incoming = new GuardianSyncSnapshot(true, "main", 0, 0, 1, true, true, true, false);
+    return StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        incoming, onlineMode: true, linked: true, noLocalBaseline: false, operationRunning: false);
+});
+
+Check("standalone Get enables to establish an existing remote baseline", () =>
+{
+    var unbased = new GuardianSyncSnapshot(true, "main", 0, 0, 0, true, true, true, false);
+    return StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        unbased, onlineMode: true, linked: true, noLocalBaseline: true, operationRunning: false);
+});
+
+Check("standalone Get stays disabled when no remote branch exists", () =>
+{
+    var missingRemote = new GuardianSyncSnapshot(true, "main", 0, 0, 0, true, true, false, false);
+    return !StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        missingRemote, onlineMode: true, linked: true, noLocalBaseline: true, operationRunning: false);
+});
+
 Check("clean status", () =>
 {
     var status = GitService.ParsePorcelainV2("# branch.head main\n");
@@ -25,6 +53,36 @@ Check("branch.ab parses ahead and behind", () =>
     var status = GitService.ParsePorcelainV2(
         "# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -1\n");
     return status.HasTrackingInformation && status.Ahead == 2 && status.Behind == 1;
+});
+
+Check("repository branch discovery merges local and origin refs", () =>
+{
+    var branches = GitService.ParseRepositoryBranches(
+        "refs/heads/main\n" +
+        "refs/heads/feature/local-work\n" +
+        "refs/remotes/origin/HEAD\n" +
+        "refs/remotes/origin/main\n" +
+        "refs/remotes/origin/feature/local-work\n" +
+        "refs/remotes/origin/feature/online-only\n");
+
+    return branches.Count == 3 &&
+           branches[0] == new RepositoryBranchOption("main", true, true) &&
+           branches.Any(branch =>
+               branch == new RepositoryBranchOption("feature/local-work", true, true)) &&
+           branches.Any(branch =>
+               branch == new RepositoryBranchOption("feature/online-only", false, true));
+});
+
+Check("repository branch switch uses safe git switch arguments", () =>
+{
+    var local = GitService.BuildRepositorySwitchArguments(
+        new RepositoryBranchOption("feature/local-work", true, true));
+    var online = GitService.BuildRepositorySwitchArguments(
+        new RepositoryBranchOption("feature/online-only", false, true));
+
+    return local.SequenceEqual(["switch", "feature/local-work"]) &&
+           online.SequenceEqual(
+               ["switch", "--track", "-c", "feature/online-only", "origin/feature/online-only"]);
 });
 
 Check("friendly sync state uses singular and plural grammar", () =>
@@ -127,6 +185,24 @@ Check("project test advisor suggests without changing project files", () =>
                suggestions.Contains("npm test") &&
                suggestions.Contains("npm run test:unit") &&
                suggestions.All(command => !command.Contains("build", StringComparison.OrdinalIgnoreCase));
+    }
+    finally { TryDelete(root); }
+});
+
+Check("project test advisor prefers executable dotnet test runner", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "tests", "Sample.Tests"));
+        File.WriteAllText(
+            Path.Combine(root, "tests", "Sample.Tests", "Sample.Tests.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(root, "Sample.sln"), "");
+
+        var suggestions = ProjectTestAdvisor.Suggest(root);
+        return suggestions.SequenceEqual(
+            [$"dotnet run --project \"{Path.Combine("tests", "Sample.Tests", "Sample.Tests.csproj")}\" -c Release"]);
     }
     finally { TryDelete(root); }
 });
@@ -362,6 +438,76 @@ Check("reconfigure replaces previous managed scope", () =>
     finally { TryDelete(root); }
 });
 
+/* ==========================================================================
+   PATCH: RESTORED SCOPE REGRESSION COVERAGE
+   DATE.TIME: 2026-09-10 11:04 +03:00
+   REASON:
+   Verify managed scope survives reconfiguration and lazy tree restoration.
+   ========================================================================== */
+Check("managed scope round-trips selected directories and files", () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "CV", "expertise"));
+        File.WriteAllText(Path.Combine(root, "config.home.php"), "<?php");
+
+        var plan = ProjectScopePlanner.Create(
+            root,
+            [new ProjectScopeEntry("CV/expertise", true), new ProjectScopeEntry("config.home.php", false)],
+            trackEverything: false);
+        var rules = ProjectScopePlanner.BuildIgnoreRules(plan);
+        ProjectGitIgnoreComposer.Apply(root, rules, []);
+
+        var restored = ProjectGitIgnoreComposer.ReadManagedScope(root);
+        return restored is not null &&
+               restored.Count == 2 &&
+               restored.Any(entry => entry.IsDirectory && entry.RelativePath == "CV/expertise") &&
+               restored.Any(entry => !entry.IsDirectory && entry.RelativePath == "config.home.php");
+    }
+    finally { TryDelete(root); }
+});
+
+Check("restored selected directory covers unloaded descendants", () =>
+{
+    var model = new ProjectScopeSelectionModel([new ProjectScopeEntry("home", true)]);
+    return model.HasRestoredScope &&
+           model.GetState("home", true, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("home/app", true, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("home/app/file.cs", false, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("other", true, inheritedChecked: false) == ProjectScopeCheckState.Unchecked;
+});
+
+Check("restored partial scope remains available while collapsed", () =>
+{
+    var model = new ProjectScopeSelectionModel(
+        [new ProjectScopeEntry("CV/expertise", true), new ProjectScopeEntry("CV/readme.md", false)]);
+    var preserved = model.GetPreservedSelections("CV");
+
+    return model.GetState("CV", true, inheritedChecked: false) == ProjectScopeCheckState.Indeterminate &&
+           model.GetState("CV/expertise", true, inheritedChecked: false) == ProjectScopeCheckState.Checked &&
+           model.GetState("CV/applications", true, inheritedChecked: false) == ProjectScopeCheckState.Unchecked &&
+           preserved.Count == 2;
+});
+
+Check("user subtree overrides replace restored lazy selections", () =>
+{
+    var model = new ProjectScopeSelectionModel([new ProjectScopeEntry("CV/expertise", true)]);
+
+    model.SetSubtree("CV", false);
+    var cleared = model.GetState("CV/expertise", true, inheritedChecked: false) == ProjectScopeCheckState.Unchecked;
+
+    model.SetSubtree("CV", true);
+    var selected = model.GetState("CV/applications", true, inheritedChecked: false) == ProjectScopeCheckState.Checked;
+
+    model.SetSubtree("CV/applications", false);
+    var parentPartial = model.GetState("CV", true, inheritedChecked: false) == ProjectScopeCheckState.Indeterminate;
+    var childCleared = model.GetState("CV/applications", true, inheritedChecked: true) == ProjectScopeCheckState.Unchecked;
+    var siblingStillSelected = model.GetState("CV/expertise", true, inheritedChecked: true) == ProjectScopeCheckState.Checked;
+
+    return cleared && selected && parentPartial && childCleared && siblingStillSelected;
+});
+
 Check("major version suggestions advance generations without rewriting old tags", () =>
 {
     var none = MajorUpdateCoordinator.SuggestMajorVersions([]);
@@ -388,18 +534,193 @@ Check("github legacy release draft keeps tag and target explicit", () =>
            url.Contains("target=legacy%2Fv1", StringComparison.Ordinal);
 });
 
+/* ==========================================================================
+   PATCH: IGNORED FILE SAVE REGRESSIONS
+   DATE: 2026-09-11
+
+   Verify provenance and exact force-track stage planning.
+   ========================================================================== */
+Check("normal changed file keeps non-force Save staging", () =>
+{
+    var args = IgnoredFileSavePolicy.BuildStageArguments(["src/app.cs"], force: false);
+    return args.SequenceEqual(["add", "-A", "--", "src/app.cs"]);
+});
+
+Check("root gitignore provenance is retained", () =>
+{
+    var item = IgnoredFileSavePolicy.ParseCheckIgnore(string.Join('\0', ".gitignore", "37", "admin/", "admin/wanted.js") + "\0");
+    return item is { IgnoreSource: ".gitignore", IgnoreLine: 37, Rule: "admin/", Path: "admin/wanted.js" };
+});
+
+Check("nested gitignore provenance is retained", () =>
+{
+    var item = IgnoredFileSavePolicy.ParseCheckIgnore(string.Join('\0', "src/.gitignore", "9", "cache/", "src/cache/item.txt") + "\0");
+    return item is { IgnoreSource: "src/.gitignore", IgnoreLine: 9, Rule: "cache/" };
+});
+
+Check("info exclude provenance is retained", () =>
+{
+    var item = IgnoredFileSavePolicy.ParseCheckIgnore(string.Join('\0', ".git/info/exclude", "12", "cache/", "cache/local.txt") + "\0");
+    return item is { IgnoreSource: ".git/info/exclude", IgnoreLine: 12, Rule: "cache/" };
+});
+
+Check("approved ignored file is force-added exactly", () =>
+{
+    var ignored = new IgnoredProjectFile("admin/wanted.js", ".gitignore", 37, "admin/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], [ignored], [ignored.Path]);
+    var args = IgnoredFileSavePolicy.BuildStageArguments(plan.ApprovedIgnoredFiles, force: true);
+    return args.SequenceEqual(["add", "-f", "--", "admin/wanted.js"]);
+});
+
+Check("unticked ignored file is skipped while normal file remains", () =>
+{
+    var ignored = new IgnoredProjectFile("admin/wanted.js", ".gitignore", 37, "admin/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan(["src/app.cs"], [ignored], []);
+    return plan.NormalFiles.SequenceEqual(["src/app.cs"]) &&
+           plan.ApprovedIgnoredFiles.Count == 0 &&
+           plan.SkippedIgnoredFiles.SequenceEqual(["admin/wanted.js"]);
+});
+
+Check("multiple ignored files force-add only ticked paths", () =>
+{
+    var ignored = new[]
+    {
+        new IgnoredProjectFile("admin/a.js", ".gitignore", 37, "admin/"),
+        new IgnoredProjectFile("admin/b.js", ".gitignore", 37, "admin/")
+    };
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], ignored, ["admin/b.js"]);
+    return plan.ApprovedIgnoredFiles.SequenceEqual(["admin/b.js"]) &&
+           plan.SkippedIgnoredFiles.SequenceEqual(["admin/a.js"]);
+});
+
+Check("force stage command never substitutes parent directory", () =>
+{
+    var ignored = new IgnoredProjectFile("admin/deep/wanted.js", ".gitignore", 37, "admin/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], [ignored], [ignored.Path]);
+    var args = IgnoredFileSavePolicy.BuildStageArguments(plan.ApprovedIgnoredFiles, force: true);
+    return args.Contains("admin/deep/wanted.js") && !args.Contains("admin/") && !args.Contains("admin");
+});
+
+Check("cancel-equivalent empty approval produces no force command", () =>
+{
+    var ignored = new IgnoredProjectFile("cache/local.txt", ".git/info/exclude", 12, "cache/");
+    var plan = IgnoredFileSavePolicy.CreateStagePlan([], [ignored], []);
+    return IgnoredFileSavePolicy.BuildStageArguments(plan.ApprovedIgnoredFiles, force: true).Count == 0;
+});
+
+Check("tracked file beneath ignored parent stays normal", () =>
+{
+    var plan = IgnoredFileSavePolicy.CreateStagePlan(["admin/tracked.js"], [], []);
+    return plan.NormalFiles.SequenceEqual(["admin/tracked.js"]) && plan.ApprovedIgnoredFiles.Count == 0;
+});
+
+Check("force stage preserves spaces in exact path", () =>
+{
+    var args = IgnoredFileSavePolicy.BuildStageArguments(["admin/my file.js"], force: true);
+    return args[^1] == "admin/my file.js" && args.Count == 4;
+});
+
+Check("force stage preserves Unicode in exact path", () =>
+{
+    var args = IgnoredFileSavePolicy.BuildStageArguments(["дані/проєкт.txt"], force: true);
+    return args[^1] == "дані/проєкт.txt" && args.Count == 4;
+});
+
+await CheckAsync("Git-native preflight reports all ignore sources before staging", async () =>
+{
+    var root = CreateTempDirectory();
+    try
+    {
+        RunGit(root, "init");
+        RunGit(root, "config", "user.name", "GitPet Test");
+        RunGit(root, "config", "user.email", "gitpet@example.invalid");
+        Directory.CreateDirectory(Path.Combine(root, "admin"));
+        Directory.CreateDirectory(Path.Combine(root, "nested", "cache"));
+        Directory.CreateDirectory(Path.Combine(root, "tracked-parent"));
+        File.WriteAllText(Path.Combine(root, ".gitignore"), "admin/\ntracked-parent/\n");
+        File.WriteAllText(Path.Combine(root, "nested", ".gitignore"), "cache/\n");
+        File.WriteAllText(Path.Combine(root, "tracked-parent", "tracked.txt"), "before");
+        RunGit(root, "add", "-f", "--", ".gitignore", "nested/.gitignore", "tracked-parent/tracked.txt");
+        RunGit(root, "commit", "-m", "baseline");
+
+        File.AppendAllText(Path.Combine(root, "tracked-parent", "tracked.txt"), " after");
+        File.WriteAllText(Path.Combine(root, "admin", "wanted file.js"), "root ignore");
+        File.WriteAllText(Path.Combine(root, "nested", "cache", "wanted.txt"), "nested ignore");
+        File.AppendAllText(Path.Combine(root, ".git", "info", "exclude"), "\nlocal-cache/\n");
+        Directory.CreateDirectory(Path.Combine(root, "local-cache"));
+        File.WriteAllText(Path.Combine(root, "local-cache", "дані.txt"), "exclude ignore");
+
+        var config = new AppConfig();
+        config.RememberProject(root, root, "Scoped test", trackEverything: false,
+        [
+            new ProjectScopeEntry("admin", true),
+            new ProjectScopeEntry("nested", true),
+            new ProjectScopeEntry("local-cache", true),
+            new ProjectScopeEntry("tracked-parent", true)
+        ]);
+        LogicalProjectScopeRuntime.Initialize(config);
+        var service = new GitService(new AuditLog(Path.Combine(root, "audit.jsonl")));
+        var result = await service.GetSavePreflightAsync(root);
+        var stagedAfterPreflight = RunGit(root, "diff", "--cached", "--name-only");
+
+        var passed = result.Success && string.IsNullOrWhiteSpace(stagedAfterPreflight) &&
+                     result.NormalChangedFiles.Contains("tracked-parent/tracked.txt") &&
+                     result.IgnoredChangedFiles.Any(item => item.Path == "admin/wanted file.js" && item.IgnoreSource.EndsWith(".gitignore")) &&
+                     result.IgnoredChangedFiles.Any(item => item.Path == "nested/cache/wanted.txt" && item.IgnoreSource.EndsWith("nested/.gitignore")) &&
+                     result.IgnoredChangedFiles.Any(item => item.Path == "local-cache/дані.txt" && item.IgnoreSource.Contains(".git/info/exclude"));
+        if (!passed)
+            throw new InvalidOperationException(
+                $"success={result.Success}; error={result.Error}; staged={stagedAfterPreflight}; normal={string.Join('|', result.NormalChangedFiles)}; " +
+                $"ignored={string.Join('|', result.IgnoredChangedFiles.Select(item => $"{item.Path}@{item.IgnoreSource}:{item.IgnoreLine}:{item.Rule}"))}");
+        return true;
+    }
+    finally { TryDelete(root); }
+});
+
+await SavePreflightBatchRegression.RunAsync();
+await FileReviewRegression.RunAsync();
+await LongPathRegression.RunAsync();
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 31 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 52 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)
 {
     try { if (!test()) failures.Add("FAIL: " + name); }
     catch (Exception ex) { failures.Add($"FAIL: {name}: {ex.Message}"); }
+}
+
+async Task CheckAsync(string name, Func<Task<bool>> test)
+{
+    try { if (!await test()) failures.Add("FAIL: " + name); }
+    catch (Exception ex) { failures.Add($"FAIL: {name}: {ex.Message}"); }
+}
+
+string RunGit(string workingDirectory, params string[] arguments)
+{
+    using var process = new System.Diagnostics.Process
+    {
+        StartInfo = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git.exe",
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        }
+    };
+    foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
+    process.Start();
+    var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    if (process.ExitCode != 0) throw new InvalidOperationException(output);
+    return output.Trim();
 }
 
 string CreateTempDirectory()

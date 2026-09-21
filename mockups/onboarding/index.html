@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZomniverseGitPet — First-run onboarding mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --window: #120f18;
+      --surface: #1b1624;
+      --raised: #231c2f;
+      --soft: #2a2139;
+      --border: #4d3e65;
+      --ink: #f4f0f9;
+      --muted: #b0a6be;
+      --faint: #847a94;
+      --violet: #7548bc;
+      --violet-hover: #8b58d8;
+      --pink: #ff329e;
+      --pink-soft: #f683c1;
+      --healthy: #4dd08b;
+      --healthy-fill: #183b2d;
+      --orange: #f05032;
+      --orange-fill: #592a1f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 82% 88%, rgba(117, 72, 188, 0.16), transparent 28rem),
+        #0d0b11;
+      color: var(--ink);
+      font: 15px/1.45 "Segoe UI", system-ui, sans-serif;
+    }
+
+    button, input { font: inherit; }
+
+    .app-window {
+      width: min(1160px, calc(100vw - 48px));
+      min-height: min(840px, calc(100vh - 48px));
+      display: grid;
+      grid-template-rows: 44px auto 1fr 74px;
+      overflow: hidden;
+      border: 1px solid var(--pink);
+      border-radius: 13px;
+      background: var(--window);
+      box-shadow: 0 30px 90px rgba(0, 0, 0, 0.58);
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      background: #1c1626;
+      font-size: 14px;
+    }
+
+    .titlebar .close { margin-left: auto; color: var(--muted); font-size: 22px; }
+
+    .hero {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 22px 34px;
+      background: var(--raised);
+    }
+
+    .hero img { width: 58px; height: 58px; object-fit: contain; }
+    .hero h1 { margin: 0; font-size: 27px; letter-spacing: 0.02em; }
+    .hero p { margin: 3px 0 0; color: var(--muted); font-size: 16px; }
+
+    main { padding: 26px 34px 30px; overflow: auto; }
+
+    .account-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      border: 1px solid #286848;
+      border-radius: 9px;
+      background: var(--healthy-fill);
+    }
+
+    .account-bar strong { color: var(--healthy); }
+    .account-bar .actions { display: flex; gap: 9px; margin-left: auto; }
+
+    .eyebrow {
+      margin: 27px 0 4px;
+      color: var(--pink-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+    }
+
+    .section-intro { margin: 0 0 16px; color: var(--muted); }
+
+    .choices {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .choice {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 250px;
+      padding: 23px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface);
+      transition: border-color 150ms, transform 150ms, background 150ms;
+    }
+
+    .choice:hover { transform: translateY(-2px); border-color: var(--violet-hover); }
+    .choice.primary { border-color: var(--pink); background: linear-gradient(145deg, #251a35, var(--surface)); }
+    .choice h2 { margin: 8px 0 8px; font-size: 20px; }
+    .choice p { margin: 0 0 18px; color: var(--muted); }
+    .choice .button { margin-top: auto; }
+
+    .badge {
+      align-self: flex-start;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(255, 50, 158, 0.14);
+      color: var(--pink-soft);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .badge.secondary { background: var(--soft); color: var(--muted); }
+
+    .button {
+      min-height: 42px;
+      padding: 9px 17px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--soft);
+      color: white;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    .button:hover { background: #352847; }
+    .button.primary { border-color: var(--pink); background: var(--violet); }
+    .button.primary:hover { background: var(--violet-hover); }
+    .button.quiet { min-height: 34px; padding: 5px 12px; background: transparent; }
+
+    .clone-panel {
+      display: none;
+      grid-column: 1 / -1;
+      grid-template-columns: 145px 1fr 140px;
+      gap: 12px;
+      align-items: center;
+      padding: 20px 22px;
+      border: 1px solid var(--violet);
+      border-radius: 10px;
+      background: var(--raised);
+    }
+
+    .clone-panel.visible { display: grid; }
+    .clone-panel h3 { grid-column: 1 / -1; margin: 0 0 4px; }
+    .clone-panel label { color: var(--muted); font-size: 12px; font-weight: 800; }
+    .clone-panel input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); background: #0e0c13; color: var(--ink); }
+    .clone-panel .hint { grid-column: 2 / -1; margin: 0; color: var(--faint); font-size: 12px; }
+
+    footer {
+      display: flex;
+      align-items: center;
+      padding: 14px 28px;
+      border-top: 1px solid #2b2239;
+      background: var(--raised);
+    }
+
+    footer p { margin: 0; color: var(--faint); }
+    footer .button { margin-left: auto; min-width: 210px; }
+
+    .pet {
+      position: fixed;
+      right: 12px;
+      bottom: 8px;
+      width: 155px;
+      filter: drop-shadow(0 12px 15px rgba(0, 0, 0, 0.55));
+    }
+
+    @media (max-width: 850px) {
+      body { overflow: auto; place-items: start center; }
+      .app-window { margin: 18px; width: calc(100vw - 36px); }
+      .choices { grid-template-columns: 1fr; }
+      .clone-panel { grid-template-columns: 1fr; }
+      .clone-panel > * { grid-column: 1 !important; }
+      .account-bar { align-items: flex-start; flex-direction: column; }
+      .account-bar .actions { margin-left: 0; }
+      .pet { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <section class="app-window" aria-label="ZomniverseGitPet welcome window">
+    <div class="titlebar"><span>🦊</span><span>Welcome to ZomniverseGitPet</span><span class="close">×</span></div>
+
+    <header class="hero">
+      <img src="../../src/ZomniverseGitPet/Assets/Pet/pet_happy_01.png" alt="Purple GitPet fox">
+      <div>
+        <h1>WELCOME TO ZOMNIVERSE GITPET</h1>
+        <p>Let’s choose how you want to begin. You can change these settings later.</p>
+      </div>
+    </header>
+
+    <main>
+      <section class="account-bar">
+        <span>●</span>
+        <div><strong>GitHub connected</strong><br><span>Signed in as wilderruiz</span></div>
+        <div class="actions">
+          <button class="button quiet">Check again</button>
+          <button class="button quiet">Work locally only</button>
+        </div>
+      </section>
+
+      <p class="eyebrow">CHOOSE ONE WAY TO START</p>
+      <p class="section-intro">Already have a project on this computer? Open it directly—that is the recommended path for most users.</p>
+
+      <section class="choices">
+        <article class="choice primary">
+          <span class="badge">Recommended</span>
+          <h2>📂 Open an existing project</h2>
+          <p>Select a Git repository or project folder that is already on this computer. GitPet will review its scope before watching it.</p>
+          <button class="button primary">Open existing folder</button>
+        </article>
+
+        <article class="choice">
+          <span class="badge secondary">Online project</span>
+          <h2>📦 Clone a repository</h2>
+          <p>Copy a repository from GitHub or another Git server to this computer while preserving its complete history.</p>
+          <button class="button" id="show-clone" aria-expanded="false">Clone an online project</button>
+        </article>
+
+        <div class="clone-panel" id="clone-panel">
+          <h3>Clone an online project</h3>
+          <label for="repository">REPOSITORY</label>
+          <input id="repository" placeholder="owner/repository or https://github.com/owner/repository.git">
+          <button class="button">Browse GitHub</button>
+          <label for="destination">SAVE COPY IN</label>
+          <input id="destination" placeholder="Local destination folder">
+          <button class="button primary">Clone to this computer</button>
+          <p class="hint">GitPet preserves Git history and opens Project Scope before it starts watching the repository.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>No project yet? You can begin with the pet and choose one later.</p>
+      <button class="button">Start without a project</button>
+    </footer>
+  </section>
+
+  <img class="pet" src="../../src/ZomniverseGitPet/Assets/Pet/pet_happy_01.png" alt="ZomniverseGitPet desktop companion">
+
+  <script>
+    const toggle = document.querySelector('#show-clone');
+    const clonePanel = document.querySelector('#clone-panel');
+
+    toggle.addEventListener('click', () => {
+      const visible = clonePanel.classList.toggle('visible');
+      toggle.setAttribute('aria-expanded', String(visible));
+      toggle.textContent = visible ? 'Hide clone options' : 'Clone an online project';
+      if (visible) document.querySelector('#repository').focus();
+    });
+  </script>
+</body>
+</html>

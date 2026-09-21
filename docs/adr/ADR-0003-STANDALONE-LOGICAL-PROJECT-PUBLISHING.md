@@ -9,7 +9,7 @@ Given [ADR-0002](ADR-0002-LOGICAL-PROJECTS-AS-SCOPED-OVERLAYS.md), a scoped logi
 
 ## Decision
 
-`StandaloneProjectPublishing` builds and maintains a completely separate, on-disk Git working copy per logical project (under `%LOCALAPPDATA%\ZomniverseGitPet\Publishing\<projectId>\`), containing only that project's in-scope files copied out of the parent repository's committed tree, with its own `.git` history and its own linked remote. Publishing recreates the workspace's tracked content from a fresh snapshot each time, commits only if the content actually changed (via a content-based fingerprint), and pushes from there.
+`StandaloneProjectPublishing` builds and maintains completely separate on-disk Git working copies for a logical project's standalone branches (under `%LOCALAPPDATA%\ZomniverseGitPet\Publishing\<projectId>\`, with deterministic branch subdirectories for non-main branches), containing only that project's in-scope files copied out of the parent repository's committed tree, with their own `.git` history and the project's own linked remote. Publishing recreates the selected branch workspace's tracked content from a fresh snapshot each time, commits only if the content actually changed (via a content-based fingerprint), and pushes explicitly to the selected standalone remote ref. Selecting a standalone branch never switches the parent repository branch.
 
 ## Reasons
 
@@ -20,6 +20,7 @@ Given [ADR-0002](ADR-0002-LOGICAL-PROJECTS-AS-SCOPED-OVERLAYS.md), a scoped logi
 ## Consequences
 
 - Requires disk space and a bit of extra work (copying files, force-adding, committing) on every publish rather than a lighter-weight `git push` of an existing ref.
+- Each standalone branch has an independent publish baseline/workspace; switching branches costs additional disk space but prevents one branch's fingerprint/HEAD from being mistaken for another's.
 - The workspace is disposable and rebuilt from the parent repository's tree each time — it should never be treated as a place to make manual edits.
 - A scoped project's published history has no relationship to the parent repository's commit graph; anyone consuming the published remote sees a fresh, project-only history rather than a filtered view of the original one.
 

@@ -10,9 +10,9 @@ internal sealed record ProjectScopePlan(
 {
     public string Summary => TrackEverything
         ? NestedRepositories.Count == 0
-            ? "Everything in the chosen project root will be visible to Git."
-            : $"Everything is selected, with {NestedRepositories.Count} nested Git repositor{(NestedRepositories.Count == 1 ? "y" : "ies")} kept outside this project."
-        : $"Selective scope: {Entries.Count} chosen item{(Entries.Count == 1 ? "" : "s")}. Unselected root content stays outside this Git project.";
+            ? "Everything in the shared repository is included in this GitPet project."
+            : $"Everything is selected, with {NestedRepositories.Count} nested Git repositor{(NestedRepositories.Count == 1 ? "y" : "ies")} protected from the parent repository."
+        : $"Selective GitPet scope: {Entries.Count} chosen item{(Entries.Count == 1 ? "" : "s")}. Unselected repository content can belong to other GitPet projects.";
 }
 
 internal static class ProjectScopePlanner
@@ -125,7 +125,7 @@ internal static class ProjectScopePlanner
 
         current.Selected = true;
         current.IsDirectory = entry.IsDirectory;
-        if (entry.IsDirectory) current.Children.Clear(); // selecting a folder means its whole subtree
+        if (entry.IsDirectory) current.Children.Clear();
     }
 
     private static void EmitNode(ScopeNode node, string parentPath, List<string> rules)
@@ -138,7 +138,6 @@ internal static class ProjectScopePlanner
             return;
         }
 
-        // Directory or an intermediate parent needed to reach a selected descendant.
         AddUnique(rules, "!/" + path + "/");
 
         if (node.Selected && node.IsDirectory)
@@ -147,9 +146,6 @@ internal static class ProjectScopePlanner
             return;
         }
 
-        // Re-open the directory, then ignore its children until selected descendants are
-        // explicitly re-included. This is what makes deep selections such as CV/expertise
-        // safe without accidentally including the rest of CV.
         AddUnique(rules, "/" + path + "/*");
         foreach (var child in node.Children.Values.OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase))
             EmitNode(child, path, rules);

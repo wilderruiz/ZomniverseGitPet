@@ -12,6 +12,8 @@ internal static class FriendlyGitState
 {
     public static string FormatSyncSummary(RepositoryStatus status)
     {
+        GuardianSyncState.PublishLocal(status);
+
         var parts = new List<string>
         {
             Count(status.Files.Count, "unsaved change")

@@ -4,8 +4,6 @@ This is the canonical documentation index for ZomniverseGitPet ("GitPet"), a Win
 
 For the project pitch and screenshots, see the [root README](../README.md). This page is the map for everything else.
 
-> These canonical docs describe behavior shipped in the current stable GitPet application. Active source development may happen on other branches, but users should not need to switch branches to find the stable documentation. For the latest public build, use [GitHub Releases](../../releases/latest).
-
 ```mermaid
 flowchart LR
     U["For users\nhow to use GitPet"] --> ROOT((docs))
@@ -76,7 +74,7 @@ See the [ADR index](adr/README.md) for the full list. These records capture *why
 | [Release History](history/RELEASE_HISTORY.md) | Version-by-version changelog record, including known gaps. |
 | [Major Updates and Releases](history/MAJOR_UPDATES_AND_RELEASES.md) | The Milestones / legacy-branch feature for a user's own project history (moved here from the repository root `docs/` folder). |
 
-The original PowerShell prototype (`prototype/powershell/`) is a superseded proof of concept, not part of this documentation tree; see its own `README.md` for context. Maintainer-only audit material lives under `docs/internal/` and is not part of the public reading path.
+The original PowerShell prototype (`prototype/powershell/`) is a superseded proof of concept, not part of this documentation tree; see its own `README.md` for context. `docs/wilder_notes.md` is the maintainer's personal scratch notes and is not canonical documentation.
 
 ---
 

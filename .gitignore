@@ -31,3 +31,44 @@ Desktop.ini
 # Local configuration must never be committed
 config.json
 audit.jsonl
+
+# =============================================================================
+# Suggested by ZomniverseGitPet — files and folders Git should leave alone
+# These ignore patterns were explicitly selected in GitPet.
+# A pattern without a leading / applies by name throughout the project tree.
+# Lines beginning with ! are safe exceptions that keep matching templates visible to Git.
+# =============================================================================
+# Ignore files ending in .pem anywhere in the project.
+*.pem
+# Ignore files ending in .key anywhere in the project.
+*.key
+# Ignore folders named 'node_modules' anywhere in the project.
+node_modules/
+# Ignore folders named 'vendor' anywhere in the project.
+vendor/
+# Ignore folders named '.venv' anywhere in the project.
+.venv/
+# Ignore folders named 'venv' anywhere in the project.
+venv/
+# Ignore folders named '__pycache__' anywhere in the project.
+__pycache__/
+# Ignore folders named '.pytest_cache' anywhere in the project.
+.pytest_cache/
+# Ignore folders named '.mypy_cache' anywhere in the project.
+.mypy_cache/
+# Ignore folders named '.ruff_cache' anywhere in the project.
+.ruff_cache/
+# Ignore files ending in .tmp anywhere in the project.
+*.tmp
+# Ignore folders named 'tmp' anywhere in the project.
+tmp/
+# Ignore folders named 'temp' anywhere in the project.
+temp/
+# Ignore folders named '.idea' anywhere in the project.
+.idea/
+# Ignore files or folders whose name contains LEGACY/legacy anywhere in the project.
+**/*LEGACY*
+# Ignore files ending in .bak anywhere in the project.
+*.bak
+# Ignore items named '*~' anywhere in the project.
+*~

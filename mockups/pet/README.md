@@ -15,7 +15,26 @@ This design-review pack defines one coherent **purple fox repository companion**
 
 Open `mockups/pet/index.html` directly in a browser. The gallery has no build step, framework, network request, or external dependency.
 
-**Four of the six static states above (`pet_idle_01`, `pet_happy_01`, `pet_review_ready_01`, `pet_warning_01`) are already embedded in the live application and rendered by it; `pet_idle_02` and `pet_sleep_01` are not yet used. Animation and state-transition behavior beyond swapping a static image are not yet implemented for any state.** (Corrected 2026-09-11 during documentation review — this file previously stated none of the mockups were integrated, which the shipped application's embedded resources and the main `README.md`'s "Meet the guardian" section now contradict.)
+The original PNG/SVG states remain embedded as a compatibility fallback, but the production desktop mascot is now rendered live by `PetDirect2DControl`. The Direct2D Guardian keeps the same purple identity while repository and operation state drive expressions, tail motion, armor/palette transitions, and whole-pet activity effects at the 160 × 160 desktop size. If native Direct2D rendering fails, `PetForm` falls back to the embedded PNG states.
+
+## Save lifecycle assets
+
+Save uses dedicated artwork selected centrally by `PetAssets.ForOperation` from the shared operation state:
+
+| Phase | SVG source |
+| --- | --- |
+| Preparing | `pet_thinking_01`, `pet_save_prepare_01` |
+| Checking path support | `pet_thinking_01` |
+| Staging | `pet_save_sorting_01`, `pet_save_sorting_02` |
+| Creating checkpoint | `pet_save_packing_01`, `pet_save_packing_02` |
+| Completed | `pet_save_success_01` |
+| Warning | `pet_save_warning_01` |
+| Failed | `pet_save_error_01` |
+| Cancelled | Existing idle artwork |
+
+All sources live in `svg/`, use the existing transparent 160 × 160 viewBox, and share the original fox geometry and palette. Sorting and packing alternate at the existing 260 ms UI interval; this conveys activity, not per-file progress. Terminal states retain the existing display hold.
+
+WinForms displays embedded PNGs, so the SVGs are rasterized to transparent 320 × 320 PNGs in `src/ZomniverseGitPet/Assets/Pet`. Run `node scripts/render-pet-assets.cjs` from the repository with the `sharp` Node module available (including via `NODE_PATH`) after editing sources. Commit both SVGs and PNGs. Normal app builds need no SVG renderer. Missing dedicated resources fall back to the closest generic state.
 
 ## Visual direction
 

@@ -792,13 +792,14 @@ internal sealed class FileReviewPane : Panel
         Color background)
     {
         if (changedLines.Count == 0 || box.TextLength == 0) return;
+        var text = box.Text;
 
         var lineNumber = 1;
         var lineStart = 0;
-        for (var i = 0; i <= box.TextLength; i++)
+        for (var i = 0; i <= text.Length; i++)
         {
-            var atEnd = i == box.TextLength;
-            var atLineBreak = !atEnd && box.Text[i] == '\n';
+            var atEnd = i == text.Length;
+            var atLineBreak = !atEnd && text[i] == '\n';
             if (!atEnd && !atLineBreak) continue;
 
             if (changedLines.Contains(lineNumber))

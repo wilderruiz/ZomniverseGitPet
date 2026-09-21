@@ -7,6 +7,10 @@ namespace ZomniverseGitPet;
 public sealed class GitService(AuditLog audit)
 {
     private readonly SemaphoreSlim _gitGate = new(1, 1);
+    private readonly HashSet<string> _longPathReadyRepositories = new(StringComparer.OrdinalIgnoreCase);
+    internal int GitProcessLaunchCount { get; private set; }
+    private readonly List<string> _launchedGitSubcommands = [];
+    internal IReadOnlyList<string> LaunchedGitSubcommands => _launchedGitSubcommands;
 
     public async Task<CommandResult> RunGitAsync(
         string repositoryPath,
@@ -18,14 +22,18 @@ public sealed class GitService(AuditLog audit)
         await _gitGate.WaitAsync(cancellationToken);
         try
         {
+            var started = Stopwatch.StartNew();
+            GitProcessLaunchCount++;
+            _launchedGitSubcommands.Add(GetGitSubcommand(args));
             var result = await RunProcessAsync("git.exe", args, repositoryPath,
                 timeout ?? TimeSpan.FromSeconds(30), cancellationToken);
             await audit.WriteAsync("git_operation", new
             {
-                operation = args.FirstOrDefault() ?? "unknown",
+                operation = GetGitSubcommand(args),
                 success = result.Success,
                 result.ExitCode,
-                result.TimedOut
+                result.TimedOut,
+                elapsedMilliseconds = started.ElapsedMilliseconds
             });
             return result;
         }
@@ -35,18 +43,164 @@ public sealed class GitService(AuditLog audit)
         }
     }
 
+    private async Task<CommandResult> RunGitWithInputAsync(
+        string repositoryPath,
+        IEnumerable<string> arguments,
+        string standardInput,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var args = arguments.ToArray();
+        await _gitGate.WaitAsync(cancellationToken);
+        try
+        {
+            var started = Stopwatch.StartNew();
+            GitProcessLaunchCount++;
+            _launchedGitSubcommands.Add(GetGitSubcommand(args));
+            var result = await RunProcessAsync("git.exe", args, repositoryPath, timeout,
+                cancellationToken, standardInput);
+            await audit.WriteAsync("git_operation", new
+            {
+                operation = GetGitSubcommand(args),
+                success = result.Success,
+                result.ExitCode,
+                result.TimedOut,
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+            return result;
+        }
+        finally
+        {
+            _gitGate.Release();
+        }
+    }
+
+    private static string GetGitSubcommand(IReadOnlyList<string> arguments)
+    {
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (arguments[index] == "-c") { index++; continue; }
+            if (!arguments[index].StartsWith('-')) return arguments[index];
+        }
+        return arguments.FirstOrDefault() ?? "unknown";
+    }
+
+    public Task<RepositoryLongPathResult> EnsureRepositoryLongPathsAsync(
+        string path,
+        IProgress<GuardianActivityEvent>? progress = null,
+        CancellationToken token = default) =>
+        EnsureRepositoryLongPathsCoreAsync(path, OperatingSystem.IsWindows(), progress, token,
+            arguments => RunGitAsync(path, arguments, TimeSpan.FromSeconds(20), token));
+
+    internal async Task<RepositoryLongPathResult> EnsureRepositoryLongPathsCoreAsync(
+        string path,
+        bool isWindows,
+        IProgress<GuardianActivityEvent>? progress,
+        CancellationToken token,
+        Func<IReadOnlyList<string>, Task<CommandResult>> runGit,
+        bool forceRecheck = false)
+    {
+        if (!isWindows) return new(false, false, false);
+        var repositoryKey = Path.GetFullPath(path);
+        if (!forceRecheck && _longPathReadyRepositories.Contains(repositoryKey))
+            return new(true, true, false);
+
+        token.ThrowIfCancellationRequested();
+        var started = Stopwatch.StartNew();
+        progress?.Report(new(GuardianActivityKind.LongPathChecking,
+            "Checking repository path support..."));
+        var current = await runGit(["config", "--local", "--get", "core.longpaths"]);
+        if (current.Success && string.Equals(current.Output.Trim(), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            _longPathReadyRepositories.Add(repositoryKey);
+            progress?.Report(new(GuardianActivityKind.LongPathAlreadyEnabled,
+                "Git long-path support is enabled for this repository."));
+            await audit.WriteAsync("repository_longpaths_checked", new
+            {
+                repository = Path.GetFileName(repositoryKey),
+                enabled = true,
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+            return new(true, true, false);
+        }
+
+        progress?.Report(new(GuardianActivityKind.LongPathEnabling,
+            "Enabling Git long-path support for this repository..."));
+        var configured = await runGit(["config", "--local", "core.longpaths", "true"]);
+        if (configured.Success)
+        {
+            _longPathReadyRepositories.Add(repositoryKey);
+            progress?.Report(new(GuardianActivityKind.LongPathAlreadyEnabled,
+                "core.longpaths enabled locally."));
+            await audit.WriteAsync("repository_longpaths_enabled", new
+            {
+                repository = Path.GetFileName(repositoryKey),
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+            return new(true, true, true);
+        }
+
+        var error = "GitPet could not enable repository-local long-path support. " +
+                    "Long paths may still prevent Save.\r\n" + configured.Output;
+        progress?.Report(new(GuardianActivityKind.LongPathConfigurationFailed, error));
+        await audit.WriteAsync("repository_longpaths_enable_failed", new
+        {
+            repository = Path.GetFileName(repositoryKey),
+            elapsedMilliseconds = started.ElapsedMilliseconds,
+            error = configured.Output
+        });
+        return new(true, false, false, error);
+    }
+
+    internal static bool IsLongPathFailure(CommandResult result) =>
+        !result.Success && result.Output.Contains("filename too long", StringComparison.OrdinalIgnoreCase);
+
     public async Task<RepositoryStatus> GetStatusAsync(string repositoryPath, CancellationToken token = default)
     {
         if (string.IsNullOrWhiteSpace(repositoryPath) || !Directory.Exists(repositoryPath))
             return RepositoryStatus.Failure("Choose a Git repository to begin.");
 
-        var result = await RunGitAsync(repositoryPath,
-            ["status", "--porcelain=v2", "--branch", "--untracked-files=all"],
-            TimeSpan.FromSeconds(20), token);
+        var arguments = new List<string>
+        {
+            "status", "--porcelain=v2", "--branch", "--untracked-files=all"
+        };
+        var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(repositoryPath, includeRootGitIgnore: true);
+        if (pathspecs.Count > 0)
+        {
+            arguments.Add("--");
+            arguments.AddRange(pathspecs);
+        }
+
+        var result = await RunGitAsync(repositoryPath, arguments, TimeSpan.FromSeconds(20), token);
         if (!result.Success)
             return RepositoryStatus.Failure(result.Output.Length == 0 ? "Git status failed." : result.Output);
 
         return ParsePorcelainV2(result.Output);
+    }
+
+    public Task<CommandResult> ValidateRepositoryStateAsync(
+        string repositoryPath,
+        CancellationToken token = default) =>
+        RunGitAsync(
+            repositoryPath,
+            ["status", "--porcelain=v2", "--branch", "--untracked-files=no"],
+            TimeSpan.FromSeconds(20),
+            token);
+
+    internal static string DescribeRepositoryReadFailure(string? output)
+    {
+        var details = string.IsNullOrWhiteSpace(output)
+            ? "Git could not read the repository state."
+            : output.Trim();
+
+        if (!details.Contains("bad object HEAD", StringComparison.OrdinalIgnoreCase))
+            return details;
+
+        return "Git cannot read this project's HEAD. HEAD refers to a Git object that is missing or unreadable " +
+               "in this repository. GitPet will treat the repository as unhealthy and will not perform Git-changing " +
+               "operations while that metadata is incomplete.\r\n\r\n" +
+               "Restore the repository's .git object data from a known-good copy, or re-clone/recreate the repository, " +
+               "then try opening the project again.\r\n\r\nGit reported:\r\n" + details;
     }
 
     public Task<CommandResult> GetGitVersionAsync(string path, CancellationToken token = default) =>
@@ -55,7 +209,12 @@ public sealed class GitService(AuditLog audit)
     public async Task<CommandResult> GetRepositoryRootAsync(string path, CancellationToken token = default)
     {
         var result = await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
-        if (result.Success || !IsDubiousOwnershipError(result.Output)) return result;
+        if (result.Success)
+        {
+            await EnsureRepositoryLongPathsAsync(path, token: token);
+            return result;
+        }
+        if (!IsDubiousOwnershipError(result.Output)) return result;
 
         using var trust = new SafeDirectorySetupForm(path, result.Output);
         if (trust.ShowDialog() != DialogResult.OK)
@@ -66,7 +225,9 @@ public sealed class GitService(AuditLog audit)
         var configured = await AddSafeDirectoryAsync(path, token);
         if (!configured.Success) return configured;
 
-        return await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+        var verified = await RunGitAsync(path, ["rev-parse", "--show-toplevel"], cancellationToken: token);
+        if (verified.Success) await EnsureRepositoryLongPathsAsync(path, token: token);
+        return verified;
     }
 
     public Task<CommandResult> InitializeRepositoryAsync(string path, CancellationToken token = default) =>
@@ -125,6 +286,22 @@ public sealed class GitService(AuditLog audit)
     public Task<CommandResult> GetLastCommitAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-1", "--format=%H%x09%h%x09%ad%x09%s", "--date=iso-strict"], cancellationToken: token);
 
+    // Interactive, read-only review must not queue behind background fetch/status work.
+    // Pin both content and diff to the commit returned by this query.
+    internal Task<CommandResult> GetReviewCommitAsync(string path, CancellationToken token) =>
+        RunProcessAsync("git.exe",
+            ["log", "-1", "--format=%H%x09%h%x09%ad%x09%s", "--date=iso-strict"],
+            path, TimeSpan.FromSeconds(20), token);
+
+    internal Task<CommandResult> GetReviewContentAsync(string path, string file, string commit, CancellationToken token) =>
+        RunProcessAsync("git.exe", ["show", $"{commit}:{NormalizeGitRelativePath(file)}"],
+            path, TimeSpan.FromSeconds(20), token);
+
+    internal Task<CommandResult> GetReviewDiffAsync(string path, string file, string commit, CancellationToken token) =>
+        RunProcessAsync("git.exe",
+            ["diff", "--no-ext-diff", "--no-textconv", "--unified=0", commit, "--", NormalizeGitRelativePath(file)],
+            path, TimeSpan.FromSeconds(20), token);
+
     public Task<CommandResult> GetRecentCommitsAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-12", "--date=short", "--pretty=format:%h  %ad  %s"], cancellationToken: token);
 
@@ -159,6 +336,96 @@ public sealed class GitService(AuditLog audit)
 
     public Task<CommandResult> GetCurrentBranchAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["branch", "--show-current"], cancellationToken: token);
+
+    public async Task<IReadOnlyList<RepositoryBranchOption>> ListRepositoryBranchesAsync(
+        string path,
+        bool refreshRemote = true,
+        CancellationToken token = default)
+    {
+        if (refreshRemote)
+        {
+            var origin = await GetOriginUrlAsync(path, token);
+            if (origin.Success && !string.IsNullOrWhiteSpace(origin.Output))
+            {
+                // Best-effort refresh. Local branch switching remains available if the
+                // network is temporarily unavailable.
+                await RunGitAsync(
+                    path,
+                    ["fetch", "--quiet", "--prune", "origin"],
+                    TimeSpan.FromMinutes(2),
+                    token);
+            }
+        }
+
+        var refs = await RunGitAsync(
+            path,
+            ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes/origin"],
+            TimeSpan.FromSeconds(20),
+            token);
+        return refs.Success ? ParseRepositoryBranches(refs.Output) : [];
+    }
+
+    public async Task<CommandResult> SwitchRepositoryBranchAsync(
+        string path,
+        RepositoryBranchOption branch,
+        CancellationToken token = default)
+    {
+        var status = await GetStatusAsync(path, token);
+        if (!status.Healthy)
+            return new(-1, status.Error.Length == 0 ? "GitPet could not verify the repository before switching branches." : status.Error);
+        if (status.Files.Count > 0)
+            return new(-1, "Save or discard the current working-tree changes before switching branches.");
+
+        var current = await GetCurrentBranchAsync(path, token);
+        if (current.Success &&
+            current.Output.Trim().Equals(branch.Name, StringComparison.OrdinalIgnoreCase))
+            return new(0, $"Already on branch {branch.Name}.");
+
+        return await RunGitAsync(
+            path,
+            BuildRepositorySwitchArguments(branch),
+            TimeSpan.FromMinutes(1),
+            token);
+    }
+
+    internal static IReadOnlyList<RepositoryBranchOption> ParseRepositoryBranches(string output)
+    {
+        var branches = new Dictionary<string, RepositoryBranchOption>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raw in (output ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var reference = raw.Trim();
+            if (reference.StartsWith("refs/heads/", StringComparison.Ordinal))
+            {
+                var name = reference["refs/heads/".Length..];
+                if (name.Length == 0) continue;
+                branches[name] = branches.TryGetValue(name, out var existing)
+                    ? existing with { IsLocal = true }
+                    : new RepositoryBranchOption(name, true, false);
+                continue;
+            }
+
+            if (!reference.StartsWith("refs/remotes/origin/", StringComparison.Ordinal)) continue;
+            var remoteName = reference["refs/remotes/origin/".Length..];
+            if (remoteName.Length == 0 ||
+                remoteName.Equals("HEAD", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            branches[remoteName] = branches.TryGetValue(remoteName, out var remoteExisting)
+                ? remoteExisting with { IsRemote = true }
+                : new RepositoryBranchOption(remoteName, false, true);
+        }
+
+        return branches.Values
+            .OrderBy(branch => branch.Name.Equals("main", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    internal static string[] BuildRepositorySwitchArguments(RepositoryBranchOption branch) =>
+        branch.IsLocal
+            ? ["switch", branch.Name]
+            : ["switch", "--track", "-c", branch.Name, $"origin/{branch.Name}"];
 
     public async Task<CommandResult> GetOriginUrlAsync(string path, CancellationToken token = default)
     {
@@ -271,11 +538,117 @@ public sealed class GitService(AuditLog audit)
     }
 
     public async Task<CheckpointResult> CreateCheckpointAsync(string path, string message, CancellationToken token = default)
-    {
-        var stage = await RunGitAsync(path, ["add", "-A"], TimeSpan.FromMinutes(1), token);
-        await audit.WriteAsync("git_stage", new { success = stage.Success });
-        if (!stage.Success) return new(false, "Staging failed: " + stage.Output);
+        => await CreateCheckpointAsync(path, message, stagePlan: null, token, progress: null);
 
+    /* ==========================================================================
+       PATCH: EXACT SAVE STAGING PLAN
+       DATE: 2026-09-11
+
+       Stage approved files without force-adding selected directories.
+       ========================================================================== */
+    public async Task<CheckpointResult> CreateCheckpointAsync(
+        string path,
+        string message,
+        SaveStagePlan? stagePlan,
+        CancellationToken token = default,
+        IProgress<GuardianActivityEvent>? progress = null)
+    {
+        if (stagePlan is null)
+        {
+            var preflight = await GetSavePreflightAsync(path, token);
+            if (!preflight.Success) return new(false, preflight.Error);
+            if (preflight.IgnoredChangedFiles.Count > 0)
+            {
+                return new(false,
+                    "Ignored project files require explicit approval in the manual Save window. " +
+                    "Nothing was staged.");
+            }
+        }
+
+        var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(path, includeRootGitIgnore: true);
+        if (pathspecs.Count > 0)
+        {
+            var staged = await RunGitAsync(path, ["diff", "--cached", "--name-only"], TimeSpan.FromSeconds(20), token);
+            if (!staged.Success)
+                return new(false, "GitPet could not verify the staged-file boundary before saving: " + staged.Output);
+
+            var outside = staged.Output
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(file => !LogicalProjectScopeRuntime.ContainsPath(path, file))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (outside.Length > 0)
+            {
+                return new(false,
+                    "Git already has staged changes outside this GitPet project's scope. GitPet stopped before creating a commit.\r\n\r\n" +
+                    string.Join("\r\n", outside.Take(12)) +
+                    (outside.Length > 12 ? $"\r\n… and {outside.Length - 12} more" : "") +
+                    "\r\n\r\nSave or unstage those changes from their own project first.");
+            }
+        }
+
+        var diagnosticPaths = stagePlan is null
+            ? pathspecs
+            : stagePlan.NormalFiles.Concat(stagePlan.ApprovedIgnoredFiles).ToArray();
+        foreach (var relativePath in diagnosticPaths.Where(candidate =>
+                     Path.GetFullPath(Path.Combine(path, candidate.Replace('/', Path.DirectorySeparatorChar))).Length >= 260))
+            progress?.Report(new(GuardianActivityKind.Warning, "Long path detected", relativePath));
+
+        await EnsureRepositoryLongPathsAsync(path, progress, token);
+        progress?.Report(new(GuardianActivityKind.SaveStaging, "Staging files..."));
+
+        if (stagePlan is null)
+        {
+            var stageArguments = new List<string> { "add", "-A" };
+            if (pathspecs.Count > 0)
+            {
+                stageArguments.Add("--");
+                stageArguments.AddRange(pathspecs);
+            }
+
+            var stage = await RunStageWithLongPathRecoveryAsync(path, stageArguments, progress, token);
+            await audit.WriteAsync("git_stage", new
+            {
+                success = stage.Success,
+                projectScoped = pathspecs.Count > 0,
+                pathspecCount = pathspecs.Count
+            });
+            if (!stage.Success) return new(false, "Staging failed: " + stage.Output);
+        }
+        else
+        {
+            if (stagePlan.NormalFiles.Count == 0 && stagePlan.ApprovedIgnoredFiles.Count == 0)
+            {
+                var skipped = stagePlan.SkippedIgnoredFiles.Count;
+                return new(true,
+                    $"✓ 0 files saved\r\n○ {skipped} ignored project file{(skipped == 1 ? "" : "s")} skipped",
+                    SkippedIgnoredCount: skipped);
+            }
+
+            var normalArguments = IgnoredFileSavePolicy.BuildStageArguments(stagePlan.NormalFiles, force: false);
+            if (normalArguments.Count > 0)
+            {
+                var normalStage = await RunStageWithLongPathRecoveryAsync(path, normalArguments, progress, token);
+                if (!normalStage.Success) return new(false, "Staging failed: " + normalStage.Output);
+            }
+
+            var forcedArguments = IgnoredFileSavePolicy.BuildStageArguments(stagePlan.ApprovedIgnoredFiles, force: true);
+            if (forcedArguments.Count > 0)
+            {
+                var forcedStage = await RunStageWithLongPathRecoveryAsync(path, forcedArguments, progress, token);
+                if (!forcedStage.Success) return new(false, "Force-track staging failed: " + forcedStage.Output);
+            }
+
+            await audit.WriteAsync("git_stage", new
+            {
+                success = true,
+                exactNormalFiles = stagePlan.NormalFiles.Count,
+                exactForceTrackedFiles = stagePlan.ApprovedIgnoredFiles.Count,
+                skippedIgnoredFiles = stagePlan.SkippedIgnoredFiles.Count
+            });
+        }
+
+        progress?.Report(new(GuardianActivityKind.SaveCreatingCheckpoint, "Creating local checkpoint..."));
         var commit = await RunGitAsync(path, ["commit", "-m", message], TimeSpan.FromMinutes(2), token);
         if (!commit.Success)
         {
@@ -285,15 +658,179 @@ public sealed class GitService(AuditLog audit)
 
         var hash = await RunGitAsync(path, ["rev-parse", "HEAD"], cancellationToken: token);
         var value = hash.Success ? hash.Output.Trim() : null;
-        await audit.WriteAsync("checkpoint_created", new { commitHash = value, message });
-        return new(true, $"Checkpoint created.\r\n\r\n{value}", value);
+        await audit.WriteAsync("checkpoint_created", new
+        {
+            commitHash = value,
+            message,
+            project = LogicalProjectScopeRuntime.DisplayName,
+            projectScoped = pathspecs.Count > 0
+        });
+        var savedCount = stagePlan is null ? 0 : stagePlan.NormalFiles.Count + stagePlan.ApprovedIgnoredFiles.Count;
+        var skippedCount = stagePlan?.SkippedIgnoredFiles.Count ?? 0;
+        var summary = stagePlan is null
+            ? $"Checkpoint created.\r\n\r\n{value}"
+            : $"✓ {savedCount} file{(savedCount == 1 ? "" : "s")} saved\r\n" +
+              (skippedCount > 0 ? $"○ {skippedCount} ignored project file{(skippedCount == 1 ? "" : "s")} skipped\r\n" : "") +
+              $"\r\n{value}";
+        return new(true, summary, value, savedCount, skippedCount);
+    }
+
+    internal async Task<CommandResult> RunStageWithLongPathRecoveryAsync(
+        string path,
+        IReadOnlyList<string> arguments,
+        IProgress<GuardianActivityEvent>? progress,
+        CancellationToken token,
+        bool? isWindowsOverride = null,
+        Func<Task<CommandResult>>? runStageOverride = null,
+        Func<Task<RepositoryLongPathResult>>? ensureOverride = null)
+    {
+        async Task<CommandResult> Stage() => runStageOverride is null
+            ? await RunGitAsync(path, arguments, TimeSpan.FromMinutes(1), token)
+            : await runStageOverride();
+
+        var first = await Stage();
+        if (!(isWindowsOverride ?? OperatingSystem.IsWindows()) || !IsLongPathFailure(first)) return first;
+
+        var started = Stopwatch.StartNew();
+        progress?.Report(new(GuardianActivityKind.LongPathRetrying,
+            "Staging encountered a Windows long-path error. Rechecking repository support..."));
+        await audit.WriteAsync("staging_longpath_retry", new
+        {
+            repository = Path.GetFileName(Path.GetFullPath(path))
+        });
+        if (ensureOverride is null)
+            await EnsureRepositoryLongPathsCoreAsync(path, true, progress, token,
+                command => RunGitAsync(path, command, TimeSpan.FromSeconds(20), token), forceRecheck: true);
+        else
+            await ensureOverride();
+
+        progress?.Report(new(GuardianActivityKind.LongPathRetrying, "Retrying staging once..."));
+        var retry = await Stage();
+        if (retry.Success)
+        {
+            progress?.Report(new(GuardianActivityKind.LongPathRetrySucceeded, "Staging completed."));
+            await audit.WriteAsync("staging_longpath_retry_succeeded", new
+            {
+                repository = Path.GetFileName(Path.GetFullPath(path)),
+                elapsedMilliseconds = started.ElapsedMilliseconds
+            });
+        }
+        else
+        {
+            progress?.Report(new(GuardianActivityKind.LongPathRetryFailed,
+                "Staging still failed after enabling long-path support.\r\n" + retry.Output));
+            await audit.WriteAsync("staging_longpath_retry_failed", new
+            {
+                repository = Path.GetFileName(Path.GetFullPath(path)),
+                elapsedMilliseconds = started.ElapsedMilliseconds,
+                error = retry.Output
+            });
+        }
+        return retry;
+    }
+
+    /* ==========================================================================
+       PATCH: READ-ONLY IGNORE PREFLIGHT
+       DATE: 2026-09-11
+
+       Discover exact ignored files before changing Git's index.
+       ========================================================================== */
+    public async Task<SavePreflightResult> GetSavePreflightAsync(
+        string path,
+        CancellationToken token = default,
+        IProgress<GuardianActivityEvent>? progress = null,
+        RepositoryStatus? knownStatus = null)
+    {
+        var started = Stopwatch.StartNew();
+        progress?.Report(new(GuardianActivityKind.PhaseStarted, "Reading project changes..."));
+        var status = knownStatus ?? await GetStatusAsync(path, token);
+        if (!status.Healthy) return new(false, [], [], status.Error);
+
+        var normal = status.Files.Select(file => NormalizeGitRelativePath(file.Path))
+            .Where(file => file.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(path, includeRootGitIgnore: false);
+        if (pathspecs.Count == 0) return new(true, normal, []);
+
+        var arguments = new List<string> { "ls-files", "--others", "--ignored", "--exclude-standard", "-z" };
+        if (pathspecs.Count > 0)
+        {
+            arguments.Add("--");
+            arguments.AddRange(pathspecs);
+        }
+
+        var ignoredList = await RunGitAsync(path, arguments, TimeSpan.FromMinutes(1), token);
+        if (!ignoredList.Success) return new(false, normal, [], "Ignored-file preflight failed: " + ignoredList.Output);
+
+        var candidates = ignoredList.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Select(NormalizeGitRelativePath)
+            .Where(candidate => candidate.Length > 0 &&
+                !Directory.Exists(Path.Combine(path, candidate.Replace('/', Path.DirectorySeparatorChar))))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        progress?.Report(new(GuardianActivityKind.PhaseStarted,
+            $"Checking ignore rules for {candidates.Length} files...", Total: candidates.Length));
+        foreach (var candidate in candidates)
+            progress?.Report(new(GuardianActivityKind.FilePending, "Pending", candidate, Total: candidates.Length));
+
+        IReadOnlyList<IgnoredProjectFile> ignored = [];
+        if (candidates.Length > 0)
+        {
+            var input = string.Join('\0', candidates) + '\0';
+            var provenance = await RunGitWithInputAsync(path,
+                ["-c", "core.quotePath=false", "check-ignore", "-v", "-z", "--stdin"],
+                input, TimeSpan.FromMinutes(1), token);
+            if (provenance.ExitCode != 0)
+            {
+                var message = "Ignored-file provenance failed: " + provenance.Output;
+                progress?.Report(new(GuardianActivityKind.Error, message));
+                return new(false, normal, [], message);
+            }
+            if (!IgnoredFileSavePolicy.TryParseCheckIgnoreBatch(provenance.Output, out ignored, out var parseError))
+            {
+                progress?.Report(new(GuardianActivityKind.Error, parseError));
+                return new(false, normal, [], parseError);
+            }
+
+            var completed = 0;
+            foreach (var item in ignored)
+            {
+                completed++;
+                progress?.Report(new(GuardianActivityKind.FileCompleted, "Ignored rule found",
+                    item.Path, completed, candidates.Length));
+            }
+        }
+
+        await audit.WriteAsync("save_preflight", new
+        {
+            success = true,
+            normalFiles = normal.Length,
+            ignoredCandidates = candidates.Length,
+            ignoredFiles = ignored.Count,
+            elapsedMilliseconds = started.ElapsedMilliseconds
+        });
+
+        return new(true, normal, ignored
+            .GroupBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
     }
 
     public async Task<CommandResult> RunTestCommandAsync(string path, string command, CancellationToken token = default)
     {
-        var result = await RunProcessAsync("cmd.exe", ["/d", "/s", "/c", command], path,
+        var workingDirectory = LogicalProjectScopeRuntime.GetWorkingDirectory(path);
+        var result = await RunProcessAsync("cmd.exe", ["/d", "/s", "/c", command], workingDirectory,
             TimeSpan.FromMinutes(10), token);
-        await audit.WriteAsync("test_run", new { command, success = result.Success, result.ExitCode, result.TimedOut });
+        await audit.WriteAsync("test_run", new
+        {
+            command,
+            workingDirectory,
+            success = result.Success,
+            result.ExitCode,
+            result.TimedOut
+        });
         return result;
     }
 
@@ -354,7 +891,7 @@ public sealed class GitService(AuditLog audit)
 
     private static async Task<CommandResult> RunProcessAsync(
         string fileName, IEnumerable<string> arguments, string workingDirectory,
-        TimeSpan timeout, CancellationToken cancellationToken)
+        TimeSpan timeout, CancellationToken cancellationToken, string? standardInput = null)
     {
         using var process = new Process
         {
@@ -365,6 +902,9 @@ public sealed class GitService(AuditLog audit)
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = standardInput is not null,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
                 CreateNoWindow = true
             }
         };
@@ -375,9 +915,13 @@ public sealed class GitService(AuditLog audit)
             process.Start();
             var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
             var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+            var stdin = standardInput is null
+                ? Task.CompletedTask
+                : WriteStandardInputAsync(process, standardInput, cancellationToken);
             using var timeoutSource = new CancellationTokenSource(timeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutSource.Token);
             await process.WaitForExitAsync(linked.Token);
+            await stdin;
             var output = JoinOutput(await stdout, await stderr);
             return new(process.ExitCode, output);
         }
@@ -391,6 +935,15 @@ public sealed class GitService(AuditLog audit)
         {
             return new(-1, ex.Message);
         }
+    }
+
+    private static async Task WriteStandardInputAsync(
+        Process process, string input, CancellationToken cancellationToken)
+    {
+        var bytes = Encoding.UTF8.GetBytes(input);
+        await process.StandardInput.BaseStream.WriteAsync(bytes, cancellationToken);
+        await process.StandardInput.BaseStream.FlushAsync(cancellationToken);
+        process.StandardInput.Close();
     }
 
     private static string JoinOutput(string stdout, string stderr)

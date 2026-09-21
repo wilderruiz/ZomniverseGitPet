@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace ZomniverseGitPet;
 
 public sealed class GuardianForm : Form
@@ -8,17 +10,33 @@ public sealed class GuardianForm : Form
     private readonly AuditLog _audit;
     private readonly Func<Task> _chooseRepository;
 
-    private readonly Label _projectTitle = new();
+    /* ==========================================================================
+       PATCH: CURRENT PROJECT PILL CONTROLS
+       FUNCTION:
+       Separates the current-project context label from the dynamic, scrollable
+       project-name pill used in the repository header.
+
+       DATE.TIME ADDED: 2026-09-12 20:05 +03:00
+
+       REASON:
+       Replace the repeated application title with a clearer active-project identity.
+       ========================================================================== */
+    private readonly Label _projectContextLabel = new();
+    private readonly ProjectNamePill _projectTitle = new();
     private readonly Label _onlineLabel = new();
     private readonly Label _commitLabel = new();
+    private readonly Label _watchingLabel = new();
     private readonly GuardianStatusChip _healthChip = new();
     private readonly GuardianStatusChip _branchChip = new();
     private readonly GuardianStatusChip _changesChip = new();
+    private ContextMenuStrip? _repositoryBranchMenu;
 
     private readonly DataGridView _files = new();
     private readonly Label _emptyState = new();
     private readonly RichTextBox _output = new();
     private readonly Label _activityState = new();
+    private readonly Label _activityElapsed = new();
+    private GuardianActivityConsole? _activityConsole;
     private readonly CheckBox _automatic = new();
     private readonly FileComparisonPanel _comparisonPanel = new();
     private Panel? _activityPanel;
@@ -33,6 +51,11 @@ public sealed class GuardianForm : Form
     private readonly Font _toolTipFont = new("Segoe UI", 9);
 
     private readonly System.Windows.Forms.Timer _pulseTimer = new() { Interval = 1050 };
+    private readonly System.Windows.Forms.Timer _saveTerminalTimer = new() { Interval = 2200 };
+    private readonly SaveOperationStateController _saveOperation = new();
+    private readonly SaveOperationStateController _getOperation = new(GuardianOperationKind.Get);
+    private readonly SaveOperationStateController _sendOperation = new(GuardianOperationKind.Send);
+    private readonly SaveOperationStateController _reconcileOperation = new(GuardianOperationKind.Reconcile);
     private bool _pulseBright;
 
     private readonly Button[] _operationButtons;
@@ -44,6 +67,7 @@ public sealed class GuardianForm : Form
     private bool _refreshInProgress;
     private bool _exitRequested;
     private string? _reviewedPath;
+    private string? _lastRepositoryStatusError;
 
     public GuardianForm(
         AppConfig config,
@@ -58,7 +82,19 @@ public sealed class GuardianForm : Form
         _audit = audit;
         _chooseRepository = chooseRepository;
 
-        Text = "ZomniverseGitPet Guardian";
+        /* ==========================================================================
+           PATCH: CHANNEL-AWARE WINDOW TITLE
+           FUNCTION:
+           Use the same central DEV / release / portable identity as taskbar
+           grouping, tray labeling, and single-instance handoff.
+
+           DATE.TIME ADDED: 2026-09-19 22:53 +03:00
+
+           REASON:
+           Prevent window identity from drifting away from the active application channel.
+           ========================================================================== */
+
+        Text = ApplicationIdentity.Current.GuardianTitle;
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(920, 670);
@@ -70,22 +106,51 @@ public sealed class GuardianForm : Form
 
         ConfigureToolTips();
 
+        _branchChip.AccessibleName = "Repository branch";
+        _branchChip.Click += async (_, _) =>
+        {
+            if (_branchChip.Interactive && _branchChip.Enabled)
+                await ShowRepositoryBranchMenuAsync();
+        };
+
         var menu = BuildMainMenu();
         var header = BuildHeader();
 
         var toolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 66,
-            Padding = new Padding(14, 10, 10, 8),
+            Height = 48,
+            Padding = new Padding(10, 6, 8, 5),
             WrapContents = true,
             AutoScroll = false,
             BackColor = GuardianTheme.Surface
         };
 
-        var projects = MakeActionButton("Projects ▾", GuardianActionKind.Standard, 112, async () => await _chooseRepository());
+        /* ==========================================================================
+           PATCH: WIDER PROJECTS MENU BUTTON
+           FUNCTION:
+           Gives the Projects toolbar button enough horizontal space for its
+           complete label and dropdown indicator.
+
+           DATE.TIME ADDED: 2026-09-11 12:39 +03:00
+
+           REASON:
+           Prevent the Projects button label and dropdown indicator from being truncated.
+           ========================================================================== */
+        var projects = MakeActionButton("Projects ▾", GuardianActionKind.Standard, 140, async () => await _chooseRepository());
         var refresh = MakeActionButton("Refresh", GuardianActionKind.Standard, 92, RefreshAsync);
-        var diff = MakeActionButton("Review", GuardianActionKind.Standard, 82, ShowDiffAsync);
+        /* ==========================================================================
+           PATCH: WIDER REVIEW BUTTON
+           FUNCTION:
+           Gives the Review toolbar button enough horizontal space to display
+           its complete label without ellipsis.
+
+           DATE.TIME ADDED: 2026-09-11 12:42 +03:00
+
+           REASON:
+           Prevent the Review toolbar button label from being truncated.
+           ========================================================================== */
+        var diff = MakeActionButton("Review", GuardianActionKind.Standard, 112, ShowDiffAsync);
         var tests = MakeActionButton("Tests", GuardianActionKind.Standard, 82, RunTestsAsync);
         var checkpoint = MakeActionButton("Save", GuardianActionKind.Primary, 92, CreateCheckpointAsync);
         var pull = MakeActionButton("Get ↓", GuardianActionKind.Pull, 92, PullFromOriginAsync);
@@ -174,6 +239,18 @@ public sealed class GuardianForm : Form
                 : Color.FromArgb(56, 157, 108);
         };
         _pulseTimer.Start();
+        _saveOperation.Changed += OnSaveOperationStateChanged;
+        _getOperation.Changed += OnSaveOperationStateChanged;
+        _sendOperation.Changed += OnSaveOperationStateChanged;
+        _reconcileOperation.Changed += OnSaveOperationStateChanged;
+        _saveTerminalTimer.Tick += (_, _) =>
+        {
+            _saveTerminalTimer.Stop();
+            _saveOperation.Transition(SaveOperationPhase.Idle);
+            _getOperation.Transition(SaveOperationPhase.Idle);
+            _sendOperation.Transition(SaveOperationPhase.Idle);
+            _reconcileOperation.Transition(SaveOperationPhase.Idle);
+        };
     }
 
     private Control BuildHeader()
@@ -181,58 +258,281 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 136,
-            Padding = new Padding(20, 13, 20, 10),
-            BackColor = GuardianTheme.SurfaceRaised
+            Height = 178,
+            Padding = new Padding(10, 10, 10, 10),
+            BackColor = GuardianTheme.Window
         };
 
-        _projectTitle.Dock = DockStyle.Top;
-        _projectTitle.Height = 28;
-        _projectTitle.Text = "ZOMNIVERSE GITPET";
-        _projectTitle.ForeColor = Color.White;
-        _projectTitle.Font = new Font("Segoe UI", 11.5f, FontStyle.Bold);
-        _projectTitle.TextAlign = ContentAlignment.MiddleLeft;
-        _projectTitle.AutoEllipsis = true;
-
-        _onlineLabel.AutoSize = false;
-        _onlineLabel.Width = 180;
-        _onlineLabel.Height = 26;
-        _onlineLabel.Text = "● GUARDIAN ONLINE";
-        _onlineLabel.ForeColor = GuardianTheme.Healthy;
-        _onlineLabel.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-        _onlineLabel.TextAlign = ContentAlignment.MiddleRight;
-        _onlineLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _onlineLabel.Location = new Point(panel.Width - 200, 13);
-        panel.Resize += (_, _) => _onlineLabel.Left = panel.ClientSize.Width - _onlineLabel.Width - 20;
-
-        var chips = new FlowLayoutPanel
+        var repositoryCard = new OnboardingSurfacePanel
         {
-            Dock = DockStyle.Top,
-            Height = 42,
-            Padding = new Padding(0, 6, 0, 4),
-            WrapContents = false,
-            BackColor = GuardianTheme.SurfaceRaised
+            Dock = DockStyle.Fill,
+            FillColor = GuardianTheme.Surface,
+            BackColor = GuardianTheme.Surface,
+            BorderColor = GuardianTheme.Border,
+            CornerRadius = 6,
+            Padding = new Padding(16, 12, 16, 12)
         };
 
-        _healthChip.Width = 124;
-        _branchChip.Width = 150;
-        _changesChip.Width = 150;
-        _healthChip.Margin = new Padding(0, 0, 8, 0);
-        _branchChip.Margin = new Padding(0, 0, 8, 0);
-        _changesChip.Margin = new Padding(0);
-        chips.Controls.AddRange([_healthChip, _branchChip, _changesChip]);
+        var repositoryLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            BackColor = GuardianTheme.Surface
+        };
+        /* ==========================================================================
+           PATCH: WIDEN COMPLETE REPOSITORY STATUS CARD
+           FUNCTION:
+           Increases the complete status-card width while allowing the repository
+           summary and its separator line to use the remaining space.
+
+           DATE.TIME ADDED: 2026-09-11 23:32 +03:00
+
+           REASON:
+           The complete branch name requires more card width without compressing another status column.
+           ========================================================================== */
+        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
+
+        var summary = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Margin = new Padding(0, 0, 28, 0),
+            BackColor = GuardianTheme.Surface
+        };
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+
+        /* ==========================================================================
+           PATCH: BUILD CURRENT PROJECT PILL HEADER
+           FUNCTION:
+           Places a muted context label beside a dynamically sized project pill and
+           constrains long names to the available header width.
+
+           DATE.TIME ADDED: 2026-09-12 20:05 +03:00
+
+           REASON:
+           Clarify which text is the active project while preserving access to long names.
+           ========================================================================== */
+        var projectHeading = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = GuardianTheme.Surface
+        };
+
+        _projectContextLabel.AutoSize = true;
+        _projectContextLabel.Text = "CURRENT PROJECT";
+        _projectContextLabel.ForeColor = GuardianTheme.MutedInk;
+        _projectContextLabel.Font = new Font("Cascadia Mono", 7.5f, FontStyle.Bold);
+        _projectContextLabel.Margin = new Padding(0, 7, 10, 0);
+        _projectContextLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        _projectTitle.Text = "NO PROJECT";
+        _projectTitle.Margin = Padding.Empty;
+        projectHeading.Controls.Add(_projectContextLabel);
+        projectHeading.Controls.Add(_projectTitle);
+        /* ==========================================================================
+           PATCH: USE ALL AVAILABLE PROJECT PILL WIDTH
+           FUNCTION:
+           Calculates the pill ceiling from the live header width after subtracting
+           the context label and both controls' horizontal margins.
+
+           DATE.TIME ADDED: 2026-09-12 20:29 +03:00
+
+           REASON:
+           Let full project names use free header space without entering the status region.
+           ========================================================================== */
+        projectHeading.Resize += (_, _) =>
+        {
+            var available = projectHeading.ClientSize.Width
+                - _projectContextLabel.Width
+                - _projectContextLabel.Margin.Horizontal
+                - _projectTitle.Margin.Horizontal;
+            _projectTitle.MaximumPillWidth = Math.Max(1, available);
+        };
+
+        var overview = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "Repository overview and most recent checkpoint",
+            ForeColor = GuardianTheme.MutedInk,
+            Font = new Font("Segoe UI", 8.75f),
+            TextAlign = ContentAlignment.TopLeft
+        };
+
+        var commitArea = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 8, 0, 0),
+            Padding = new Padding(0, 12, 0, 0),
+            BackColor = GuardianTheme.Surface
+        };
+        commitArea.Paint += (_, e) =>
+        {
+            using var separator = new Pen(GuardianTheme.BorderSoft);
+            e.Graphics.DrawLine(separator, 0, 0, commitArea.ClientSize.Width, 0);
+        };
 
         _commitLabel.Dock = DockStyle.Fill;
         _commitLabel.ForeColor = GuardianTheme.MutedInk;
         _commitLabel.Font = new Font("Cascadia Mono", 8.5f);
         _commitLabel.TextAlign = ContentAlignment.MiddleLeft;
         _commitLabel.AutoEllipsis = true;
-        _commitLabel.Padding = new Padding(1, 2, 0, 0);
+        commitArea.Controls.Add(_commitLabel);
 
-        panel.Controls.Add(_commitLabel);
-        panel.Controls.Add(chips);
-        panel.Controls.Add(_onlineLabel);
-        panel.Controls.Add(_projectTitle);
+        _watchingLabel.Dock = DockStyle.Fill;
+        _watchingLabel.Text = "Watching this repository";
+        _watchingLabel.ForeColor = GuardianTheme.Violet;
+        _watchingLabel.Font = new Font("Cascadia Mono", 7.75f);
+        _watchingLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        summary.Controls.Add(projectHeading, 0, 0);
+        summary.Controls.Add(overview, 0, 1);
+        summary.Controls.Add(commitArea, 0, 2);
+        summary.Controls.Add(_watchingLabel, 0, 3);
+
+        /* ==========================================================================
+           PATCH: SUBTLE STATUS CARD STRUCTURE
+           FUNCTION:
+           Removes the bright full-cell grid and softens the rounded status
+           card outline to match the approved mockup.
+
+           DATE.TIME ADDED: 2026-09-11 13:57 +03:00
+
+           REASON:
+           Replace harsh system grid borders with a quieter GitPet status presentation.
+           ========================================================================== */
+        var statusCard = new OnboardingSurfacePanel
+        {
+            Dock = DockStyle.Fill,
+            FillColor = GuardianTheme.SurfaceRaised,
+            BackColor = GuardianTheme.SurfaceRaised,
+            BorderColor = Color.FromArgb(145, GuardianTheme.BorderSoft),
+            CornerRadius = 6,
+            Padding = new Padding(8)
+        };
+        var statusGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            BackColor = GuardianTheme.SurfaceRaised,
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.None
+        };
+        /* ==========================================================================
+           PATCH: BALANCE WIDENED STATUS CARD COLUMNS
+           FUNCTION:
+           Divides the newly widened status card equally so both Branch and Working
+           Tree receive sufficient horizontal space.
+
+           DATE.TIME ADDED: 2026-09-11 23:32 +03:00
+
+           REASON:
+           Unequal columns transfer branch space from Working Tree instead of widening the card.
+           ========================================================================== */
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        statusGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+
+        _onlineLabel.Dock = DockStyle.Fill;
+        _onlineLabel.Text = "● ACTIVE";
+        _onlineLabel.ForeColor = GuardianTheme.Healthy;
+        _onlineLabel.Font = new Font("Cascadia Mono", 8.5f, FontStyle.Bold);
+        _onlineLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+        var statusCaptions = new[] { "GUARDIAN", "HEALTH", "BRANCH", "WORKING TREE" };
+        Control[] statusValues = [_onlineLabel, _healthChip, _branchChip, _changesChip];
+        for (var index = 0; index < statusValues.Length; index++)
+        {
+            var value = statusValues[index];
+            value.Dock = DockStyle.Fill;
+            value.Margin = Padding.Empty;
+
+            var statusCell = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = new Padding(10, 7, 8, 6),
+                BackColor = GuardianTheme.SurfaceRaised
+            };
+            statusCell.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
+            statusCell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            statusCell.Controls.Add(new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = statusCaptions[index],
+                ForeColor = GuardianTheme.FaintInk,
+                Font = new Font("Cascadia Mono", 7f, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            }, 0, 0);
+            statusCell.Controls.Add(value, 0, 1);
+            statusGrid.Controls.Add(statusCell, index % 2, index / 2);
+        }
+
+        statusCard.Controls.Add(statusGrid);
+
+        /* ==========================================================================
+           PATCH: MUTED STATUS CARD DIVIDERS
+           FUNCTION:
+           Adds short translucent center dividers while leaving clear spacing
+           around the rounded status card edges.
+
+           DATE.TIME ADDED: 2026-09-11 13:57 +03:00
+
+           REASON:
+           Match the mockup without restoring bright borders around every status cell.
+           ========================================================================== */
+        var verticalStatusDivider = new Panel
+        {
+            BackColor = Color.FromArgb(80, GuardianTheme.Border),
+            Enabled = false
+        };
+        var horizontalStatusDivider = new Panel
+        {
+            BackColor = Color.FromArgb(80, GuardianTheme.Border),
+            Enabled = false
+        };
+
+        statusCard.Controls.Add(verticalStatusDivider);
+        statusCard.Controls.Add(horizontalStatusDivider);
+
+        statusCard.Layout += (_, _) =>
+        {
+            var contentBounds = statusGrid.Bounds;
+
+            verticalStatusDivider.Bounds = new Rectangle(
+                contentBounds.Left + (contentBounds.Width / 2),
+                contentBounds.Top + 18,
+                1,
+                Math.Max(1, contentBounds.Height - 36));
+
+            horizontalStatusDivider.Bounds = new Rectangle(
+                contentBounds.Left + 18,
+                contentBounds.Top + (contentBounds.Height / 2),
+                Math.Max(1, contentBounds.Width - 36),
+                1);
+
+            verticalStatusDivider.BringToFront();
+            horizontalStatusDivider.BringToFront();
+        };
+
+        repositoryLayout.Controls.Add(summary, 0, 0);
+        repositoryLayout.Controls.Add(statusCard, 1, 0);
+        repositoryCard.Controls.Add(repositoryLayout);
+        panel.Controls.Add(repositoryCard);
 
         _toolTips.SetToolTip(_projectTitle,
             "Active project. Closing Guardian with X only hides this window; the fox keeps running.\n" +
@@ -257,27 +557,27 @@ public sealed class GuardianForm : Form
         _files.GridColor = GuardianTheme.BorderSoft;
         _files.RowHeadersVisible = false;
         _files.EnableHeadersVisualStyles = false;
-        _files.ColumnHeadersHeight = 40;
+        _files.ColumnHeadersHeight = 28;
         _files.ColumnHeadersDefaultCellStyle.BackColor = GuardianTheme.SurfaceSoft;
         _files.ColumnHeadersDefaultCellStyle.ForeColor = GuardianTheme.MutedInk;
-        _files.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        _files.ColumnHeadersDefaultCellStyle.Font = new Font("Cascadia Mono", 7.5f, FontStyle.Bold);
         _files.ColumnHeadersDefaultCellStyle.SelectionBackColor = GuardianTheme.SurfaceSoft;
         _files.ColumnHeadersDefaultCellStyle.SelectionForeColor = GuardianTheme.MutedInk;
         _files.DefaultCellStyle.BackColor = GuardianTheme.Surface;
         _files.DefaultCellStyle.ForeColor = GuardianTheme.Ink;
-        _files.DefaultCellStyle.SelectionBackColor = Color.FromArgb(57, 42, 77);
+        _files.DefaultCellStyle.SelectionBackColor = Color.FromArgb(21, 28, 35);
         _files.DefaultCellStyle.SelectionForeColor = Color.White;
-        _files.DefaultCellStyle.Font = new Font("Segoe UI", 9.25f);
+        _files.DefaultCellStyle.Font = new Font("Cascadia Mono", 8.25f);
         _files.DefaultCellStyle.Padding = new Padding(7, 2, 7, 2);
-        _files.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(31, 25, 42);
-        _files.RowTemplate.Height = 34;
+        _files.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(12, 17, 22);
+        _files.RowTemplate.Height = 27;
         _files.ShowCellToolTips = true;
 
         _files.Columns.Add("Status", "STATE");
         _files.Columns.Add("Path", "PATH");
         _files.Columns[0].FillWeight = 20;
         _files.Columns[1].FillWeight = 80;
-        _files.Columns[0].DefaultCellStyle.Font = new Font("Segoe UI", 8.75f, FontStyle.Bold);
+        _files.Columns[0].DefaultCellStyle.Font = new Font("Cascadia Mono", 7.75f, FontStyle.Bold);
         _files.Columns[0].HeaderCell.ToolTipText =
             "Human-readable Git state. Hover a row for the underlying Git status code.";
         _files.Columns[1].HeaderCell.ToolTipText =
@@ -371,7 +671,15 @@ public sealed class GuardianForm : Form
         _activityState.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
         _activityState.TextAlign = ContentAlignment.MiddleRight;
 
+        _activityElapsed.Dock = DockStyle.Right;
+        _activityElapsed.Width = 260;
+        _activityElapsed.Text = "00 hr 00 min 00 sec 000 ms";
+        _activityElapsed.ForeColor = GuardianTheme.MutedInk;
+        _activityElapsed.Font = new Font("Cascadia Mono", 8.5f);
+        _activityElapsed.TextAlign = ContentAlignment.MiddleRight;
+
         header.Controls.Add(_activityState);
+        header.Controls.Add(_activityElapsed);
         header.Controls.Add(title);
 
         _output.Dock = DockStyle.Fill;
@@ -382,6 +690,7 @@ public sealed class GuardianForm : Form
         _output.BorderStyle = BorderStyle.None;
         _output.Padding = new Padding(12);
         _output.Text = "Guardian ready. Click a changed file to open the side-by-side File Review.";
+        _activityConsole = new GuardianActivityConsole(_output, _activityElapsed, _activityState);
 
         _toolTips.SetToolTip(_output,
             "Guardian Activity\n\nResults from Tests, Save, Get, Send, History, and Health appear here.\n" +
@@ -397,9 +706,9 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 56,
-            BackColor = GuardianTheme.Surface,
-            Padding = new Padding(16, 8, 16, 8)
+            Height = 48,
+            BackColor = GuardianTheme.SurfaceRaised,
+            Padding = new Padding(12, 5, 12, 5)
         };
 
         var label = new Label
@@ -408,12 +717,12 @@ public sealed class GuardianForm : Form
             Location = new Point(16, 9),
             Text = "AUTOMATIC SAVING",
             ForeColor = GuardianTheme.FaintInk,
-            Font = new Font("Segoe UI", 7.5f, FontStyle.Bold)
+            Font = new Font("Cascadia Mono", 7f, FontStyle.Bold)
         };
 
         _automatic.Text = "Automatic verified saves";
         _automatic.AutoSize = true;
-        _automatic.Location = new Point(16, 28);
+        _automatic.Location = new Point(12, 24);
         _automatic.ForeColor = GuardianTheme.Ink;
         _automatic.BackColor = GuardianTheme.Surface;
         _automatic.Checked = _config.AutomaticCheckpointsEnabled;
@@ -421,10 +730,10 @@ public sealed class GuardianForm : Form
         var note = new Label
         {
             AutoSize = true,
-            Location = new Point(250, 29),
+            Location = new Point(246, 25),
             Text = "OFF BY DEFAULT · local saves only · never sends automatically",
             ForeColor = GuardianTheme.FaintInk,
-            Font = new Font("Segoe UI", 8)
+            Font = new Font("Cascadia Mono", 7.5f)
         };
 
         _toolTips.SetToolTip(_automatic,
@@ -450,12 +759,12 @@ public sealed class GuardianForm : Form
         var menu = new MenuStrip
         {
             Dock = DockStyle.Top,
-            BackColor = GuardianTheme.SurfaceRaised,
+            BackColor = GuardianTheme.Window,
             ForeColor = GuardianTheme.Ink,
             GripStyle = ToolStripGripStyle.Hidden,
             RenderMode = ToolStripRenderMode.Professional,
             Renderer = GuardianTheme.CreateMenuRenderer(),
-            Padding = new Padding(12, 3, 0, 3)
+            Padding = new Padding(10, 2, 0, 2)
         };
 
         var help = new ToolStripMenuItem("Help")
@@ -491,8 +800,8 @@ public sealed class GuardianForm : Form
             Text = text,
             Kind = kind,
             Width = width,
-            Height = 38,
-            Margin = new Padding(4, 2, 4, 2)
+            Height = 32,
+            Margin = new Padding(3, 1, 3, 1)
         };
         button.Click += async (_, _) => await action();
         return button;
@@ -603,19 +912,44 @@ public sealed class GuardianForm : Form
         if (!_status.Healthy)
         {
             ShowActivityPanel();
-            _output.Text = _status.Error;
+            var friendlyError = GitService.DescribeRepositoryReadFailure(_status.Error);
+            if (!string.Equals(_lastRepositoryStatusError, friendlyError, StringComparison.Ordinal))
+            {
+                ReportActivity(friendlyError, GuardianActivityKind.Error);
+                _lastRepositoryStatusError = friendlyError;
+            }
             SetActivityState("● ATTENTION", GuardianTheme.Warning);
+        }
+        else
+        {
+            _lastRepositoryStatusError = null;
         }
     }
 
     private void UpdateRepositoryHeader(RepositoryStatus status, CommandResult commit)
     {
+        /* ==========================================================================
+           PATCH: DISPLAY SAVED PROJECT NAME IN HEADER
+           FUNCTION:
+           Uses the active GitPet project's saved display name for the project pill,
+           falling back to the repository folder name when no display name exists.
+
+           DATE.TIME ADDED: 2026-09-12 20:16 +03:00
+
+           REASON:
+           The folder basename hides the complete logical project name.
+           ========================================================================== */
         var path = _config.RepositoryPath ?? "";
         var normalized = string.IsNullOrWhiteSpace(path) ? "" : Path.TrimEndingDirectorySeparator(path);
-        var name = string.IsNullOrWhiteSpace(normalized) ? "NO PROJECT" : Path.GetFileName(normalized);
+        var activeProject = _config.GetActiveProject();
+        var name = !string.IsNullOrWhiteSpace(activeProject?.DisplayName)
+            ? activeProject.DisplayName
+            : string.IsNullOrWhiteSpace(normalized)
+                ? "NO PROJECT"
+                : Path.GetFileName(normalized);
         if (string.IsNullOrWhiteSpace(name)) name = normalized;
 
-        _projectTitle.Text = $"ZOMNIVERSE GITPET  /  {name.ToUpperInvariant()}";
+        _projectTitle.Text = name.ToUpperInvariant();
         _toolTips.SetToolTip(_projectTitle, string.IsNullOrWhiteSpace(path)
             ? "No active project."
             : $"Active project\n{path}\n\nClosing Guardian with X only hides this window; the fox keeps running.");
@@ -624,18 +958,30 @@ public sealed class GuardianForm : Form
         {
             _healthChip.Text = "● ATTENTION";
             _healthChip.Tone = GuardianChipTone.Warning;
-            _branchChip.Text = "BRANCH  ?";
+            _branchChip.Text = "?";
             _branchChip.Tone = GuardianChipTone.Neutral;
+            _branchChip.Interactive = false;
+            _branchChip.Enabled = false;
             _changesChip.Text = "STATUS UNKNOWN";
             _changesChip.Tone = GuardianChipTone.Warning;
             _commitLabel.Text = "LATEST  unavailable";
+            _watchingLabel.Text = "Repository needs attention";
             return;
         }
 
         _healthChip.Text = "● HEALTHY";
         _healthChip.Tone = GuardianChipTone.Healthy;
-        _branchChip.Text = $"BRANCH  {status.Branch}";
+
+        var scopedLogicalProject = StandaloneProjectPublishing.IsLogicalProject(_config, path);
+        _branchChip.Interactive = !scopedLogicalProject;
+        _branchChip.Enabled = !scopedLogicalProject && _operation is null;
+        _branchChip.Text = status.Branch;
         _branchChip.Tone = GuardianChipTone.Neutral;
+        _toolTips.SetToolTip(
+            _branchChip,
+            scopedLogicalProject
+                ? $"Parent repository branch\n{status.Branch}\n\nThis is a scoped logical project. Use its standalone Branch ▾ control in the toolbar to change the project-only remote branch without switching the parent repository."
+                : $"Repository branch\n{status.Branch}\n\nClick to switch branches inside GitPet. GitPet requires a clean working tree. Online-only branches become local tracking branches when selected.");
         _changesChip.Text = status.Files.Count == 0
             ? "CLEAN  ✓"
             : $"{status.Files.Count} CHANGE{(status.Files.Count == 1 ? "" : "S")}";
@@ -645,18 +991,22 @@ public sealed class GuardianForm : Form
         _commitLabel.Text =
             $"LATEST  {FormatCommitPreview(commit)}\r\n" +
             FriendlyGitState.FormatSyncSummary(status);
+        _watchingLabel.Text = "Watching this repository";
     }
 
     private void SetNoProjectHeader()
     {
-        _projectTitle.Text = "ZOMNIVERSE GITPET  /  NO PROJECT";
+        _projectTitle.Text = "NO PROJECT";
         _healthChip.Text = "● WAITING";
         _healthChip.Tone = GuardianChipTone.Neutral;
-        _branchChip.Text = "BRANCH  —";
+        _branchChip.Text = "—";
         _branchChip.Tone = GuardianChipTone.Neutral;
+        _branchChip.Interactive = false;
+        _branchChip.Enabled = false;
         _changesChip.Text = "OPEN PROJECTS";
         _changesChip.Tone = GuardianChipTone.Neutral;
         _commitLabel.Text = "LATEST  Choose or prepare a project to begin.";
+        _watchingLabel.Text = "Choose a project to begin";
         _emptyState.Visible = true;
         _emptyState.Text =
             "READY WHEN YOU ARE\n\nOpen Projects to choose an existing repository\nor safely prepare a normal folder for Git.";
@@ -672,9 +1022,221 @@ public sealed class GuardianForm : Form
         _changesChip.Text = "CHECK GUARDIAN";
         _changesChip.Tone = GuardianChipTone.Warning;
         _commitLabel.Text = "LATEST  Repository refresh problem";
+        _watchingLabel.Text = "Repository needs attention";
         ShowActivityPanel();
-        _output.Text = message;
+
+        var friendlyError = GitService.DescribeRepositoryReadFailure(message);
+        if (!string.Equals(_lastRepositoryStatusError, friendlyError, StringComparison.Ordinal))
+        {
+            ReportActivity(friendlyError, GuardianActivityKind.Warning);
+            _lastRepositoryStatusError = friendlyError;
+        }
         SetActivityState("● ATTENTION", GuardianTheme.Warning);
+    }
+
+    private async Task ShowRepositoryBranchMenuAsync()
+    {
+        if (_operation is not null || _refreshInProgress || !HasRepository()) return;
+
+        var repositoryPath = _config.RepositoryPath!;
+        if (StandaloneProjectPublishing.IsLogicalProject(_config, repositoryPath))
+        {
+            using var scoped = new GuardianConfirmDialog(
+                "Repository branch",
+                "PARENT BRANCH STAYS SEPARATE",
+                "This GitPet project is a scoped logical project.\r\n\r\n" +
+                "Use the standalone Branch ▾ control in the toolbar to change the project-only remote branch. " +
+                "The BRANCH value in the status card is the shared parent repository branch.",
+                "OK",
+                showCancel: false);
+            scoped.ShowDialog(this);
+            return;
+        }
+
+        var status = await _git.GetStatusAsync(repositoryPath);
+        if (!status.Healthy)
+        {
+            using var unhealthy = new GuardianConfirmDialog(
+                "Repository branch",
+                "REPOSITORY NEEDS ATTENTION",
+                GitService.DescribeRepositoryReadFailure(status.Error),
+                "OK",
+                showCancel: false);
+            unhealthy.ShowDialog(this);
+            return;
+        }
+
+        if (status.Files.Count > 0)
+        {
+            using var dirty = new GuardianConfirmDialog(
+                "Repository branch",
+                "SAVE OR DISCARD CHANGES FIRST",
+                $"GitPet found {status.Files.Count} unsaved working-tree change{(status.Files.Count == 1 ? "" : "s")}.\r\n\r\n" +
+                "Finish those changes before switching the repository branch. GitPet will not stash, reset, or carry unsaved work across branches automatically.",
+                "OK",
+                showCancel: false);
+            dirty.ShowDialog(this);
+            return;
+        }
+
+        _branchChip.Enabled = false;
+        IReadOnlyList<RepositoryBranchOption> branches;
+        try
+        {
+            UseWaitCursor = true;
+            branches = await _git.ListRepositoryBranchesAsync(repositoryPath, refreshRemote: true);
+        }
+        finally
+        {
+            UseWaitCursor = false;
+            _branchChip.Enabled = true;
+        }
+
+        if (branches.Count == 0)
+        {
+            using var empty = new GuardianConfirmDialog(
+                "Repository branch",
+                "NO BRANCHES FOUND",
+                "GitPet could not read local or origin branches for this repository.\r\n\r\n" +
+                "The current branch has not been changed.",
+                "OK",
+                showCancel: false);
+            empty.ShowDialog(this);
+            return;
+        }
+
+        if (IsDisposed || Disposing || _branchChip.IsDisposed) return;
+
+        _repositoryBranchMenu?.Close();
+        _repositoryBranchMenu?.Dispose();
+
+        var branchMenu = new ContextMenuStrip
+        {
+            BackColor = GuardianTheme.SurfaceRaised,
+            ForeColor = GuardianTheme.Ink,
+            ShowImageMargin = false,
+            Font = new Font("Segoe UI", 9f)
+        };
+        _repositoryBranchMenu = branchMenu;
+
+        foreach (var option in branches
+                     .OrderBy(option => option.Name.Equals(status.Branch, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                     .ThenBy(option => option.IsLocal ? 0 : 1)
+                     .ThenBy(option => option.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var isCurrent = option.Name.Equals(status.Branch, StringComparison.OrdinalIgnoreCase);
+            var location = option.IsLocal && option.IsRemote
+                ? "local + online"
+                : option.IsLocal ? "local" : "online";
+            var item = new ToolStripMenuItem(
+                isCurrent
+                    ? $"✓  {option.Name}    [{location}]"
+                    : $"{option.Name}    [{location}]")
+            {
+                Enabled = !isCurrent,
+                ForeColor = isCurrent ? GuardianTheme.Healthy : GuardianTheme.Ink,
+                BackColor = GuardianTheme.SurfaceRaised,
+                Tag = option
+            };
+
+            item.Click += async (_, _) =>
+            {
+                if (!branchMenu.IsDisposed) branchMenu.Close();
+                await SwitchRepositoryBranchAsync(option);
+            };
+            branchMenu.Items.Add(item);
+        }
+
+        branchMenu.Items.Add(new ToolStripSeparator());
+        branchMenu.Items.Add(new ToolStripMenuItem(
+            "Online-only branches are tracked locally when selected.")
+        {
+            Enabled = false,
+            ForeColor = GuardianTheme.MutedInk,
+            BackColor = GuardianTheme.SurfaceRaised
+        });
+
+        // Keep the closed menu alive until replacement or form disposal.
+        // WinForms still accesses it while completing item-click/close processing.
+
+        branchMenu.Show(_branchChip, new Point(0, _branchChip.Height));
+    }
+
+    private async Task SwitchRepositoryBranchAsync(RepositoryBranchOption branch)
+    {
+        if (_operation is not null || !HasRepository()) return;
+
+        var repositoryPath = _config.RepositoryPath!;
+        var current = await _git.GetCurrentBranchAsync(repositoryPath);
+        var currentBranch = current.Success && !string.IsNullOrWhiteSpace(current.Output)
+            ? current.Output.Trim()
+            : _status?.Branch ?? "?";
+        if (branch.Name.Equals(currentBranch, StringComparison.OrdinalIgnoreCase)) return;
+
+        var status = await _git.GetStatusAsync(repositoryPath);
+        if (!status.Healthy || status.Files.Count > 0)
+        {
+            using var blocked = new GuardianConfirmDialog(
+                "Repository branch",
+                "BRANCH SWITCH BLOCKED",
+                status.Healthy
+                    ? "The working tree changed while the branch menu was open. Save or discard those changes before switching branches."
+                    : GitService.DescribeRepositoryReadFailure(status.Error),
+                "OK",
+                showCancel: false);
+            blocked.ShowDialog(this);
+            return;
+        }
+
+        var remoteOnlyNote = branch.IsLocal
+            ? ""
+            : "\r\n\r\nThis branch currently exists only on origin. GitPet will create a local tracking branch for it.";
+
+        using var confirmation = new GuardianConfirmDialog(
+            "Repository branch",
+            "SWITCH REPOSITORY BRANCH",
+            $"Switch this repository from:\r\n{currentBranch}\r\n\r\nto:\r\n{branch.Name}?" +
+            remoteOnlyNote +
+            "\r\n\r\nGitPet will only run Git branch switching. It will not commit, merge, reset, clean, push, or force-update anything.",
+            "Switch branch",
+            "Cancel",
+            confirmWidth: 150,
+            dialogSize: new Size(760, 500));
+        if (confirmation.ShowDialog(this) != DialogResult.Yes) return;
+
+        await RunOperationAsync($"Switching repository branch to {branch.Name}...", async token =>
+        {
+            var result = await _git.SwitchRepositoryBranchAsync(repositoryPath, branch, token);
+            if (!result.Success)
+            {
+                ReportActivity(
+                    "Branch switch failed.\r\n\r\n" + result.Output,
+                    GuardianActivityKind.Error);
+                return;
+            }
+
+            _reviewedPath = null;
+            ShowActivityPanel();
+            ReportActivity(
+                $"✓ Repository branch switched\r\n{currentBranch}  →  {branch.Name}\r\n\r\n" +
+                (branch.IsLocal
+                    ? "Existing local branch selected."
+                    : "Online branch is now tracked by a new local branch."),
+                GuardianActivityKind.Success);
+
+            await _audit.WriteAsync("repository_branch_switched", new
+            {
+                repository = Path.GetFileName(Path.TrimEndingDirectorySeparator(repositoryPath)),
+                from = currentBranch,
+                to = branch.Name,
+                branch.IsLocal,
+                branch.IsRemote
+            });
+
+            try { await GuardianSyncState.RefreshAsync(true); } catch { }
+            await RefreshRepositoryViewAsync(token);
+            try { await GuardianWorkboardRuntime.RefreshNowAsync(); } catch { }
+        });
     }
 
     private static string HumanizeGitStatus(string status) => status switch
@@ -720,7 +1282,8 @@ public sealed class GuardianForm : Form
         if (_files.SelectedRows.Count == 0)
         {
             ShowActivityPanel();
-            _output.Text = "Select a changed file first. Clicking a row opens its Before / Now review automatically.";
+            ReportActivity("Select a changed file first. Clicking a row opens its Before / Now review automatically.",
+                GuardianActivityKind.Warning);
             return;
         }
 
@@ -740,21 +1303,23 @@ public sealed class GuardianForm : Form
         try
         {
             var repositoryPath = _config.RepositoryPath!;
-            var headTask = _git.HasHeadCommitAsync(repositoryPath, token);
-            var commitTask = _git.GetLastCommitAsync(repositoryPath, token);
+            var commitTask = _git.GetReviewCommitAsync(repositoryPath, token);
             var workingTask = ReadWorkingPreviewAsync(repositoryPath, relativePath, token);
 
-            var head = await headTask;
-            var hasBaseline = head.Success && !string.IsNullOrWhiteSpace(head.Output);
             var commit = await commitTask;
+            var commitHash = commit.Success ? commit.Output.Split('\t')[0].Trim() : "";
+            var hasBaseline = commitHash.Length > 0;
             var working = await workingTask;
 
             CommandResult? beforeResult = null;
             CommandResult? diffResult = null;
             if (hasBaseline)
             {
-                beforeResult = await _git.GetFileAtHeadAsync(repositoryPath, relativePath, token);
-                diffResult = await _git.GetDiffAgainstHeadAsync(repositoryPath, relativePath, token);
+                var beforeTask = _git.GetReviewContentAsync(repositoryPath, relativePath, commitHash, token);
+                var diffTask = _git.GetReviewDiffAsync(repositoryPath, relativePath, commitHash, token);
+                await Task.WhenAll(beforeTask, diffTask);
+                beforeResult = await beforeTask;
+                diffResult = await diffTask;
             }
 
             var beforeExists = hasBaseline && beforeResult is { Success: true };
@@ -872,9 +1437,10 @@ public sealed class GuardianForm : Form
             using var setup = new ProjectTestsForm(projectName, repositoryPath, commands);
             if (setup.ShowDialog(this) != DialogResult.OK)
             {
-                _output.Text = commands.Count == 0
+                ReportActivity(commands.Count == 0
                     ? "Tests cancelled. No test commands were saved for this project."
-                    : "Test configuration cancelled. Existing project test commands were kept.";
+                    : "Test configuration cancelled. Existing project test commands were kept.",
+                    GuardianActivityKind.Cancelled);
                 return;
             }
 
@@ -889,15 +1455,16 @@ public sealed class GuardianForm : Form
 
             if (commands.Count == 0)
             {
-                _output.Text = "No test commands are saved for this project.";
+                ReportActivity("No test commands are saved for this project.", GuardianActivityKind.Warning);
                 return;
             }
 
             if (!setup.RunAfterSave)
             {
-                _output.Text =
+                ReportActivity(
                     $"Saved {commands.Count} test command{(commands.Count == 1 ? "" : "s")} for this project.\n\n" +
-                    "Press Tests to run them. Hold Shift while clicking Tests whenever you want to edit this list.";
+                    "Press Tests to run them. Hold Shift while clicking Tests whenever you want to edit this list.",
+                    GuardianActivityKind.Success);
                 return;
             }
         }
@@ -910,12 +1477,14 @@ public sealed class GuardianForm : Form
             completed++;
             text.AppendLine($"TEST {completed}/{commands.Count}");
             text.AppendLine("> " + command);
-            _output.Text = text.ToString();
+            ReportActivity($"TEST {completed}/{commands.Count}\n> {command}");
 
             var result = await _git.RunTestCommandAsync(repositoryPath, command, token);
             if (!string.IsNullOrWhiteSpace(result.Output)) text.AppendLine(result.Output);
             text.AppendLine(result.Success ? "✓ PASS" : $"✕ FAIL  (exit {result.ExitCode})").AppendLine();
-            _output.Text = text.ToString();
+            ReportActivity((string.IsNullOrWhiteSpace(result.Output) ? "" : result.Output + "\n") +
+                (result.Success ? "✓ PASS" : $"✕ FAIL  (exit {result.ExitCode})"),
+                result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
 
             if (!result.Success)
             {
@@ -927,7 +1496,10 @@ public sealed class GuardianForm : Form
         text.Insert(0, allPassed
             ? $"TESTS PASSED ✓  ({completed}/{commands.Count})\n\n"
             : $"TESTS STOPPED ✕  ({completed}/{commands.Count})\n\n");
-        _output.Text = text.ToString();
+        ReportActivity(allPassed
+                ? $"TESTS PASSED ✓  ({completed}/{commands.Count})"
+                : $"TESTS STOPPED ✕  ({completed}/{commands.Count})",
+            allPassed ? GuardianActivityKind.Success : GuardianActivityKind.Error);
         await _audit.WriteAsync("manual_project_tests", new
         {
             repository = repositoryPath,
@@ -937,57 +1509,199 @@ public sealed class GuardianForm : Form
         });
     });
 
-    private async Task CreateCheckpointAsync() => await RunOperationAsync("Preparing save...", async token =>
+    private async Task CreateCheckpointAsync()
     {
-        if (!HasRepository()) return;
+        _saveTerminalTimer.Stop();
+        _saveOperation.Transition(SaveOperationPhase.Preparing);
+        await Task.Yield();
+        await RunOperationAsync("Preparing save...", ExecuteSaveAsync);
+    }
+
+    private async Task ExecuteSaveAsync(CancellationToken token)
+    {
+        if (!HasRepository())
+        {
+            _saveOperation.Transition(SaveOperationPhase.Failed, "Open a project before saving.");
+            return;
+        }
 
         _status = await _git.GetStatusAsync(_config.RepositoryPath!, token);
-        if (!_status.Healthy || _status.Files.Count == 0)
+        var progress = new Progress<GuardianActivityEvent>(HandleSaveProgress);
+        var preflight = await _git.GetSavePreflightAsync(
+            _config.RepositoryPath!, token, progress, _status);
+        if (!_status.Healthy || !preflight.Success)
         {
-            _output.Text = _status.Healthy ? "Everything is already saved locally." : _status.Error;
+            ReportActivity(_status.Healthy ? preflight.Error : _status.Error, GuardianActivityKind.Error);
+            _saveOperation.Transition(SaveOperationPhase.Failed,
+                _status.Healthy ? preflight.Error : _status.Error);
+            return;
+        }
+        if (preflight.NormalChangedFiles.Count == 0 && preflight.IgnoredChangedFiles.Count == 0)
+        {
+            ReportActivity("Everything is already saved locally.", GuardianActivityKind.Success);
+            _saveOperation.Transition(SaveOperationPhase.Completed, "Everything is already saved locally.");
             return;
         }
 
         var suspicious = GitService.FindSuspiciousPaths(_status.Files, _config.SuspiciousPathPatterns);
         if (suspicious.Count > 0)
         {
-            _output.Text = "Save blocked because suspicious paths are present:\n\n" + string.Join("\n", suspicious);
+            ReportActivity("Save blocked because suspicious paths are present:\n\n" +
+                string.Join("\n", suspicious), GuardianActivityKind.Warning);
             await _audit.WriteAsync("checkpoint_blocked_suspicious_paths", new { files = suspicious });
+            _saveOperation.Transition(SaveOperationPhase.Warning, "Suspicious paths require attention.");
             return;
         }
 
-        var preview = string.Join("\n", _status.Files.Take(20).Select(f => $"{HumanizeGitStatus(f.Status)}  {f.Path}"));
-        if (_status.Files.Count > 20) preview += $"\n... and {_status.Files.Count - 20} more";
+        SaveStagePlan? stagePlan = null;
+        if (preflight.IgnoredChangedFiles.Count > 0)
+        {
+            /* ==========================================================================
+               PATCH: EXPLICIT FORCE-TRACK APPROVAL
+               DATE: 2026-09-11
 
-        var countText = FriendlyGitState.Count(_status.Files.Count, "current change");
-        var answer = MessageBox.Show(
-            this,
-            $"Save all {countText} as a local version?\n\n" + preview +
-            "\n\nThis saves the current state on this PC.\nNothing will be sent online.",
-            "Save changes",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
+               Review ignored files before any staging mutation.
+               ========================================================================== */
+            while (true)
+            {
+                /* ==========================================================================
+                   PATCH: IGNORED FILE PET GUIDANCE
+                   FUNCTION:
+                   Explains why the ignored-file review appeared and what the user should select.
 
-        if (answer != DialogResult.Yes) return;
-        if (!await EnsureGitIdentityAsync(token)) return;
+                   DATE.TIME ADDED: 2026-09-11 17:16 +03:00
+
+                   REASON:
+                   Guide users through explicit force-track approval without changing Save behavior.
+                   ========================================================================== */
+                var guidancePet = Application.OpenForms
+                    .OfType<PetForm>()
+                    .FirstOrDefault(form => form.Visible && !form.IsDisposed);
+
+                /* ==========================================================================
+                   PATCH: HELD IGNORED FILE GUIDANCE
+                   FUNCTION:
+                   Keeps the review instruction visible until the ignored-file dialog closes.
+
+                   DATE.TIME ADDED: 2026-09-11 17:34 +03:00
+
+                   REASON:
+                   Prevent repository refreshes from replacing the dialog-specific pet message.
+                   ========================================================================== */
+                guidancePet?.BeginGuidanceHold(
+                    "⚠ IGNORED FILES FOUND\nReview, then tick files to track");
+
+                using var ignoredDialog = new IgnoredProjectFilesDialog(
+                    _config.RepositoryPath!, preflight.IgnoredChangedFiles);
+                var ignoredDialogResult = ignoredDialog.ShowDialog(this);
+
+                guidancePet?.EndGuidanceHold();
+
+                if (ignoredDialogResult != DialogResult.Yes)
+                {
+                    _saveOperation.Transition(SaveOperationPhase.Cancelled);
+                    return;
+                }
+
+                var selected = ignoredDialog.SelectedPaths;
+                if (selected.Count > 0)
+                {
+                    var details = preflight.IgnoredChangedFiles
+                        .Where(item => selected.Contains(item.Path, StringComparer.OrdinalIgnoreCase))
+                        .Select(item => $"{item.Path}\r\n  Ignored by: {item.IgnoreSource}" +
+                                        (item.IgnoreLine is int line ? $"\r\n  Line {line}: {item.Rule}" : $"\r\n  Rule: {item.Rule}"));
+                    /* ==========================================================================
+                       PATCH: RESIZABLE FORCE-TRACK CONFIRMATION
+                       FUNCTION:
+                       Enables scrolling, resizing, and a complete primary action label for this confirmation.
+
+                       DATE.TIME ADDED: 2026-09-11 17:48 +03:00
+
+                       REASON:
+                       Keep large approved-file lists and both confirmation actions fully accessible.
+                       ========================================================================== */
+                    using var confirm = new GuardianConfirmDialog(
+                        "Track ignored files?",
+                        "TRACK IGNORED FILES?",
+                        "GitPet will explicitly track these files even though Git currently ignores them:\r\n\r\n" +
+                        string.Join("\r\n\r\n", details) +
+                        "\r\n\r\nThis does NOT remove or modify the ignore rule.\r\n" +
+                        "Only the exact selected files will be force-added.",
+                        "Track selected files",
+                        "Back",
+                        dialogSize: new Size(900, 680),
+                        resizable: true,
+                        scrollable: true,
+                        confirmWidth: 210);
+                    if (confirm.ShowDialog(this) != DialogResult.Yes) continue;
+                }
+
+                stagePlan = IgnoredFileSavePolicy.CreateStagePlan(
+                    preflight.NormalChangedFiles,
+                    preflight.IgnoredChangedFiles,
+                    selected);
+                break;
+            }
+        }
+        else
+        {
+            var preview = string.Join("\n", _status.Files.Take(20).Select(f => $"{HumanizeGitStatus(f.Status)}  {f.Path}"));
+            if (_status.Files.Count > 20) preview += $"\n... and {_status.Files.Count - 20} more";
+
+            var countText = FriendlyGitState.Count(_status.Files.Count, "current change");
+            using var saveDialog = new GuardianConfirmDialog(
+                "Save changes",
+                "SAVE LOCALLY",
+                $"Save all {countText} as a local version?\r\n\r\n" +
+                preview +
+                "\r\n\r\nThis saves the current state on this PC.\r\n" +
+                "Nothing will be sent online.",
+                "Save",
+                "Cancel");
+
+            if (saveDialog.ShowDialog(this) != DialogResult.Yes)
+            {
+                _saveOperation.Transition(SaveOperationPhase.Cancelled);
+                return;
+            }
+        }
+
+        if (!await EnsureGitIdentityAsync(token))
+        {
+            GetActiveOperationController()?.Transition(SaveOperationPhase.Cancelled);
+            return;
+        }
 
         var message = $"checkpoint: {DateTime.Now:yyyy-MM-dd HH:mm}";
-        var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, token);
-        _output.Text = result.Success
-            ? "Changes saved locally ✓\n\n" + result.Message
-            : result.Message;
-
-        MessageBox.Show(
-            this,
-            result.Success
-                ? "Changes saved locally ✓\n\nNothing was sent online."
+        var result = await _git.CreateCheckpointAsync(_config.RepositoryPath!, message, stagePlan, token, progress);
+        ReportActivity(result.Success
+                ? "Changes saved locally ✓\n\n" + result.Message
                 : result.Message,
-            "Save changes",
-            MessageBoxButtons.OK,
-            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
+        _saveOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
+            result.Success ? "Changes saved locally." : result.Message);
+
+            /*
+            PATCH: THEMED SAVE RESULT
+            DATE: 2026-09-09
+            Show Save result using Guardian dialog styling.
+            */
+            using var savedDialog = new GuardianConfirmDialog(
+                "Save changes",
+                result.Success ? "SAVED LOCALLY  ✓" : "SAVE NEEDS ATTENTION",
+                result.Success
+                    ? (stagePlan is null
+                        ? "Changes saved locally.\r\n\r\nNothing was sent online."
+                        : result.Message + "\r\n\r\nNothing was sent online.")
+                    : result.Message,
+                "OK",
+                "",
+                showCancel: false);
+
+            savedDialog.ShowDialog(this);
 
         await RefreshRepositoryViewAsync(token);
-    });
+    }
 
     private async Task<bool> EnsureGitIdentityAsync(CancellationToken token)
     {
@@ -1007,7 +1721,9 @@ public sealed class GuardianForm : Form
         using var identity = new GitIdentityForm(projectName, currentName, currentEmail);
         if (identity.ShowDialog(this) != DialogResult.OK)
         {
-            _output.Text = "Save cancelled. Git still needs an author name and email before it can save a local version.";
+            ReportActivity("Save cancelled. Git still needs an author name and email before it can save a local version.",
+                GuardianActivityKind.Cancelled);
+            _saveOperation.Transition(SaveOperationPhase.Cancelled);
             return false;
         }
 
@@ -1020,7 +1736,8 @@ public sealed class GuardianForm : Form
 
         if (!save.Success)
         {
-            _output.Text = save.Output;
+            ReportActivity(save.Output, GuardianActivityKind.Error);
+            _saveOperation.Transition(SaveOperationPhase.Failed, save.Output);
             MessageBox.Show(
                 this,
                 "GitPet could not save the Git identity. No changes were saved.\n\n" + save.Output,
@@ -1030,13 +1747,17 @@ public sealed class GuardianForm : Form
             return false;
         }
 
-        _output.Text = identity.UseGlobal
+        ReportActivity(identity.UseGlobal
             ? "Git identity saved for Git projects on this PC. Saving changes..."
-            : "Git identity saved for this project. Saving changes...";
+            : "Git identity saved for this project. Saving changes...", GuardianActivityKind.Success);
         return true;
     }
 
-    private async Task PullFromOriginAsync() => await RunOperationAsync("Checking Get safety...", async token =>
+    private async Task PullFromOriginAsync()
+    {
+        _getOperation.Transition(SaveOperationPhase.Preparing, "Checking Get safety...");
+        await Task.Yield();
+        await RunOperationAsync("Checking Get safety...", async token =>
     {
         if (!HasRepository()) return;
 
@@ -1044,16 +1765,19 @@ public sealed class GuardianForm : Form
         var status = await _git.GetStatusAsync(repositoryPath, token);
         if (!status.Healthy)
         {
-            _output.Text = "Get unavailable because Git could not read the current project state.\n\n" + status.Error;
+            ReportActivity("Get unavailable because Git could not read the current project state.\n\n" + status.Error,
+                GuardianActivityKind.Error);
+            _getOperation.Transition(SaveOperationPhase.Failed, "Git could not read the current project state.");
             return;
         }
 
         if (status.Files.Count > 0)
         {
             var countText = FriendlyGitState.Count(status.Files.Count, "unsaved change");
-            _output.Text =
+            ReportActivity(
                 $"Get blocked safely: {countText} detected.\n\n" +
-                "Save the current work before getting online updates so the two versions are not accidentally mixed.";
+                "Save the current work before getting online updates so the two versions are not accidentally mixed.",
+                GuardianActivityKind.Warning);
             MessageBox.Show(
                 this,
                 $"GitPet found {countText}.\n\n" +
@@ -1062,6 +1786,7 @@ public sealed class GuardianForm : Form
                 "Save first",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            _getOperation.Transition(SaveOperationPhase.Warning, "Save local changes before using Get.");
             return;
         }
 
@@ -1069,16 +1794,19 @@ public sealed class GuardianForm : Form
         var branch = branchResult.Success ? branchResult.Output.Trim() : "";
         if (string.IsNullOrWhiteSpace(branch))
         {
-            _output.Text = "Get unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            ReportActivity("Get unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).",
+                GuardianActivityKind.Error);
+            _getOperation.Transition(SaveOperationPhase.Failed, "The current branch could not be determined.");
             return;
         }
 
         var originResult = await _git.GetOriginUrlAsync(repositoryPath, token);
         if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
         {
-            _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
+            ReportActivity(string.IsNullOrWhiteSpace(originResult.Output)
                 ? "Get unavailable: no readable origin remote is configured."
-                : originResult.Output;
+                : originResult.Output, GuardianActivityKind.Error);
+            _getOperation.Transition(SaveOperationPhase.Failed, "No readable origin remote is configured.");
             return;
         }
 
@@ -1095,17 +1823,22 @@ public sealed class GuardianForm : Form
 
         if (answer != DialogResult.Yes)
         {
-            _output.Text = "Get cancelled. Nothing was changed.";
+            ReportActivity("Get cancelled. Nothing was changed.", GuardianActivityKind.Cancelled);
+            _getOperation.Transition(SaveOperationPhase.Cancelled);
             return;
         }
 
-        _output.Text = $"Getting updates from origin/{branch} with fast-forward-only safety...";
+        _getOperation.Transition(SaveOperationPhase.Staging, $"Getting updates from origin/{branch}...");
+        ReportActivity($"Getting updates from origin/{branch} with fast-forward-only safety...");
         var result = await _git.PullFromOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
 
-        _output.Text = result.Success
+        ReportActivity(result.Success
             ? $"Updates received ✓\norigin/{branch} → local {branch}\n\n{details}"
-            : $"Get stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.";
+            : $"Get stopped safely.\norigin/{branch}\n\n{details}\n\nGitPet did not create a merge commit.",
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
+        _getOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
+            result.Success ? "Updates received successfully." : "Get stopped safely.");
 
         MessageBox.Show(
             this,
@@ -1117,9 +1850,16 @@ public sealed class GuardianForm : Form
             result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
 
         await RefreshRepositoryViewAsync(token);
-    });
+        });
+        if (_getOperation.Current.IsActive)
+            _getOperation.Transition(SaveOperationPhase.Warning, "Get stopped before receiving updates.");
+    }
 
-    private async Task PushToOriginAsync() => await RunOperationAsync("Checking what is ready to send...", async token =>
+    private async Task PushToOriginAsync()
+    {
+        _sendOperation.Transition(SaveOperationPhase.Preparing, "Checking what is ready to send...");
+        await Task.Yield();
+        await RunOperationAsync("Checking what is ready to send...", async token =>
     {
         if (!HasRepository()) return;
 
@@ -1127,7 +1867,9 @@ public sealed class GuardianForm : Form
         var status = await _git.GetStatusAsync(repositoryPath, token);
         if (!status.Healthy)
         {
-            _output.Text = "Send unavailable because Git could not read the current project state.\n\n" + status.Error;
+            ReportActivity("Send unavailable because Git could not read the current project state.\n\n" + status.Error,
+                GuardianActivityKind.Error);
+            _sendOperation.Transition(SaveOperationPhase.Failed, "Git could not read the current project state.");
             return;
         }
 
@@ -1135,19 +1877,22 @@ public sealed class GuardianForm : Form
         if (readiness == SendReadiness.SaveFirst)
         {
             var countText = FriendlyGitState.Count(status.Files.Count, "unsaved change");
-            _output.Text = $"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\nSave them first, then use Send.";
+            ReportActivity($"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\nSave them first, then use Send.",
+                GuardianActivityKind.Warning);
             MessageBox.Show(
                 this,
                 $"Nothing is ready to send yet.\n\nYou have {countText} on this PC.\n\nSave them first, then use Send.",
                 "Save your changes first",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            _sendOperation.Transition(SaveOperationPhase.Warning, "Save local changes before using Send.");
             return;
         }
 
         if (readiness == SendReadiness.AlreadyUpToDate)
         {
-            _output.Text = "Everything saved is already online.\n\nThere is nothing new to send.";
+            ReportActivity("Everything saved is already online.\n\nThere is nothing new to send.", GuardianActivityKind.Success);
+            _sendOperation.Transition(SaveOperationPhase.Completed, "Everything saved is already online.");
             MessageBox.Show(
                 this,
                 "Everything saved is already online.\n\nThere is nothing new to send.",
@@ -1161,16 +1906,19 @@ public sealed class GuardianForm : Form
         var branch = branchResult.Success ? branchResult.Output.Trim() : "";
         if (string.IsNullOrWhiteSpace(branch))
         {
-            _output.Text = "Send unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).";
+            ReportActivity("Send unavailable: the repository is not on a named local branch (detached HEAD or branch lookup failed).",
+                GuardianActivityKind.Error);
+            _sendOperation.Transition(SaveOperationPhase.Failed, "The current branch could not be determined.");
             return;
         }
 
         var originResult = await _git.GetOriginUrlAsync(repositoryPath, token);
         if (!originResult.Success || string.IsNullOrWhiteSpace(originResult.Output))
         {
-            _output.Text = string.IsNullOrWhiteSpace(originResult.Output)
+            ReportActivity(string.IsNullOrWhiteSpace(originResult.Output)
                 ? "Send unavailable: no readable origin remote is configured."
-                : originResult.Output;
+                : originResult.Output, GuardianActivityKind.Error);
+            _sendOperation.Transition(SaveOperationPhase.Failed, "No readable origin remote is configured.");
             return;
         }
 
@@ -1184,40 +1932,71 @@ public sealed class GuardianForm : Form
               "Those unsaved changes will stay on this PC and will NOT be sent."
             : "\n\nNothing unsaved will be included.";
 
-        var answer = MessageBox.Show(
-            this,
-            status.HasTrackingInformation
-                ? $"Send {savedText} to the online copy?\n\nBranch: {branch}\nLatest saved version: {commitPreview}" + unsavedText
-                : $"Send the saved committed history to the online copy?\n\nBranch: {branch}\nLatest saved version: {commitPreview}" + unsavedText,
-            "Send saved updates?",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
+        /*
+        PATCH: THEMED SEND CONFIRMATION
+        DATE: 2026-09-09
+        Use Guardian styling for Send confirmation.
+        */
+        var sendMessage = status.HasTrackingInformation
+            ? $"Send {savedText} to the online copy?\r\n\r\n" +
+            $"Branch: {branch}\r\n" +
+            $"Latest saved version: {commitPreview}" +
+            unsavedText
+            : $"Send the saved committed history to the online copy?\r\n\r\n" +
+            $"Branch: {branch}\r\n" +
+            $"Latest saved version: {commitPreview}" +
+            unsavedText;
+
+        using var sendDialog = new GuardianConfirmDialog(
+            "Send saved updates",
+            "SEND ONLINE",
+            sendMessage,
+            "Send",
+            "Cancel");
+
+        var answer = sendDialog.ShowDialog(this);
 
         if (answer != DialogResult.Yes)
         {
-            _output.Text = "Send cancelled. Nothing was sent online.";
+            ReportActivity("Send cancelled. Nothing was sent online.", GuardianActivityKind.Cancelled);
+            _sendOperation.Transition(SaveOperationPhase.Cancelled);
             return;
         }
 
-        _output.Text = $"Sending saved updates to origin/{branch}...";
+        _sendOperation.Transition(SaveOperationPhase.Staging, $"Sending saved updates to origin/{branch}...");
+        ReportActivity($"Sending saved updates to origin/{branch}...");
         var result = await _git.PushToOriginAsync(repositoryPath, branch, token);
         var details = string.IsNullOrWhiteSpace(result.Output) ? "Git reported success." : result.Output;
 
-        _output.Text = result.Success
+        ReportActivity(result.Success
             ? $"Send completed ✓\norigin/{branch}\n\n{details}"
-            : $"Send failed.\norigin/{branch}\n\n{details}";
+            : $"Send failed.\norigin/{branch}\n\n{details}",
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
+        _sendOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
+            result.Success ? "Saved updates were sent successfully." : "Send failed.");
 
-        MessageBox.Show(
-            this,
-            result.Success
-                ? "Saved updates sent successfully."
-                : "Send failed. See Guardian Activity for details.",
+        /*
+        PATCH: THEMED SEND RESULT
+        DATE: 2026-09-09
+        Style final Send result with Guardian dialog.
+        */
+        using var sentDialog = new GuardianConfirmDialog(
             "Send saved updates",
-            MessageBoxButtons.OK,
-            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            result.Success ? "SENT ONLINE  ✓" : "SEND NEEDS ATTENTION",
+            result.Success
+                ? "Saved updates were sent successfully.\r\n\r\nThe online copy is now updated."
+                : "Send failed.\r\n\r\nSee Guardian Activity for details.",
+            "OK",
+            "",
+            showCancel: false);
+
+        sentDialog.ShowDialog(this);
 
         await RefreshRepositoryViewAsync(token);
-    });
+        });
+        if (_sendOperation.Current.IsActive)
+            _sendOperation.Transition(SaveOperationPhase.Warning, "Send stopped before uploading updates.");
+    }
 
     private static string FormatCommitPreview(CommandResult commit)
     {
@@ -1239,7 +2018,7 @@ public sealed class GuardianForm : Form
     {
         if (!HasRepository()) return;
         var result = await _git.GetRecentCommitsAsync(_config.RepositoryPath!, token);
-        _output.Text = result.Output;
+        ReportActivity(result.Output, result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
     });
 
     private async Task HealthCheckAsync() => await RunOperationAsync("Running Git health check...", async token =>
@@ -1247,9 +2026,10 @@ public sealed class GuardianForm : Form
         if (!HasRepository()) return;
 
         var result = await _git.HealthCheckAsync(_config.RepositoryPath!, token);
-        _output.Text = result.Success
+        ReportActivity(result.Success
             ? "git fsck passed.\n\n" + result.Output
-            : "git fsck failed.\n\n" + result.Output;
+            : "git fsck failed.\n\n" + result.Output,
+            result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
 
         await _audit.WriteAsync("health_check", new { success = result.Success, result.TimedOut });
     });
@@ -1259,7 +2039,7 @@ public sealed class GuardianForm : Form
         if (!string.IsNullOrWhiteSpace(_config.RepositoryPath)) return true;
 
         ShowActivityPanel();
-        _output.Text = "Open Projects and choose a Git project first.";
+        ReportActivity("Open Projects and choose a Git project first.", GuardianActivityKind.Warning);
         return false;
     }
 
@@ -1271,33 +2051,173 @@ public sealed class GuardianForm : Form
         ShowActivityPanel();
         _operation = new CancellationTokenSource();
         foreach (var button in _operationButtons) button.Enabled = false;
+        var branchChipWasEnabled = _branchChip.Enabled;
+        _branchChip.Enabled = false;
 
         _cancelButton.Visible = true;
         SetActivityState("● WORKING", GuardianTheme.Changes);
-        _output.Text = message;
+        var firstOperationEntry = _activityConsole?.EntryCount ?? 0;
+        _activityConsole?.Begin(message);
+        var operationTimer = Stopwatch.StartNew();
+        var outcome = "success";
+        await _audit.WriteAsync("operation_started", new { message });
 
         try
         {
             await action(_operation.Token);
+            var hasErrors = _activityConsole?.HasKindSince(firstOperationEntry,
+                GuardianActivityKind.Error,
+                GuardianActivityKind.LongPathConfigurationFailed,
+                GuardianActivityKind.LongPathRetryFailed) == true;
+            var hasWarnings = _activityConsole?.HasKindSince(firstOperationEntry, GuardianActivityKind.Warning) == true;
+            var finalKind = hasErrors
+                ? GuardianActivityKind.Error
+                : hasWarnings ? GuardianActivityKind.Warning : GuardianActivityKind.OperationCompleted;
+            outcome = hasErrors ? "failed" : hasWarnings ? "warning" : "success";
+            _activityConsole?.Finish(finalKind,
+                $"Operation finished in {FormatElapsed(operationTimer.Elapsed)}" +
+                (hasErrors ? " with errors." : hasWarnings ? " with warnings." : "."));
         }
         catch (OperationCanceledException)
         {
-            _output.Text = "Operation cancelled.";
+            outcome = "cancelled";
+            if (_saveOperation.Current.IsActive)
+                _saveOperation.Transition(SaveOperationPhase.Cancelled);
+            _activityConsole?.Finish(GuardianActivityKind.Cancelled, "Operation cancelled.");
         }
         catch (Exception ex)
         {
-            _output.Text = ex.Message;
+            outcome = "failed";
+            GetActiveOperationController()?.Transition(SaveOperationPhase.Failed, ex.Message);
+            _activityConsole?.Finish(GuardianActivityKind.Error, ex.Message);
             await _audit.WriteAsync("operation_error", new { error = ex.Message });
         }
         finally
         {
             foreach (var button in _operationButtons) button.Enabled = true;
+            _branchChip.Enabled = branchChipWasEnabled;
             _cancelButton.Visible = false;
             SetActivityState("● READY", GuardianTheme.Healthy);
 
             _operation.Dispose();
             _operation = null;
+            if (AllOperationControllers().Any(controller => controller.Current.Phase is
+                    SaveOperationPhase.Completed or SaveOperationPhase.Warning or
+                    SaveOperationPhase.Failed or SaveOperationPhase.Cancelled))
+                ScheduleSaveIdle();
+            await _audit.WriteAsync("operation_completed", new
+            {
+                message,
+                outcome,
+                elapsedMilliseconds = operationTimer.ElapsedMilliseconds
+            });
         }
+    }
+
+    private static string FormatElapsed(TimeSpan elapsed) =>
+        $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}.{elapsed.Milliseconds:000}";
+
+    private void ReportActivity(string message, GuardianActivityKind kind = GuardianActivityKind.Information) =>
+        _activityConsole?.AppendMessage(message, kind);
+
+    internal void BeginProjectSwitchActivity(string projectName)
+    {
+        ShowActivityPanel();
+        _lastRepositoryStatusError = null;
+        _activityConsole?.ResetForProjectContext($"Switching to {projectName}...");
+        SetActivityState("● SWITCHING", GuardianTheme.Changes);
+    }
+
+    internal void ReportProjectSwitchActivity(
+        string message,
+        GuardianActivityKind kind = GuardianActivityKind.Information)
+    {
+        ShowActivityPanel();
+        ReportActivity(message, kind);
+
+        if (kind == GuardianActivityKind.Error)
+            SetActivityState("● SWITCH FAILED", GuardianTheme.Warning);
+        else if (kind == GuardianActivityKind.Success || kind == GuardianActivityKind.Cancelled)
+            SetActivityState("● READY", GuardianTheme.Healthy);
+        else
+            SetActivityState("● SWITCHING", GuardianTheme.Changes);
+    }
+
+    private void HandleSaveProgress(GuardianActivityEvent activity)
+    {
+        var phase = MapActivityToSavePhase(activity.Kind);
+        if (phase is SaveOperationPhase next) _saveOperation.Transition(next, activity.Message);
+        _activityConsole?.Append(activity);
+    }
+
+    internal static SaveOperationPhase? MapActivityToSavePhase(GuardianActivityKind kind) => kind switch
+        {
+            GuardianActivityKind.LongPathChecking or GuardianActivityKind.LongPathEnabling or
+                GuardianActivityKind.LongPathAlreadyEnabled => SaveOperationPhase.CheckingPathSupport,
+            GuardianActivityKind.SaveStaging or GuardianActivityKind.LongPathRetrying => SaveOperationPhase.Staging,
+            GuardianActivityKind.SaveCreatingCheckpoint => SaveOperationPhase.CreatingCheckpoint,
+            GuardianActivityKind.LongPathRetryFailed => SaveOperationPhase.Failed,
+            _ => (SaveOperationPhase?)null
+        };
+
+    private void OnSaveOperationStateChanged(object? sender, SaveOperationVisualState state)
+    {
+        GuardianWorkboardRuntime.SetOperationState(this, state);
+        foreach (var pet in Application.OpenForms.OfType<PetForm>().Where(pet => !pet.IsDisposed))
+            pet.SetOperationState(state);
+
+        var blockConflictingActions = state.IsActive;
+        foreach (var button in _operationButtons.Where(button =>
+                     button.Text.StartsWith("Save", StringComparison.OrdinalIgnoreCase) ||
+                     button.Text.StartsWith("Get", StringComparison.OrdinalIgnoreCase) ||
+                     button.Text.StartsWith("Send", StringComparison.OrdinalIgnoreCase) ||
+                     button.Text.StartsWith("Refresh", StringComparison.OrdinalIgnoreCase)))
+            button.Enabled = !blockConflictingActions && _operation is null;
+
+        if (state.IsActive)
+            SetActivityState("● " + state.Phase.ToString().ToUpperInvariant(), GuardianTheme.Changes);
+        else if (state.Phase != SaveOperationPhase.Idle)
+        {
+            if (_operation is null) ScheduleSaveIdle();
+        }
+    }
+
+    private void ScheduleSaveIdle()
+    {
+        _saveTerminalTimer.Stop();
+        _saveTerminalTimer.Start();
+    }
+
+    private IEnumerable<SaveOperationStateController> AllOperationControllers()
+    {
+        yield return _saveOperation;
+        yield return _getOperation;
+        yield return _sendOperation;
+        yield return _reconcileOperation;
+    }
+
+    private SaveOperationStateController? GetActiveOperationController() =>
+        AllOperationControllers().FirstOrDefault(controller => controller.Current.IsActive);
+
+    internal void SetReconcileOperationState(SaveOperationPhase phase, string? message = null)
+    {
+        var text = message ?? SaveOperationStateController.DefaultMessage(phase, GuardianOperationKind.Reconcile);
+        _reconcileOperation.Transition(phase, message);
+        if (phase == SaveOperationPhase.Idle) return;
+        ShowActivityPanel();
+        if (phase == SaveOperationPhase.Preparing)
+            _activityConsole?.Begin(text);
+        else if (phase is SaveOperationPhase.Completed or SaveOperationPhase.Warning or
+                 SaveOperationPhase.Failed or SaveOperationPhase.Cancelled)
+            _activityConsole?.Finish(phase switch
+            {
+                SaveOperationPhase.Completed => GuardianActivityKind.OperationCompleted,
+                SaveOperationPhase.Warning => GuardianActivityKind.Warning,
+                SaveOperationPhase.Failed => GuardianActivityKind.Error,
+                _ => GuardianActivityKind.Cancelled
+            }, text);
+        else
+            ReportActivity(text);
     }
 
     private void ShowActivityPanel()
@@ -1338,8 +2258,16 @@ public sealed class GuardianForm : Form
         {
             _pulseTimer.Stop();
             _pulseTimer.Dispose();
+            _saveTerminalTimer.Stop();
+            _saveTerminalTimer.Dispose();
+            _saveOperation.Changed -= OnSaveOperationStateChanged;
+            _getOperation.Changed -= OnSaveOperationStateChanged;
+            _sendOperation.Changed -= OnSaveOperationStateChanged;
+            _reconcileOperation.Changed -= OnSaveOperationStateChanged;
             _comparisonLoad?.Cancel();
             _comparisonLoad?.Dispose();
+            _repositoryBranchMenu?.Dispose();
+            _repositoryBranchMenu = null;
             _toolTips.Dispose();
             _toolTipFont.Dispose();
         }

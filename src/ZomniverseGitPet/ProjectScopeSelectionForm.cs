@@ -2,15 +2,56 @@ namespace ZomniverseGitPet;
 
 internal sealed class ProjectScopeSelectionForm : Form
 {
+    /* ==========================================================================
+       PATCH: THREE-STATE PROJECT TREE
+       FUNCTION:
+       Adds saved scope entries and three possible selection states to the
+       project-scope tree.
+
+       DATE.TIME ADDED: 2026-09-10 10:05 +03:00
+
+       REASON:
+       Support restored selections and partially selected parent folders.
+       ========================================================================== */
+
     private readonly string _rootPath;
+    private readonly string _projectPath;
+    private readonly ProjectScopeSelectionModel _selectionModel;
+    private string _projectName;
+    /* ==========================================================================
+       PATCH: RESIZABLE PROJECT SCOPE AREAS
+       FUNCTION:
+       Provides a draggable horizontal divider between the folder tree and
+       advanced allow-list editor.
+
+       DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+       REASON:
+       Let users resize the folder tree and advanced editor independently.
+       ========================================================================== */
     private readonly TreeView _tree = new();
     private readonly Label _summary = new();
+    private readonly SplitContainer _scopeSplit = new();
+    private readonly Panel _advancedPanel = new();
+    private readonly TextBox _allowListText = new();
+    private readonly Label _allowListStatus = new();
     private readonly Button _continueButton;
-    private bool _updatingChecks;
+    private readonly Button _advancedButton;
 
-    public ProjectScopeSelectionForm(string rootPath)
+    public ProjectScopeSelectionForm(
+        string rootPath,
+        IReadOnlyList<ProjectScopeEntry>? initialEntries = null,
+        string? projectPath = null,
+        string? projectName = null)
     {
         _rootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
+        _projectPath = string.IsNullOrWhiteSpace(projectPath)
+            ? _rootPath
+            : Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectPath));
+        _projectName = string.IsNullOrWhiteSpace(projectName)
+            ? Path.GetFileName(_projectPath)
+            : projectName.Trim();
+        _selectionModel = new ProjectScopeSelectionModel(initialEntries);
 
         Text = "Choose project contents";
         Icon = AppIconProvider.Icon;
@@ -44,10 +85,13 @@ internal sealed class ProjectScopeSelectionForm : Form
             Padding = new Padding(24, 14, 24, 10),
             ForeColor = GuardianTheme.MutedInk,
             BackColor = GuardianTheme.Window,
-            Text =
-                "Git works from one project root, but that root can contain things that do not belong to the same project.\r\n\r\n" +
-                "Everything starts selected, like a selective-sync view. Uncheck anything GitPet should keep outside this repository. " +
-                "Expand a folder if you want to include only part of it. Existing nested Git repositories are protected and excluded automatically."
+            Text = initialEntries is null
+                ? "Git works from one project root, but that root can contain things that do not belong to the same project.\r\n\r\n" +
+                  "Everything starts selected, like a selective-sync view. Uncheck anything GitPet should keep outside this repository. " +
+                  "Expand a folder if you want to include only part of it. Existing nested Git repositories are protected and excluded automatically."
+                : "GitPet restored the project's previous tracking scope.\r\n\r\n" +
+                  "Checked items remain included; a minus means only part of that folder is selected. " +
+                  "Expand folders to adjust individual items. Existing nested Git repositories stay protected and excluded automatically."
         };
 
         var rootCard = new Panel
@@ -74,10 +118,82 @@ internal sealed class ProjectScopeSelectionForm : Form
         var treeHost = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(18, 12, 18, 8),
+            Padding = new Padding(18, 8, 18, 8),
             BackColor = GuardianTheme.Window
         };
-        treeHost.Controls.Add(_tree);
+
+        var treeTools = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 48,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 5, 0, 5),
+            BackColor = GuardianTheme.Window
+        };
+
+        _advancedButton = MakeButton("Advanced allow list ▾", primary: false, 168);
+        _advancedButton.Click += (_, _) => ToggleAdvancedPanel();
+        treeTools.Controls.Add(_advancedButton);
+
+        var renameButton = MakeButton($"Name: {_projectName}", primary: false, 220);
+        renameButton.Click += (_, _) =>
+        {
+            ChooseProjectName();
+            renameButton.Text = $"Name: {_projectName}";
+        };
+        treeTools.Controls.Add(renameButton);
+        treeTools.Controls.Add(new Label
+        {
+            Width = 370,
+            Height = 36,
+            Margin = new Padding(10, 0, 0, 0),
+            Text = "Paste exact file/folder paths and GitPet will map them onto this tree.",
+            ForeColor = GuardianTheme.FaintInk,
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
+        });
+
+        /* ==========================================================================
+           PATCH: DRAGGABLE SCOPE EDITOR LAYOUT
+           FUNCTION:
+           Places the folder tree and advanced editor into vertically resizable
+           panes while keeping the Advanced control above them.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Allow manual vertical resizing after opening the advanced editor.
+           ========================================================================== */
+        ConfigureAdvancedPanel();
+
+        /* ==========================================================================
+           PATCH: SAFE SPLIT CONTAINER INITIALIZATION
+           FUNCTION:
+           Uses construction-safe pane minimums before WinForms assigns the
+           split container its final displayed dimensions.
+
+           DATE.TIME ADDED: 2026-09-11 15:05 +03:00
+
+           REASON:
+           Prevent invalid SplitterDistance validation while the split container still has its temporary size.
+           ========================================================================== */
+        _scopeSplit.Dock = DockStyle.Fill;
+        _scopeSplit.Orientation = Orientation.Horizontal;
+        _scopeSplit.FixedPanel = FixedPanel.None;
+        _scopeSplit.IsSplitterFixed = false;
+        _scopeSplit.SplitterWidth = 8;
+        _scopeSplit.Panel1MinSize = 25;
+        _scopeSplit.Panel2MinSize = 25;
+        _scopeSplit.BackColor = GuardianTheme.BorderSoft;
+        _scopeSplit.Panel1.BackColor = GuardianTheme.Window;
+        _scopeSplit.Panel2.BackColor = GuardianTheme.SurfaceSoft;
+        _scopeSplit.Panel1.Controls.Add(_tree);
+        _scopeSplit.Panel2.Controls.Add(_advancedPanel);
+        _scopeSplit.Panel2Collapsed = true;
+
+        treeHost.Controls.Add(_scopeSplit);
+        treeHost.Controls.Add(treeTools);
 
         var footer = new Panel
         {
@@ -147,10 +263,389 @@ internal sealed class ProjectScopeSelectionForm : Form
         }
     }
 
+    public string ProjectName => _projectName;
+
+    private void ChooseProjectName()
+    {
+        using var dialog = new ProjectRegistrationForm(
+            _projectPath,
+            _rootPath,
+            _projectName,
+            renameOnly: true);
+
+        if (dialog.ShowDialog(this) != DialogResult.OK ||
+            dialog.SelectedAction != ProjectRegistrationAction.Rename)
+            return;
+
+        _projectName = dialog.ProjectName;
+        _allowListStatus.ForeColor = GuardianTheme.HotPinkSoft;
+        _allowListStatus.Text = $"Project name: {_projectName}. The folder and Git repository names are unchanged.";
+    }
+
+    /* ==========================================================================
+       PATCH: ADVANCED ALLOW-LIST TREE IMPORT
+       DATE.TIME: 2026-09-11 14:38 +03:00
+       REASON:
+       Let advanced users reproduce exact project scope from pasted paths.
+       ========================================================================== */
+    private void ConfigureAdvancedPanel()
+    {
+        /* ==========================================================================
+           PATCH: EXPANDABLE ADVANCED EDITOR
+           FUNCTION:
+           Makes the advanced allow-list panel fill the lower resizable pane
+           instead of enforcing a fixed height.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Give the advanced text editor all space assigned by the draggable divider.
+           ========================================================================== */
+        _advancedPanel.Dock = DockStyle.Fill;
+        _advancedPanel.MinimumSize = new Size(0, 180);
+        _advancedPanel.Padding = new Padding(12);
+        _advancedPanel.BackColor = GuardianTheme.SurfaceSoft;
+
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = GuardianTheme.SurfaceSoft
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+
+        layout.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "ADVANCED PROJECT ALLOW LIST\r\nOne file or folder path per line. Relative or full Windows paths are accepted. Blank lines and # comments are ignored.",
+            ForeColor = GuardianTheme.Ink,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 0);
+
+        _allowListText.Dock = DockStyle.Fill;
+        _allowListText.Multiline = true;
+        _allowListText.AcceptsReturn = true;
+        _allowListText.AcceptsTab = false;
+        _allowListText.WordWrap = false;
+        _allowListText.ScrollBars = ScrollBars.Both;
+        /* ==========================================================================
+           PATCH: DARK ADVANCED EDITOR SCROLLBARS
+           FUNCTION:
+           Applies Windows' native dark Explorer theme to both scrollbars
+           used by the advanced allow-list editor.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Make the advanced editor scrollbars blend with GitPet's dark console surface.
+           ========================================================================== */
+        _allowListText.BorderStyle = BorderStyle.FixedSingle;
+        _allowListText.BackColor = GuardianTheme.Console;
+        _allowListText.ForeColor = GuardianTheme.Ink;
+        _allowListText.Font = new Font("Cascadia Mono", 9.5f);
+        _allowListText.HandleCreated += (_, _) => ApplyDarkScrollbarTheme(_allowListText);
+        layout.Controls.Add(_allowListText, 0, 1);
+
+        _allowListStatus.Dock = DockStyle.Fill;
+        _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+        _allowListStatus.TextAlign = ContentAlignment.MiddleLeft;
+        _allowListStatus.AutoEllipsis = true;
+        _allowListStatus.Text = "Paste exact paths, then Apply to tree. Nothing is changed until you apply.";
+        layout.Controls.Add(_allowListStatus, 0, 2);
+
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Padding = new Padding(0, 5, 0, 0),
+            BackColor = GuardianTheme.SurfaceSoft
+        };
+
+        /* ==========================================================================
+           PATCH: WIDEN ADVANCED ALLOW LIST BUTTONS
+           FUNCTION:
+           Gives every advanced allow-list action enough width to display its complete
+           caption without clipping.
+
+           DATE.TIME ADDED: 2026-09-11 22:38 +03:00
+
+           REASON:
+           Advanced allow-list action captions are currently cropped.
+           ========================================================================== */
+        var apply = MakeButton("Apply to tree", primary: true, 150);
+        var copy = MakeButton("Copy current selection", primary: false, 210);
+        var clear = MakeButton("Clear text", primary: false, 120);
+        var close = MakeButton("Close advanced", primary: false, 155);
+
+        apply.Click += (_, _) => ApplyAllowListToTree();
+        copy.Click += (_, _) => CopyCurrentSelectionToAllowList();
+        clear.Click += (_, _) =>
+        {
+            _allowListText.Clear();
+            _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+            _allowListStatus.Text = "Text cleared. The tree selection was not changed.";
+        };
+        close.Click += (_, _) => ToggleAdvancedPanel(forceVisible: false);
+
+        actions.Controls.Add(apply);
+        actions.Controls.Add(copy);
+        actions.Controls.Add(clear);
+        actions.Controls.Add(close);
+        layout.Controls.Add(actions, 0, 3);
+
+        _advancedPanel.Controls.Add(layout);
+    }
+
+    /* ==========================================================================
+       PATCH: SAFE RESIZABLE ADVANCED PANEL TOGGLE
+       FUNCTION:
+       Calculates a valid initial divider position from the split container's
+       actual displayed height.
+
+       DATE.TIME ADDED: 2026-09-11 15:05 +03:00
+
+       REASON:
+       Prevent invalid splitter positions while preserving a large resizable advanced editor.
+       ========================================================================== */
+    private void ToggleAdvancedPanel(bool? forceVisible = null)
+    {
+        var visible = forceVisible ?? _scopeSplit.Panel2Collapsed;
+
+        if (visible)
+        {
+            _scopeSplit.Panel2Collapsed = false;
+
+            var availableHeight = _scopeSplit.ClientSize.Height;
+            var usableHeight = availableHeight - _scopeSplit.SplitterWidth;
+
+            if (usableHeight >
+                _scopeSplit.Panel1MinSize +
+                _scopeSplit.Panel2MinSize)
+            {
+                var preferredTreeHeight = Math.Clamp(
+                    availableHeight / 2,
+                    80,
+                    240);
+
+                var maximumAdvancedHeight = Math.Max(
+                    _scopeSplit.Panel2MinSize,
+                    usableHeight - preferredTreeHeight);
+
+                var advancedHeight = Math.Min(
+                    360,
+                    maximumAdvancedHeight);
+
+                var requestedDistance =
+                    usableHeight -
+                    advancedHeight;
+
+                var maximumDistance =
+                    availableHeight -
+                    _scopeSplit.Panel2MinSize -
+                    _scopeSplit.SplitterWidth;
+
+                _scopeSplit.SplitterDistance = Math.Clamp(
+                    requestedDistance,
+                    _scopeSplit.Panel1MinSize,
+                    maximumDistance);
+            }
+        }
+        else
+        {
+            _scopeSplit.Panel2Collapsed = true;
+        }
+
+        _advancedButton.Text = visible ? "Advanced allow list ▴" : "Advanced allow list ▾";
+
+        if (visible)
+        {
+            _allowListText.Focus();
+            _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+
+            if (string.IsNullOrWhiteSpace(_allowListText.Text))
+                _allowListStatus.Text = "Paste exact paths, then Apply to tree. Nothing is changed until you apply.";
+        }
+    }
+
+    private void ApplyAllowListToTree()
+    {
+        var resolved = ProjectScopeAllowList.Resolve(_rootPath, _allowListText.Text);
+        if (!resolved.Success)
+        {
+            _allowListStatus.ForeColor = Color.FromArgb(242, 104, 122);
+            _allowListStatus.Text = ProjectScopeAllowList.FormatIssueSummary(resolved);
+            return;
+        }
+
+        if (resolved.Entries.Count == 0)
+        {
+            _allowListStatus.ForeColor = Color.FromArgb(241, 186, 78);
+            _allowListStatus.Text = "No paths were supplied. The existing tree selection was left unchanged.";
+            return;
+        }
+
+        _tree.BeginUpdate();
+        try
+        {
+            SetAllRootChecks(false, updateSummary: false);
+
+            foreach (var entry in resolved.Entries)
+                _selectionModel.SetSubtree(entry.RelativePath, true);
+
+            TreeNode? last = null;
+            foreach (var entry in resolved.Entries)
+                last = EnsureScopePathLoaded(entry.RelativePath) ?? last;
+
+            RefreshLoadedStatesFromModel();
+
+            if (last is not null)
+            {
+                _tree.SelectedNode = last;
+                last.EnsureVisible();
+            }
+        }
+        finally
+        {
+            _tree.EndUpdate();
+        }
+
+        _allowListStatus.ForeColor = GuardianTheme.Healthy;
+        _allowListStatus.Text =
+            $"Applied: {resolved.FileCount} file{(resolved.FileCount == 1 ? "" : "s")}, " +
+            $"{resolved.DirectoryCount} folder{(resolved.DirectoryCount == 1 ? "" : "s")}. Tree selection updated.";
+        UpdateSummary();
+    }
+
+    private void CopyCurrentSelectionToAllowList()
+    {
+        var entries = BuildSelectedEntries();
+        _allowListText.Text = ProjectScopeAllowList.Format(entries);
+        _allowListStatus.ForeColor = GuardianTheme.MutedInk;
+        _allowListStatus.Text = entries.Count == 0
+            ? "The tree currently has no selected scope entries."
+            : $"Copied {entries.Count} current scope item{(entries.Count == 1 ? "" : "s")} into the editor.";
+        _allowListText.Focus();
+    }
+
+    private TreeNode? EnsureScopePathLoaded(string relativePath)
+    {
+        var normalized = relativePath.Replace('\\', '/').Trim().Trim('/');
+        if (normalized.Length == 0) return null;
+
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        TreeNodeCollection nodes = _tree.Nodes;
+        TreeNode? current = null;
+        var accumulated = string.Empty;
+
+        for (var index = 0; index < segments.Length; index++)
+        {
+            accumulated = accumulated.Length == 0
+                ? segments[index]
+                : accumulated + "/" + segments[index];
+
+            current = nodes.Cast<TreeNode>().FirstOrDefault(node =>
+                node.Tag is ScopeNodeInfo info &&
+                info.RelativePath.Equals(accumulated, StringComparison.OrdinalIgnoreCase));
+
+            if (current is null) return null;
+            if (current.Tag is ScopeNodeInfo { Locked: true }) return null;
+
+            if (index < segments.Length - 1)
+            {
+                EnsureChildrenLoaded(current);
+                current.Expand();
+                nodes = current.Nodes;
+            }
+        }
+
+        return current;
+    }
+
+    private void RefreshLoadedStatesFromModel()
+    {
+        foreach (TreeNode node in _tree.Nodes)
+            RefreshLoadedNodeState(node, inheritedChecked: false);
+    }
+
+    private void RefreshLoadedNodeState(TreeNode node, bool inheritedChecked)
+    {
+        if (node.Tag is not ScopeNodeInfo info || info.Locked) return;
+
+        var state = _selectionModel.GetState(info.RelativePath, info.IsDirectory, inheritedChecked);
+        SetScopeNodeState(node, state);
+        var childInherited = state == ProjectScopeCheckState.Checked;
+
+        foreach (TreeNode child in node.Nodes)
+        {
+            if (child.Tag is LazyMarker) continue;
+            RefreshLoadedNodeState(child, childInherited);
+        }
+    }
+
+    /* ==========================================================================
+       HELPER: SetWindowTheme
+       FUNCTION:
+       Imports the Windows theme API used to request native dark styling
+       for controls and their scrollbars.
+
+       DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+       REASON:
+       Access Windows-supported dark scrollbar rendering without replacing native controls.
+       ========================================================================== */
+    [System.Runtime.InteropServices.DllImport(
+        "uxtheme.dll",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int SetWindowTheme(
+        IntPtr windowHandle,
+        string? subApplicationName,
+        string? subIdentifierList);
+
+    /* ==========================================================================
+       HELPER: ApplyDarkScrollbarTheme
+       FUNCTION:
+       Requests the native dark Explorer theme after a scrollable control
+       creates its Windows handle.
+
+       DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+       REASON:
+       Make native scrollbars better match GitPet's dark interface.
+       ========================================================================== */
+    private static void ApplyDarkScrollbarTheme(Control control)
+    {
+        if (!OperatingSystem.IsWindows() || !control.IsHandleCreated) return;
+
+        _ = SetWindowTheme(
+            control.Handle,
+            "DarkMode_Explorer",
+            null);
+    }
+    /* ==========================================================================
+       PATCH: RENDER THREE-STATE SCOPE CHECKBOXES
+       FUNCTION:
+       Configures custom checked, unchecked, and indeterminate images and
+       handles mouse and keyboard selection changes.
+
+       DATE.TIME ADDED: 2026-09-10 10:15 +03:00
+
+       REASON:
+       Render partial parent selections instead of displaying an empty native checkbox.
+       ========================================================================== */
+
     private void ConfigureTree()
     {
         _tree.Dock = DockStyle.Fill;
-        _tree.CheckBoxes = true;
+        _tree.CheckBoxes = false;
+        _tree.StateImageList = CreateScopeStateImages();
         _tree.ShowNodeToolTips = true;
         _tree.HideSelection = false;
         _tree.FullRowSelect = true;
@@ -161,39 +656,154 @@ internal sealed class ProjectScopeSelectionForm : Form
         _tree.ItemHeight = 28;
         _tree.LineColor = GuardianTheme.Border;
 
+        /* ==========================================================================
+           PATCH: DARK FOLDER TREE SCROLLBAR
+           FUNCTION:
+           Applies Windows' native dark Explorer theme when the project folder
+           tree creates its window handle.
+
+           DATE.TIME ADDED: 2026-09-11 14:59 +03:00
+
+           REASON:
+           Make the folder tree scrollbar blend with the dark project-selection interface.
+           ========================================================================== */
+        _tree.HandleCreated += (_, _) => ApplyDarkScrollbarTheme(_tree);
+
         _tree.BeforeExpand += (_, e) =>
         {
             if (e.Node is TreeNode node) EnsureChildrenLoaded(node);
         };
-        _tree.BeforeCheck += (_, e) =>
-        {
-            if (e.Node is not TreeNode node) return;
-            if (e.Action != TreeViewAction.Unknown && node.Tag is ScopeNodeInfo { Locked: true })
-                e.Cancel = true;
-        };
-        _tree.AfterCheck += (_, e) =>
-        {
-            if (_updatingChecks || e.Node is not TreeNode node) return;
-            if (node.Tag is ScopeNodeInfo { Locked: true })
-            {
-                SetNodeChecked(node, false, propagateLoadedChildren: false);
-                return;
-            }
 
-            _updatingChecks = true;
-            try
-            {
-                foreach (TreeNode child in node.Nodes)
-                {
-                    if (child.Tag is LazyMarker) continue;
-                    if (child.Tag is ScopeNodeInfo { Locked: true }) continue;
-                    child.Checked = node.Checked;
-                    SetLoadedDescendants(child, node.Checked);
-                }
-            }
-            finally { _updatingChecks = false; }
-            UpdateSummary();
+        _tree.NodeMouseClick += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            if (e.Node.Tag is not ScopeNodeInfo { Locked: false }) return;
+            if (_tree.StateImageList is null) return;
+
+            var imageSize = _tree.StateImageList.ImageSize;
+            var stateImageBounds = new Rectangle(
+                e.Node.Bounds.Left - imageSize.Width - 4,
+                e.Node.Bounds.Top + ((_tree.ItemHeight - imageSize.Height) / 2),
+                imageSize.Width + 4,
+                imageSize.Height);
+
+            if (!stateImageBounds.Contains(e.Location)) return;
+
+            ToggleScopeNode(e.Node);
         };
+
+        _tree.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Space || _tree.SelectedNode is null) return;
+            if (_tree.SelectedNode.Tag is not ScopeNodeInfo { Locked: false }) return;
+
+            ToggleScopeNode(_tree.SelectedNode);
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        };
+    }
+
+    /* ==========================================================================
+       PATCH: LAZY SCOPE OVERRIDE MODEL
+       DATE.TIME: 2026-09-10 11:04 +03:00
+       REASON:
+       Keep user choices authoritative before unopened descendants are loaded.
+       ========================================================================== */
+    private void ToggleScopeNode(TreeNode node)
+    {
+        if (node.Tag is not ScopeNodeInfo info || info.Locked) return;
+
+        var value = GetScopeNodeState(node) != ProjectScopeCheckState.Checked;
+        _selectionModel.SetSubtree(info.RelativePath, value);
+
+        SetScopeNodeState(
+            node,
+            value ? ProjectScopeCheckState.Checked : ProjectScopeCheckState.Unchecked);
+
+        SetLoadedDescendants(node, value);
+        UpdateAncestorStates(node.Parent);
+        UpdateSummary();
+    }
+
+    private static ProjectScopeCheckState GetScopeNodeState(TreeNode node)
+    {
+        return Enum.IsDefined(typeof(ProjectScopeCheckState), node.StateImageIndex)
+            ? (ProjectScopeCheckState)node.StateImageIndex
+            : node.Checked
+                ? ProjectScopeCheckState.Checked
+                : ProjectScopeCheckState.Unchecked;
+    }
+
+    private static void SetScopeNodeState(
+        TreeNode node,
+        ProjectScopeCheckState state)
+    {
+        node.StateImageIndex = (int)state;
+        node.Checked = state == ProjectScopeCheckState.Checked;
+    }
+
+    private static ImageList CreateScopeStateImages()
+    {
+        var images = new ImageList
+        {
+            ColorDepth = ColorDepth.Depth32Bit,
+            ImageSize = new Size(18, 18),
+            TransparentColor = Color.Transparent
+        };
+
+        images.Images.Add(CreateScopeStateImage(ProjectScopeCheckState.Unchecked));
+        images.Images.Add(CreateScopeStateImage(ProjectScopeCheckState.Checked));
+        images.Images.Add(CreateScopeStateImage(ProjectScopeCheckState.Indeterminate));
+
+        return images;
+    }
+
+    private static Bitmap CreateScopeStateImage(ProjectScopeCheckState state)
+    {
+        var bitmap = new Bitmap(18, 18);
+
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.Clear(Color.Transparent);
+        graphics.SmoothingMode =
+            System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+        var box = new Rectangle(1, 1, 15, 15);
+        var fillColor = state == ProjectScopeCheckState.Unchecked
+            ? GuardianTheme.Console
+            : Color.FromArgb(32, 118, 196);
+
+        using var fill = new SolidBrush(fillColor);
+        using var border = new Pen(
+            state == ProjectScopeCheckState.Unchecked
+                ? GuardianTheme.Border
+                : Color.FromArgb(72, 148, 230),
+            1.4f);
+
+        graphics.FillRectangle(fill, box);
+        graphics.DrawRectangle(border, box);
+
+        using var symbol = new Pen(Color.White, 2.2f)
+        {
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round
+        };
+
+        if (state == ProjectScopeCheckState.Checked)
+        {
+            graphics.DrawLines(
+                symbol,
+                [
+                    new PointF(4.2f, 8.8f),
+                    new PointF(7.1f, 11.5f),
+                    new PointF(13.2f, 5.2f)
+                ]);
+        }
+        else if (state == ProjectScopeCheckState.Indeterminate)
+        {
+            graphics.DrawLine(symbol, 4.5f, 8.5f, 12.5f, 8.5f);
+        }
+
+        return bitmap;
     }
 
     private void LoadRootEntries()
@@ -202,9 +812,10 @@ internal sealed class ProjectScopeSelectionForm : Form
         try
         {
             _tree.Nodes.Clear();
+            var defaultChecked = !_selectionModel.HasRestoredScope;
             foreach (var path in EnumerateEntries(_rootPath))
             {
-                var node = CreateNode(path, inheritedChecked: true);
+                var node = CreateNode(path, inheritedChecked: defaultChecked);
                 _tree.Nodes.Add(node);
             }
         }
@@ -220,10 +831,15 @@ internal sealed class ProjectScopeSelectionForm : Form
         var prefix = isDirectory ? "▸  " : "·  ";
         var suffix = nestedRepository ? "    [existing Git repository — excluded]" : "";
 
+        var initialState = _selectionModel.GetState(relative, isDirectory, inheritedChecked);
+
         var node = new TreeNode(prefix + name + suffix)
         {
             Tag = new ScopeNodeInfo(fullPath, relative, isDirectory, nestedRepository),
-            Checked = inheritedChecked && !nestedRepository,
+            Checked = initialState == ProjectScopeCheckState.Checked && !nestedRepository,
+            StateImageIndex = nestedRepository
+                ? (int)ProjectScopeCheckState.Unchecked
+                : (int)initialState,
             ForeColor = nestedRepository ? GuardianTheme.FaintInk : GuardianTheme.Ink,
             ToolTipText = nestedRepository
                 ? "This folder already has its own Git metadata. GitPet protects it from being absorbed into the new parent repository."
@@ -247,20 +863,44 @@ internal sealed class ProjectScopeSelectionForm : Form
             node.Nodes.Add(CreateNode(path, inherit));
     }
 
+    /* ==========================================================================
+       PATCH: PRESERVE COLLAPSED PARTIAL SCOPE
+       DATE.TIME: 2026-09-10 11:04 +03:00
+       REASON:
+       Retain saved descendants even when their parent remains lazily collapsed.
+       ========================================================================== */
     private IReadOnlyList<ProjectScopeEntry> BuildSelectedEntries()
     {
-        var selected = new List<ProjectScopeEntry>();
+        var selected = new Dictionary<string, ProjectScopeEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (TreeNode node in _tree.Nodes)
             CollectSelected(node, selected);
-        return selected;
+
+        return selected.Values
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
-    private static void CollectSelected(TreeNode node, List<ProjectScopeEntry> selected)
+    private void CollectSelected(
+        TreeNode node,
+        Dictionary<string, ProjectScopeEntry> selected)
     {
         if (node.Tag is not ScopeNodeInfo info || info.Locked) return;
-        if (node.Checked)
+
+        var state = GetScopeNodeState(node);
+        if (state == ProjectScopeCheckState.Checked)
         {
-            selected.Add(new ProjectScopeEntry(info.RelativePath, info.IsDirectory));
+            selected[info.RelativePath] = new ProjectScopeEntry(info.RelativePath, info.IsDirectory);
+            return;
+        }
+
+        var hasLazyChildren = node.Nodes
+            .Cast<TreeNode>()
+            .Any(child => child.Tag is LazyMarker);
+
+        if (state == ProjectScopeCheckState.Indeterminate && hasLazyChildren)
+        {
+            foreach (var entry in _selectionModel.GetPreservedSelections(info.RelativePath))
+                selected[entry.RelativePath] = entry;
             return;
         }
 
@@ -271,42 +911,67 @@ internal sealed class ProjectScopeSelectionForm : Form
         }
     }
 
-    private void SetAllRootChecks(bool value)
+    private void SetAllRootChecks(bool value, bool updateSummary = true)
     {
-        _updatingChecks = true;
-        try
+        foreach (TreeNode node in _tree.Nodes)
         {
-            foreach (TreeNode node in _tree.Nodes)
-            {
-                if (node.Tag is ScopeNodeInfo { Locked: true }) continue;
-                node.Checked = value;
-                SetLoadedDescendants(node, value);
-            }
+            if (node.Tag is not ScopeNodeInfo info || info.Locked) continue;
+
+            _selectionModel.SetSubtree(info.RelativePath, value);
+            SetScopeNodeState(
+                node,
+                value ? ProjectScopeCheckState.Checked : ProjectScopeCheckState.Unchecked);
+            SetLoadedDescendants(node, value);
         }
-        finally { _updatingChecks = false; }
-        UpdateSummary();
+
+        if (updateSummary) UpdateSummary();
     }
 
     private static void SetLoadedDescendants(TreeNode node, bool value)
     {
+        var state = value
+            ? ProjectScopeCheckState.Checked
+            : ProjectScopeCheckState.Unchecked;
+
         foreach (TreeNode child in node.Nodes)
         {
             if (child.Tag is LazyMarker || child.Tag is ScopeNodeInfo { Locked: true }) continue;
-            child.Checked = value;
+
+            SetScopeNodeState(child, state);
             SetLoadedDescendants(child, value);
         }
     }
 
-    private void SetNodeChecked(TreeNode node, bool value, bool propagateLoadedChildren)
+    private void UpdateAncestorStates(TreeNode? parent)
     {
-        _updatingChecks = true;
-        try
+        while (parent is not null)
         {
-            node.Checked = value;
-            if (propagateLoadedChildren) SetLoadedDescendants(node, value);
+            var children = parent.Nodes
+                .Cast<TreeNode>()
+                .Where(child =>
+                    child.Tag is not LazyMarker &&
+                    child.Tag is not ScopeNodeInfo { Locked: true })
+                .ToArray();
+
+            if (children.Length > 0)
+            {
+                var states = children
+                    .Select(GetScopeNodeState)
+                    .ToArray();
+
+                var state = states.All(
+                    childState => childState == ProjectScopeCheckState.Checked)
+                        ? ProjectScopeCheckState.Checked
+                        : states.All(
+                            childState => childState == ProjectScopeCheckState.Unchecked)
+                            ? ProjectScopeCheckState.Unchecked
+                            : ProjectScopeCheckState.Indeterminate;
+
+                SetScopeNodeState(parent, state);
+            }
+
+            parent = parent.Parent;
         }
-        finally { _updatingChecks = false; }
-        UpdateSummary();
     }
 
     private void UpdateSummary()

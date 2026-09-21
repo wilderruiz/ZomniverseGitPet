@@ -20,7 +20,7 @@ internal sealed class PetChromeButton : Control
         set
         {
             _kind = value;
-            Size = value == PetChromeKind.CloseRibbon ? new Size(34, 24) : new Size(25, 22);
+            Size = value == PetChromeKind.CloseRibbon ? new Size(24, 24) : new Size(25, 22);
             Invalidate();
         }
     }
@@ -104,8 +104,7 @@ internal sealed class PetChromeButton : Control
 
     private void PaintCloseRibbon(Graphics graphics)
     {
-        var bounds = new RectangleF(1, 1, Width - 2, Height - 4);
-        using var path = GuardianTheme.RoundedRectangle(bounds, 7f);
+        var bounds = new RectangleF(1.5f, 1.5f, Width - 3f, Height - 3f);
         var fillColor = _pressed
             ? Color.FromArgb(193, 31, 111)
             : _hovered
@@ -114,23 +113,18 @@ internal sealed class PetChromeButton : Control
 
         using var fill = new SolidBrush(fillColor);
         using var border = new Pen(Color.FromArgb(255, 183, 222), 1f);
-        graphics.FillPath(fill, path);
-        graphics.DrawPath(border, path);
+        graphics.FillEllipse(fill, bounds);
+        graphics.DrawEllipse(border, bounds);
 
-        var notch = new[]
+        using var glyph = new Pen(Color.White, 1.8f)
         {
-            new PointF(Width - 11, Height - 4),
-            new PointF(Width - 5, Height - 4),
-            new PointF(Width - 8, Height - 1)
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
         };
-        graphics.FillPolygon(fill, notch);
-
-        TextRenderer.DrawText(
-            graphics,
-            "×",
-            Font,
-            Rectangle.Round(bounds),
-            Color.White,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        var centerX = Width / 2f;
+        var centerY = Height / 2f;
+        const float radius = 3.4f;
+        graphics.DrawLine(glyph, centerX - radius, centerY - radius, centerX + radius, centerY + radius);
+        graphics.DrawLine(glyph, centerX + radius, centerY - radius, centerX - radius, centerY + radius);
     }
 }

@@ -1,0 +1,281 @@
+<div id="zgitpet-status-v2">
+  <style>
+    #zgitpet-status-v2 {
+      width: 100%;
+      padding: 16px;
+      box-sizing: border-box;
+      color: #f4f0f9;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    #zgitpet-status-v2 * { box-sizing: border-box; }
+    #zgitpet-status-v2 .zv-window {
+      overflow: hidden;
+      background: #120f18;
+      border: 1px solid #ff329e;
+      border-radius: 13px;
+      box-shadow: 0 22px 55px rgba(0, 0, 0, .36);
+    }
+    #zgitpet-status-v2 .zv-titlebar {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: #1b1624;
+    }
+    #zgitpet-status-v2 .zv-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 500;
+    }
+    #zgitpet-status-v2 .zv-title img {
+      width: 23px;
+      height: 23px;
+      object-fit: contain;
+    }
+    #zgitpet-status-v2 .zv-window-controls {
+      display: flex;
+      gap: 23px;
+      color: #a99eb7;
+    }
+    #zgitpet-status-v2 .zv-menu {
+      display: flex;
+      gap: 28px;
+      padding: 8px 18px;
+      color: #d5ccdf;
+      background: #231c2f;
+    }
+    #zgitpet-status-v2 .zv-header-area {
+      padding: 24px 28px 28px;
+      background: #231c2f;
+    }
+    #zgitpet-status-v2 .zv-repository-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+      gap: 32px;
+      min-height: 225px;
+      padding: 24px 30px;
+      background: #1b1624;
+      border: 1px solid #4d3e65;
+      border-radius: 12px;
+    }
+    #zgitpet-status-v2 .zv-repository-info {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 4px 2px;
+    }
+    #zgitpet-status-v2 .zv-project-name {
+      margin: 0;
+      color: #ffffff;
+      font-size: 23px;
+      font-weight: 500;
+      letter-spacing: .018em;
+    }
+    #zgitpet-status-v2 .zv-project-name span {
+      margin: 0 9px;
+      color: #9e92ad;
+    }
+    #zgitpet-status-v2 .zv-project-caption {
+      margin-top: 12px;
+      color: #9e92ad;
+      font-size: 16px;
+    }
+    #zgitpet-status-v2 .zv-commit-block {
+      padding-top: 22px;
+      border-top: 1px solid #3c314e;
+      color: #bdb2ca;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      line-height: 1.75;
+    }
+    #zgitpet-status-v2 .zv-commit-block strong {
+      color: #f4f0f9;
+      font-weight: 500;
+    }
+    #zgitpet-status-v2 .zv-monitor-note {
+      display: inline-block;
+      margin-top: 16px;
+      color: #ff72bf;
+      font-size: 16px;
+    }
+    #zgitpet-status-v2 .zv-status-card {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-self: center;
+      align-content: center;
+      gap: 0;
+      min-height: 190px;
+      padding: 18px 20px;
+      background: #211a2c;
+      border: 1px solid #3f3352;
+      border-radius: 10px;
+    }
+    #zgitpet-status-v2 .zv-status-item {
+      min-width: 0;
+      padding: 18px 16px;
+    }
+    #zgitpet-status-v2 .zv-status-item:nth-child(odd) {
+      border-right: 1px solid #3a2f4c;
+    }
+    #zgitpet-status-v2 .zv-status-item:nth-child(-n+2) {
+      border-bottom: 1px solid #3a2f4c;
+    }
+    #zgitpet-status-v2 .zv-status-label {
+      margin-bottom: 9px;
+      color: #8f839e;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    #zgitpet-status-v2 .zv-status-value {
+      font-size: 17px;
+      font-weight: 500;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    #zgitpet-status-v2 .zv-green { color: #50dda0; }
+    #zgitpet-status-v2 .zv-blue { color: #88b7ff; }
+    #zgitpet-status-v2 .zv-amber { color: #ffd071; }
+    #zgitpet-status-v2 .zv-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      padding: 13px 18px;
+      background: #1b1624;
+      border-top: 1px solid #2f263d;
+      border-bottom: 1px solid #2f263d;
+    }
+    #zgitpet-status-v2 .zv-toolbar button {
+      min-height: 34px;
+      padding: 5px 14px;
+      color: #f4f0f9;
+      background: #2a2139;
+      border: 1px solid #4d3e65;
+      border-radius: 9px;
+      font: inherit;
+      font-weight: 500;
+    }
+    #zgitpet-status-v2 .zv-toolbar .zv-github {
+      color: #dffff0;
+      background: #16412e;
+      border-color: #36a975;
+    }
+    #zgitpet-status-v2 .zv-toolbar .zv-save {
+      background: #7545bd;
+      border-color: #ff63b6;
+    }
+    #zgitpet-status-v2 .zv-work-area {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 12px;
+      min-height: 185px;
+      padding: 14px 18px 22px;
+      background: #120f18;
+    }
+    #zgitpet-status-v2 .zv-work-column {
+      border: 1px solid #3a2f4c;
+      background: #1b1624;
+    }
+    #zgitpet-status-v2 .zv-work-heading {
+      display: flex;
+      justify-content: space-between;
+      padding: 9px 12px;
+      color: #f783c1;
+      background: #482041;
+      font-weight: 500;
+    }
+    #zgitpet-status-v2 .zv-work-column:last-child .zv-work-heading {
+      color: #88b7ff;
+      background: #1b3458;
+    }
+    #zgitpet-status-v2 .zv-work-message {
+      padding: 18px 12px;
+      color: #8f839e;
+    }
+    @media (max-width: 760px) {
+      #zgitpet-status-v2 { padding: 8px; }
+      #zgitpet-status-v2 .zv-repository-panel { grid-template-columns: 1fr; }
+      #zgitpet-status-v2 .zv-status-card { grid-template-columns: 1fr; }
+      #zgitpet-status-v2 .zv-status-item:nth-child(odd) { border-right: 0; }
+      #zgitpet-status-v2 .zv-status-item { border-bottom: 1px solid #3a2f4c; }
+      #zgitpet-status-v2 .zv-work-area { grid-template-columns: 1fr; }
+    }
+  </style>
+
+  <section class="zv-window" aria-label="ZomniverseGitPet Guardian status layout mockup">
+    <div class="zv-titlebar">
+      <div class="zv-title">
+        <img src="file:///I:/Dropbox/WORK_LAPTOP/Programming/ZomniverseGitPet/src/ZomniverseGitPet/Assets/Pet/pet_happy_01.png" alt="">
+        <span>DEV-ZGitPet Guardian</span>
+      </div>
+      <div class="zv-window-controls" aria-hidden="true"><span>—</span><span>□</span><span>×</span></div>
+    </div>
+    <nav class="zv-menu" aria-label="Application menu">
+      <span>Project setup</span><span>Milestones</span><span>Help</span>
+    </nav>
+
+    <header class="zv-header-area">
+      <div class="zv-repository-panel">
+        <section class="zv-repository-info">
+          <div>
+            <h2 class="zv-project-name">ZOMNIVERSE GITPET <span>/</span> ZOMNIVERSEGITPET</h2>
+            <div class="zv-project-caption">Repository overview and most recent checkpoint</div>
+          </div>
+          <div>
+            <div class="zv-commit-block">
+              <div>LATEST&nbsp; <strong>41389a6</strong> — checkpoint: 2026-09-11 12:47</div>
+              <div>2 unsaved changes · 1 saved update ready to send</div>
+            </div>
+            <div class="zv-monitor-note">Watching this repository</div>
+          </div>
+        </section>
+
+        <aside class="zv-status-card" aria-label="Current repository status">
+          <div class="zv-status-item">
+            <div class="zv-status-label">Guardian</div>
+            <div class="zv-status-value zv-green">● ACTIVE</div>
+          </div>
+          <div class="zv-status-item">
+            <div class="zv-status-label">Health</div>
+            <div class="zv-status-value zv-green">● HEALTHY</div>
+          </div>
+          <div class="zv-status-item">
+            <div class="zv-status-label">Branch</div>
+            <div class="zv-status-value zv-blue">feature/sync-control-panel</div>
+          </div>
+          <div class="zv-status-item">
+            <div class="zv-status-label">Working tree</div>
+            <div class="zv-status-value zv-amber">2 CHANGES</div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <div class="zv-toolbar" aria-label="Repository actions">
+      <button class="zv-github" type="button">GitHub ✓</button>
+      <button type="button">Projects ▾</button>
+      <button type="button">Refresh</button>
+      <button type="button">Review</button>
+      <button type="button">Tests</button>
+      <button class="zv-save" type="button">Save</button>
+      <button type="button">Get ↓</button>
+      <button type="button">Send ↑</button>
+      <button type="button">History</button>
+      <button type="button">Health</button>
+    </div>
+
+    <div class="zv-work-area">
+      <section class="zv-work-column">
+        <div class="zv-work-heading"><span>SAVE — CHANGES ON THIS PC</span><span>2 TO SAVE</span></div>
+        <div class="zv-work-message">Changed files appear here</div>
+      </section>
+      <section class="zv-work-column">
+        <div class="zv-work-heading"><span>GET — WAITING TO COME IN</span><span>CLEAR</span></div>
+        <div class="zv-work-message">Incoming updates appear here</div>
+      </section>
+    </div>
+  </section>
+</div>

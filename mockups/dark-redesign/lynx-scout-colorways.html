@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZGitPet — Lynx Scout Colorways</title>
+<style>
+:root{
+  --bg:#090d12;--panel:#0f161e;--surface:#111820;--surface2:#151e27;
+  --line:#263342;--line2:#334456;--text:#e8eef5;--muted:#95a3b4;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:
+  radial-gradient(circle at 18% 0%,rgba(72,118,160,.09),transparent 34%),
+  linear-gradient(180deg,#090d12,#0a1016 60%,#080c11);
+  color:var(--text);font-family:"Segoe UI",Inter,Arial,sans-serif}
+body{min-height:100vh;padding:36px 22px 64px}
+.wrap{max-width:1280px;margin:0 auto}
+.kicker{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#79d8ca;font-weight:700}
+h1{font-size:29px;margin:8px 0 8px;letter-spacing:-.02em}
+.lead{max-width:880px;color:var(--muted);line-height:1.55;margin:0 0 24px}
+.statebar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:22px}
+.statebar button{border:1px solid var(--line2);background:var(--surface);color:#aab7c6;border-radius:6px;padding:8px 12px;cursor:pointer}
+.statebar button.active{border-color:#527fa7;background:#152331;color:#e6f2ff}
+.selected-label{margin-left:auto;color:#7f8fa1;font-size:12px}
+.selected-label b{color:#dce8f4}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(240px,1fr));gap:16px}
+.card{--fur1:#26313a;--fur2:#11181e;--edge:#506578;--eye:#78bddd;--accent:#57d7a0;--muzzle:#101922;--detail:#577187;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;transition:.18s ease}
+.card:hover{transform:translateY(-2px);border-color:#3c5369}
+.card.selected{border-color:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent),0 18px 48px rgba(0,0,0,.28)}
+.card-head{padding:14px 14px 10px;display:flex;align-items:center;border-bottom:1px solid #1d2935}
+.name{font-size:13px;font-weight:700;letter-spacing:.07em}
+.tag{margin-left:auto;font-size:10px;color:#718397;border:1px solid #2b3a49;padding:4px 6px;border-radius:4px}
+.stage{height:292px;position:relative;background:
+  radial-gradient(circle at 50% 80%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 38%),
+  linear-gradient(180deg,#0c1218,#090e13)}
+.bubble{position:absolute;left:18px;right:18px;top:18px;height:76px;background:#111820;border:1px solid #334456;border-radius:8px;padding:12px 34px 9px 13px;color:#d9e1ea;font-size:11px;font-weight:700;line-height:1.4;letter-spacing:.04em}
+.bubble:after{content:"";position:absolute;left:56px;bottom:-8px;width:14px;height:14px;background:#111820;border-right:1px solid #334456;border-bottom:1px solid #334456;transform:rotate(45deg)}
+.bubble .sub{display:block;color:#76879a;font-weight:500;letter-spacing:0;margin-top:3px}
+.mini{position:absolute;right:13px;top:9px;color:#667688}
+.lynx{position:absolute;width:160px;height:160px;left:50%;top:106px;transform:translateX(-50%);filter:drop-shadow(0 14px 24px rgba(0,0,0,.38))}
+.fur{fill:var(--fur1);stroke:var(--edge)} .ear{fill:var(--fur2)}
+.eye{stroke:var(--eye)} .muzzle{fill:var(--muzzle)} .collar{fill:#17252e;stroke:var(--detail)}
+.core{fill:var(--accent)} .whisker{stroke:color-mix(in srgb,var(--edge) 80%,white 8%)}
+.cheek{fill:color-mix(in srgb,var(--fur1) 82%,var(--accent) 18%);opacity:.75}
+.card-foot{padding:12px 14px 14px}
+.palette{display:flex;gap:6px;margin-bottom:9px}
+.swatch{width:16px;height:16px;border-radius:4px;border:1px solid rgba(255,255,255,.12)}
+.desc{font-size:12px;color:#8290a1;line-height:1.45;min-height:50px}
+.select{width:100%;margin-top:10px;height:34px;border:1px solid #314152;background:#131c25;color:#b9c6d3;border-radius:5px;font-weight:600;cursor:pointer}
+.card.selected .select{background:color-mix(in srgb,var(--accent) 18%,#12202b);border-color:var(--accent);color:#eef7ff}
+.preview{margin-top:26px;border:1px solid var(--line);border-radius:8px;background:#0d141b;padding:18px}
+.preview h2{font-size:12px;letter-spacing:.1em;color:#7e8ea0;margin:0 0 14px}
+.preview-row{display:grid;grid-template-columns:240px 1fr;gap:24px;align-items:center}
+.preview-window{width:240px;height:246px;position:relative;filter:drop-shadow(0 18px 28px rgba(0,0,0,.5))}
+.preview-window .bubble{left:6px;right:6px;top:0}
+.preview-window .lynx{
+  top:76px;
+  --look-x:0px;
+  --look-y:0px;
+  --tilt:0deg;
+  transform-origin:80px 116px;
+  animation:lynxIdle 6.4s cubic-bezier(.42,0,.25,1) infinite;
+  will-change:transform,filter;
+}
+.preview-window .lynx .eye{
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:opticScan 7.6s ease-in-out infinite;
+}
+.preview-window .lynx .core{
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:coreIdle 3.8s ease-in-out infinite;
+}
+.preview-window::after{
+  content:"";
+  position:absolute;
+  left:38px;
+  right:38px;
+  top:78px;
+  height:150px;
+  pointer-events:none;
+  opacity:0;
+  background:linear-gradient(180deg,transparent 0%,color-mix(in srgb,var(--accent) 24%,transparent) 48%,transparent 54%);
+  mix-blend-mode:screen;
+  transform:translateY(-70px);
+}
+.preview-window.signal::after{animation:statusSweep .7s cubic-bezier(.2,.7,.25,1)}
+.preview-window.signal .lynx{animation:lynxAcknowledge .52s ease-out,lynxIdle 6.4s cubic-bezier(.42,0,.25,1) .52s infinite}
+.preview-window.attention .lynx .core{animation:coreAttention 1.15s ease-in-out infinite}
+.preview-window.changes .lynx .core{animation:coreChanges 2.2s ease-in-out infinite}
+.preview-window.clean .lynx .core{animation:coreIdle 3.8s ease-in-out infinite}
+.motion-toggle{margin-left:8px}
+@keyframes lynxIdle{
+  0%,100%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) + 0px)) rotate(var(--tilt)) scale(1)}
+  48%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) + 1.6px)) rotate(var(--tilt)) scale(1.004)}
+  56%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) + 1.2px)) rotate(var(--tilt)) scale(1.002)}
+}
+@keyframes opticScan{
+  0%,72%,100%{opacity:1;filter:drop-shadow(0 0 0 transparent);transform:translateX(0)}
+  76%{opacity:.72;filter:drop-shadow(0 0 2px var(--eye));transform:translateX(-1px)}
+  80%{opacity:1;filter:drop-shadow(0 0 4px var(--eye));transform:translateX(1px)}
+  84%{opacity:.88;filter:drop-shadow(0 0 2px var(--eye));transform:translateX(0)}
+}
+@keyframes coreIdle{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 1px var(--accent));opacity:.86}
+  50%{transform:scale(1.15);filter:drop-shadow(0 0 4px var(--accent));opacity:1}
+}
+@keyframes coreAttention{
+  0%,100%{transform:scale(1);filter:drop-shadow(0 0 2px #f27586);opacity:.76}
+  48%{transform:scale(1.35);filter:drop-shadow(0 0 7px #f27586);opacity:1}
+}
+@keyframes coreChanges{
+  0%,20%,100%{transform:scale(1);filter:drop-shadow(0 0 1px var(--accent));opacity:.78}
+  8%,32%{transform:scale(1.28);filter:drop-shadow(0 0 6px var(--accent));opacity:1}
+}
+@keyframes statusSweep{
+  0%{opacity:0;transform:translateY(-72px)}
+  18%{opacity:.72}
+  80%{opacity:.28}
+  100%{opacity:0;transform:translateY(72px)}
+}
+@keyframes lynxAcknowledge{
+  0%{transform:translateX(-50%) translate(var(--look-x),var(--look-y)) rotate(var(--tilt)) scale(1)}
+  45%{transform:translateX(-50%) translate(var(--look-x),calc(var(--look-y) - 2px)) rotate(var(--tilt)) scale(1.018);filter:drop-shadow(0 0 9px color-mix(in srgb,var(--accent) 42%,transparent))}
+  100%{transform:translateX(-50%) translate(var(--look-x),var(--look-y)) rotate(var(--tilt)) scale(1)}
+}
+.preview-window.motion-paused .lynx,
+.preview-window.motion-paused .lynx .eye,
+.preview-window.motion-paused .lynx .core{animation-play-state:paused}
+@media(prefers-reduced-motion:reduce){
+  .preview-window .lynx,
+  .preview-window .lynx .eye,
+  .preview-window .lynx .core,
+  .preview-window.signal::after{animation:none!important}
+}
+.preview-copy h3{margin:0 0 7px;font-size:21px}
+.preview-copy p{margin:0 0 14px;color:#8b99aa;line-height:1.5;max-width:680px}
+.specs{display:flex;gap:8px;flex-wrap:wrap}
+.spec{font-size:11px;border:1px solid #263544;background:#101820;color:#8090a2;border-radius:5px;padding:6px 8px}
+
+.cyan{--fur1:#24333d;--fur2:#10181f;--edge:#567287;--eye:#78d8df;--accent:#57d7a0;--muzzle:#101a22;--detail:#5e7c91}
+.copper{--fur1:#332c2a;--fur2:#1b1514;--edge:#7b5b4d;--eye:#f0b36b;--accent:#d98353;--muzzle:#1b1615;--detail:#8a6756}
+.violet{--fur1:#2d2a3a;--fur2:#15131e;--edge:#685d86;--eye:#b7a0ff;--accent:#8c73e8;--muzzle:#171420;--detail:#75699a}
+.blue{--fur1:#23303f;--fur2:#101722;--edge:#506d8b;--eye:#78a9ff;--accent:#4f8fe8;--muzzle:#0f1721;--detail:#5c7ca0}
+.emerald{--fur1:#22332f;--fur2:#101a18;--edge:#4e766b;--eye:#79d8ca;--accent:#43b88f;--muzzle:#101b18;--detail:#5b867b}
+.red{--fur1:#322629;--fur2:#1b1114;--edge:#7a4e58;--eye:#f28b9a;--accent:#d95c70;--muzzle:#1a1215;--detail:#875867}
+.gold{--fur1:#323028;--fur2:#1b1912;--edge:#7d7350;--eye:#f0d178;--accent:#d5a84b;--muzzle:#1b1913;--detail:#8c8058}
+.ice{--fur1:#29353b;--fur2:#131b1e;--edge:#65818d;--eye:#b5edf3;--accent:#7bcbd6;--muzzle:#121b1f;--detail:#6f919e}
+
+@media(max-width:1050px){.grid{grid-template-columns:repeat(2,minmax(240px,1fr))}}
+@media(max-width:620px){body{padding:22px 10px}.grid{grid-template-columns:1fr}.preview-row{grid-template-columns:1fr}.selected-label{width:100%;margin-left:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Lynx Scout · dark palette study</div>
+  <h1>More color, still serious</h1>
+  <p class="lead">The silhouette stays exactly the same. Only the restrained accent system changes: eye line, collar core, edge lighting, cheek planes and subtle fur undertones. The body remains dark in every version.</p>
+
+  <div class="statebar">
+    <button class="active" data-state="attention">Attention</button>
+    <button data-state="changes">Changes</button>
+    <button data-state="clean">Clean</button>
+    <button class="motion-toggle active" id="motionToggle" type="button" aria-pressed="true">Motion on</button>
+    <button id="signalButton" type="button">Trigger signal</button>
+    <div class="selected-label">Selected palette: <b id="selectedName">CYAN / TEAL</b></div>
+  </div>
+
+  <section class="grid">
+    
+    <article class="card selected cyan" data-name="CYAN / TEAL" data-desc="Balanced technical palette with cyan eyes and a green status core.">
+      <div class="card-head"><span class="name">CYAN / TEAL</span><span class="tag">01</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#24333d"></span><span class="swatch" style="background:#78d8df"></span><span class="swatch" style="background:#57d7a0"></span></div>
+        <div class="desc">Balanced technical palette with cyan eyes and a green status core.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+    <article class="card  blue" data-name="MIDNIGHT BLUE" data-desc="Cooler engineering look with restrained electric-blue accents.">
+      <div class="card-head"><span class="name">MIDNIGHT BLUE</span><span class="tag">02</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#23303f"></span><span class="swatch" style="background:#78a9ff"></span><span class="swatch" style="background:#4f8fe8"></span></div>
+        <div class="desc">Cooler engineering look with restrained electric-blue accents.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+    <article class="card  emerald" data-name="FOREST EMERALD" data-desc="Dark green undertone with softer teal optics and emerald status light.">
+      <div class="card-head"><span class="name">FOREST EMERALD</span><span class="tag">03</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#22332f"></span><span class="swatch" style="background:#79d8ca"></span><span class="swatch" style="background:#43b88f"></span></div>
+        <div class="desc">Dark green undertone with softer teal optics and emerald status light.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+    <article class="card  copper" data-name="EMBER COPPER" data-desc="Warm metallic look with muted copper edge light and amber optics.">
+      <div class="card-head"><span class="name">EMBER COPPER</span><span class="tag">04</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#332c2a"></span><span class="swatch" style="background:#f0b36b"></span><span class="swatch" style="background:#d98353"></span></div>
+        <div class="desc">Warm metallic look with muted copper edge light and amber optics.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+    <article class="card  violet" data-name="DEEP VIOLET" data-desc="A subtle nod to the original GitPet purple without returning to the playful style.">
+      <div class="card-head"><span class="name">DEEP VIOLET</span><span class="tag">05</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#2d2a3a"></span><span class="swatch" style="background:#b7a0ff"></span><span class="swatch" style="background:#8c73e8"></span></div>
+        <div class="desc">A subtle nod to the original GitPet purple without returning to the playful style.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+    <article class="card  red" data-name="CRIMSON NIGHT" data-desc="Strongest warning personality; dark burgundy undertone with muted red status accents.">
+      <div class="card-head"><span class="name">CRIMSON NIGHT</span><span class="tag">06</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#322629"></span><span class="swatch" style="background:#f28b9a"></span><span class="swatch" style="background:#d95c70"></span></div>
+        <div class="desc">Strongest warning personality; dark burgundy undertone with muted red status accents.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+    <article class="card  gold" data-name="GRAPHITE GOLD" data-desc="Serious premium feel with dark olive graphite and restrained gold optics.">
+      <div class="card-head"><span class="name">GRAPHITE GOLD</span><span class="tag">07</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#323028"></span><span class="swatch" style="background:#f0d178"></span><span class="swatch" style="background:#d5a84b"></span></div>
+        <div class="desc">Serious premium feel with dark olive graphite and restrained gold optics.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+    <article class="card  ice" data-name="ARCTIC ICE" data-desc="Brightest while still dark: steel-grey fur with icy cyan edge lighting.">
+      <div class="card-head"><span class="name">ARCTIC ICE</span><span class="tag">08</span></div>
+      <div class="stage">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="card-foot">
+        <div class="palette"><span class="swatch" style="background:#29353b"></span><span class="swatch" style="background:#b5edf3"></span><span class="swatch" style="background:#7bcbd6"></span></div>
+        <div class="desc">Brightest while still dark: steel-grey fur with icy cyan edge lighting.</div>
+        <button class="select">Select palette</button>
+      </div>
+    </article>
+  </section>
+
+  <section class="preview">
+    <h2>SELECTED LYNX — DESKTOP SCALE</h2>
+    <div class="preview-row">
+      <div class="preview-window cyan attention" id="previewWindow">
+        <div class="bubble">● GIT NEEDS ATTENTION<span class="sub">Open Guardian</span><span class="mini">—</span></div>
+        <svg class="lynx" viewBox="0 0 160 160" aria-label="Selected Lynx Scout">
+          <path class="fur" d="M31 50 48 20l-3-14 13 12 16 20h12l16-20 13-12-3 14 17 30-9 59q-6 29-40 38-34-9-40-38z" stroke-width="2"/>
+          <path class="ear" d="M42 48 51 28l12 16-14 14zM118 48 109 28 97 44l14 14z"/>
+          <path class="cheek" d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z"/>
+          <path d="M47 72 73 64l-10 20-17 3zM113 72 87 64l10 20 17 3z" fill="#0a1015" opacity=".78"/>
+          <path class="eye" d="M55 72h16M105 72H89" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <path d="M80 85 72 93h16z" fill="#91a5b6"/>
+          <path d="M63 101q17 12 34 0" fill="none" stroke="#6a7f92" stroke-width="2"/>
+          <path class="whisker" d="M48 104 32 114M112 104l16 10M51 110l-19 7M109 110l19 7" fill="none" stroke-width="1.5"/>
+          <path class="muzzle" d="M56 117q8 24 24 29 16-5 24-29l-24 8z" stroke="#3d5365"/>
+          <rect class="collar" x="72" y="119" width="16" height="9" rx="2"/>
+          <circle class="core" cx="80" cy="123.5" r="2.4"/>
+        </svg>
+      </div>
+      <div class="preview-copy">
+        <h3 id="previewTitle">CYAN / TEAL</h3>
+        <p id="previewDesc">Balanced technical palette with cyan eyes and a green status core.</p>
+        <div class="specs">
+          <span class="spec">same Lynx Scout silhouette</span>
+          <span class="spec">160 × 160 guardian</span>
+          <span class="spec">dark graphite body</span>
+          <span class="spec">accent color only</span>
+          <span class="spec">ambient sentinel motion</span>
+          <span class="spec">pointer-aware gaze</span>
+          <span class="spec">state signal flash</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const states={
+  attention:['● GIT NEEDS ATTENTION','Open Guardian','#f27586'],
+  changes:['● CHANGES DETECTED','3 ready to review','#79d8ca'],
+  clean:['● CLEAN','feature/sync-control-panel','#57d7a0']
+};
+let activeState='attention';
+
+function flashSignal(){
+  const host=document.getElementById('previewWindow');
+  host.classList.remove('signal');
+  void host.offsetWidth;
+  host.classList.add('signal');
+  window.setTimeout(()=>host.classList.remove('signal'),760);
+}
+
+function applyState(){
+  const [title,sub,color]=states[activeState];
+  document.querySelectorAll('.bubble').forEach(b=>{
+    b.childNodes[0].nodeValue=title;
+    b.querySelector('.sub').textContent=sub;
+    b.style.borderColor=color;
+  });
+
+  const host=document.getElementById('previewWindow');
+  host.classList.remove('attention','changes','clean');
+  host.classList.add(activeState);
+}
+document.querySelectorAll('[data-state]').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-state]').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  activeState=b.dataset.state;
+  applyState();
+  flashSignal();
+}));
+
+function selectCard(card){
+  document.querySelectorAll('.card').forEach(x=>x.classList.remove('selected'));
+  card.classList.add('selected');
+
+  const palette=[...card.classList].find(x=>['cyan','blue','emerald','copper','violet','red','gold','ice'].includes(x));
+  const host=document.getElementById('previewWindow');
+  host.className='preview-window '+palette;
+
+  document.getElementById('selectedName').textContent=card.dataset.name;
+  document.getElementById('previewTitle').textContent=card.dataset.name;
+  document.getElementById('previewDesc').textContent=card.dataset.desc;
+  applyState();
+}
+
+document.querySelectorAll('.select').forEach(btn=>btn.addEventListener('click',()=>{
+  selectCard(btn.closest('.card'));
+  flashSignal();
+}));
+
+const preview=document.getElementById('previewWindow');
+const previewLynx=preview.querySelector('.lynx');
+
+preview.addEventListener('pointermove',event=>{
+  if(preview.classList.contains('motion-paused')) return;
+  const rect=preview.getBoundingClientRect();
+  const x=(event.clientX-rect.left)/rect.width-.5;
+  const y=(event.clientY-rect.top)/rect.height-.5;
+  previewLynx.style.setProperty('--look-x',(x*2.4).toFixed(2)+'px');
+  previewLynx.style.setProperty('--look-y',(y*1.5).toFixed(2)+'px');
+  previewLynx.style.setProperty('--tilt',(x*2.2).toFixed(2)+'deg');
+});
+
+preview.addEventListener('pointerleave',()=>{
+  previewLynx.style.setProperty('--look-x','0px');
+  previewLynx.style.setProperty('--look-y','0px');
+  previewLynx.style.setProperty('--tilt','0deg');
+});
+
+preview.addEventListener('click',flashSignal);
+document.getElementById('signalButton').addEventListener('click',flashSignal);
+
+document.getElementById('motionToggle').addEventListener('click',event=>{
+  const button=event.currentTarget;
+  const paused=preview.classList.toggle('motion-paused');
+  button.classList.toggle('active',!paused);
+  button.setAttribute('aria-pressed',String(!paused));
+  button.textContent=paused?'Motion off':'Motion on';
+});
+
+applyState();
+window.setTimeout(flashSignal,450);
+</script>
+</body>
+</html>
