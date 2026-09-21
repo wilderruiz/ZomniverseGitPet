@@ -119,5 +119,89 @@ internal sealed record LynxPalette(
             "Deep Violet",
             StringComparison.Ordinal));
 
+    public static LynxPalette ActivityPartner(LynxActivityState activity)
+    {
+        var name = activity switch
+        {
+            LynxActivityState.Thinking => "Cyan / Teal",
+            LynxActivityState.Preparing => "Midnight Blue",
+            LynxActivityState.Sorting => "Ember Copper",
+            LynxActivityState.Packing => "Graphite Gold",
+            LynxActivityState.Incoming => "Cyan / Teal",
+            LynxActivityState.Outgoing => "Arctic Ice",
+            LynxActivityState.Reconciling => "Ember Copper",
+            LynxActivityState.Success => "Forest Emerald",
+            LynxActivityState.Warning => "Graphite Gold",
+            LynxActivityState.Failure => "Crimson Night",
+            LynxActivityState.Resting => "Midnight Blue",
+            _ => Default.Name
+        };
+
+        return All.First(palette => string.Equals(
+            palette.Name,
+            name,
+            StringComparison.Ordinal));
+    }
+
+    public static float ActivityMix(
+        LynxActivityState activity,
+        double seconds)
+    {
+        if (activity == LynxActivityState.None)
+            return 0f;
+
+        var period = activity switch
+        {
+            LynxActivityState.Sorting => 2.4d,
+            LynxActivityState.Packing => 2.8d,
+            LynxActivityState.Incoming or
+            LynxActivityState.Outgoing => 2.1d,
+            LynxActivityState.Warning or
+            LynxActivityState.Failure => 1.8d,
+            LynxActivityState.Resting => 5.8d,
+            _ => 3.4d
+        };
+
+        var wave = 0.5d + 0.5d * Math.Sin(
+            seconds * Math.PI * 2d / period);
+
+        // Keep a trace of the user's selected palette at all times.
+        return (float)(0.18d + wave * 0.64d);
+    }
+
+    public static LynxPalette Blend(
+        LynxPalette selected,
+        LynxActivityState activity,
+        double seconds)
+    {
+        if (activity == LynxActivityState.None)
+            return selected;
+
+        var partner = ActivityPartner(activity);
+        var amount = ActivityMix(activity, seconds);
+
+        return new LynxPalette(
+            $"{selected.Name} ↔ {partner.Name}",
+            MixColor(selected.Fur, partner.Fur, amount),
+            MixColor(selected.Ear, partner.Ear, amount),
+            MixColor(selected.Edge, partner.Edge, amount),
+            MixColor(selected.Eye, partner.Eye, amount),
+            MixColor(selected.Accent, partner.Accent, amount),
+            MixColor(selected.Muzzle, partner.Muzzle, amount),
+            MixColor(selected.Detail, partner.Detail, amount));
+    }
+
+    private static Color MixColor(Color a, Color b, float bWeight)
+    {
+        bWeight = Math.Clamp(bWeight, 0f, 1f);
+        var aWeight = 1f - bWeight;
+
+        return Color.FromArgb(
+            (int)(a.A * aWeight + b.A * bWeight),
+            (int)(a.R * aWeight + b.R * bWeight),
+            (int)(a.G * aWeight + b.G * bWeight),
+            (int)(a.B * aWeight + b.B * bWeight));
+    }
+
     public override string ToString() => Name;
 }
