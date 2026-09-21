@@ -238,11 +238,12 @@ internal static class StandaloneProjectPublishingRegression
             var gateWorkspace = Path.Combine(root, "publishing-workspace-gate");
             Directory.CreateDirectory(gateWorkspace);
 
+            Task<IDisposable> secondLeaseTask;
             using (var firstLease = StandaloneProjectPublishing
                        .EnterWorkspaceAsync(gateWorkspace)
                        .GetAwaiter().GetResult())
             {
-                var secondLeaseTask = StandaloneProjectPublishing.EnterWorkspaceAsync(gateWorkspace);
+                secondLeaseTask = StandaloneProjectPublishing.EnterWorkspaceAsync(gateWorkspace);
 
                 if (secondLeaseTask.Wait(TimeSpan.FromMilliseconds(120)))
                 {
@@ -250,8 +251,10 @@ internal static class StandaloneProjectPublishingRegression
                     throw new InvalidOperationException(
                         "Publishing workspace gate allowed concurrent access to the same isolated workspace.");
                 }
+            }
 
-                // firstLease is released at the end of this using scope.
+            using (var secondLease = secondLeaseTask.GetAwaiter().GetResult())
+            {
             }
 
             using (var verifiedLease = StandaloneProjectPublishing
