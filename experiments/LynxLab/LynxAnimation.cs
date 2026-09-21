@@ -60,7 +60,7 @@ internal readonly record struct LynxAnimationFrame(
                 BlinkPulse(
                     cycle,
                     profile.BlinkAtSeconds + profile.DoubleBlinkDelaySeconds,
-                    profile.DoubleBlinkDurationSeconds));
+                    profile.BlinkDurationSeconds));
         }
 
         return new LynxAnimationFrame(
