@@ -2,11 +2,14 @@ using System.Drawing.Drawing2D;
 
 namespace LynxLab;
 
-internal sealed class GuardianV3Renderer : ILynxRenderer
+internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
 {
     private const float DesignSize = 160f;
+    private LynxAnimationFrame _animation = LynxAnimationFrame.Static;
 
-    public string Name => "Guardian V3 layered · fur polish";
+    public string Name => "Guardian V3 layered · animation phase 1";
+
+    public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
     public void Draw(
         Graphics graphics,
@@ -29,17 +32,38 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             var miniature = Math.Min(bounds.Width, bounds.Height) <= 180;
 
             DrawGroundReference(graphics, colors);
-            DrawTail(graphics, colors);
-            DrawTorso(graphics, colors);
-            DrawHaunches(graphics, colors);
-            DrawForelegs(graphics, colors);
-            DrawChestFur(graphics);
-            DrawCollarArmor(graphics, palette, miniature);
-            DrawEars(graphics, colors);
-            DrawHead(graphics, colors);
-            DrawFace(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
-            DrawShield(graphics, palette, Math.Min(bounds.Width, bounds.Height) <= 180);
-            DrawRimLighting(graphics, colors, miniature);
+
+            var tailSaved = graphics.Save();
+            try
+            {
+                ApplyTailSway(graphics, _animation.TailSwayDegrees);
+                DrawTail(graphics, colors);
+            }
+            finally
+            {
+                graphics.Restore(tailSaved);
+            }
+
+            var bodySaved = graphics.Save();
+            try
+            {
+                ApplyBreathing(graphics, _animation.Breath);
+
+                DrawTorso(graphics, colors);
+                DrawHaunches(graphics, colors);
+                DrawForelegs(graphics, colors);
+                DrawChestFur(graphics);
+                DrawCollarArmor(graphics, palette, miniature);
+                DrawEars(graphics, colors);
+                DrawHead(graphics, colors);
+                DrawFace(graphics, palette, miniature, _animation.Blink);
+                DrawShield(graphics, palette, miniature, _animation.ShieldPulse);
+                DrawRimLighting(graphics, colors, miniature);
+            }
+            finally
+            {
+                graphics.Restore(bodySaved);
+            }
 
             if (debugOverlay)
                 DrawDebugGeometry(graphics);
@@ -48,6 +72,26 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         {
             graphics.Restore(saved);
         }
+    }
+
+    private static void ApplyTailSway(Graphics g, float degrees)
+    {
+        // Pivot low on the tail so the root stays planted while the plume moves.
+        g.TranslateTransform(48f, 140f, MatrixOrder.Append);
+        g.RotateTransform(degrees, MatrixOrder.Append);
+        g.TranslateTransform(-48f, -140f, MatrixOrder.Append);
+    }
+
+    private static void ApplyBreathing(Graphics g, float breath)
+    {
+        // Barely perceptible body expansion plus a tiny upward weight shift.
+        var scaleY = 1f + breath * 0.0045f;
+        var bob = -breath * 0.38f;
+
+        g.TranslateTransform(0f, bob, MatrixOrder.Append);
+        g.TranslateTransform(80f, 145f, MatrixOrder.Append);
+        g.ScaleTransform(1f, scaleY, MatrixOrder.Append);
+        g.TranslateTransform(-80f, -145f, MatrixOrder.Append);
     }
 
     private static void DrawGroundReference(Graphics g, SilhouetteColors c)
@@ -317,7 +361,7 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         g.FillPath(centerFill, centerLock);
     }
 
-    private static void DrawFace(Graphics g, LynxPalette palette, bool miniature)
+    private static void DrawFace(Graphics g, LynxPalette palette, bool miniature, float blink)
     {
         using var mask = Path(
             M(47, 66), C(49, 59, 56, 56, 63, 58),
@@ -332,8 +376,8 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
             Color.FromArgb(255, 253, 255), Color.FromArgb(222, 211, 237), 90f);
         g.FillPath(white, mask);
 
-        DrawFaceEye(g, palette, miniature, false);
-        DrawFaceEye(g, palette, miniature, true);
+        DrawFaceEye(g, palette, miniature, false, blink);
+        DrawFaceEye(g, palette, miniature, true, blink);
 
         using var nose = Path(
             M(75, 72), C(77, 70.5f, 83, 70.5f, 85, 72),
@@ -355,14 +399,29 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         g.DrawPath(mouthPen, mouth);
     }
 
-    private static void DrawFaceEye(Graphics g, LynxPalette palette, bool miniature, bool right)
+    private static void DrawFaceEye(
+        Graphics g,
+        LynxPalette palette,
+        bool miniature,
+        bool right,
+        float blink)
     {
-        // A descending upper lid gives vigilance without a separate angry eyebrow.
+        // Keep the approved vigilant shape, then compress it vertically for a blink.
         using var leftEye = Path(
             M(54, 51), C(58, 51, 64, 53.5f, 68, 56.5f),
             C(67, 63, 64, 66, 60, 65),
             C(56, 64, 53, 59, 54, 51), Z());
         using var eye = right ? Mirror(leftEye) : (GraphicsPath)leftEye.Clone();
+
+        var eyeOpen = Math.Clamp(1f - blink * 0.90f, 0.10f, 1f);
+        using (var blinkMatrix = new Matrix())
+        {
+            blinkMatrix.Translate(0f, 58.5f, MatrixOrder.Append);
+            blinkMatrix.Scale(1f, eyeOpen, MatrixOrder.Append);
+            blinkMatrix.Translate(0f, -58.5f, MatrixOrder.Append);
+            eye.Transform(blinkMatrix);
+        }
+
         using var dark = new SolidBrush(Color.FromArgb(23, 12, 37));
         g.FillPath(dark, eye);
 
@@ -370,26 +429,58 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         try
         {
             g.SetClip(eye, CombineMode.Intersect);
+
             var center = right ? 99f : 61f;
-            using var iris = new SolidBrush(Mix(Color.FromArgb(139, 70, 221), palette.Eye, 0.12f));
-            g.FillEllipse(iris, center - 4.5f, 55, 9, 11);
-            g.FillEllipse(dark, center - 2.1f, 54, 4.2f, 9);
-            var highlightSize = miniature ? 2.5f : 2f;
-            g.FillEllipse(Brushes.White, center - 3, 54, highlightSize, highlightSize);
+            var irisHeight = 11f * eyeOpen;
+            var irisY = 60.5f - irisHeight / 2f;
+            var pupilHeight = 9f * eyeOpen;
+            var pupilY = 58.5f - pupilHeight / 2f;
+
+            using var iris = new SolidBrush(
+                Mix(Color.FromArgb(139, 70, 221), palette.Eye, 0.12f));
+            g.FillEllipse(iris, center - 4.5f, irisY, 9f, irisHeight);
+            g.FillEllipse(dark, center - 2.1f, pupilY, 4.2f, pupilHeight);
+
+            if (blink < 0.72f)
+            {
+                var highlightSize = miniature ? 2.5f : 2f;
+                g.FillEllipse(
+                    Brushes.White,
+                    center - 3f,
+                    54f + blink * 2.2f,
+                    highlightSize,
+                    highlightSize * eyeOpen);
+            }
         }
         finally
         {
             g.Restore(saved);
         }
 
-        using var leftLid = Path(M(53.5f, 50.8f), C(58, 51, 64, 53.5f, 68.5f, 56.5f));
+        using var leftLid = Path(
+            M(53.5f, 50.8f), C(58, 51, 64, 53.5f, 68.5f, 56.5f));
         using var lid = right ? Mirror(leftLid) : (GraphicsPath)leftLid.Clone();
-        using var lidPen = new Pen(Color.FromArgb(42, 21, 67), miniature ? 1.4f : 0.9f)
+        using var lidPen = new Pen(
+            Color.FromArgb(42, 21, 67),
+            miniature ? 1.4f : 0.9f)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round
         };
         g.DrawPath(lidPen, lid);
+
+        if (blink > 0.62f)
+        {
+            var center = right ? 99f : 61f;
+            using var closedPen = new Pen(
+                Color.FromArgb(55, 28, 82),
+                miniature ? 1.7f : 1.05f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round
+            };
+            g.DrawArc(closedPen, center - 7f, 56.2f, 14f, 4.5f, 8f, 164f);
+        }
     }
 
     private static void DrawCollarArmor(Graphics g, LynxPalette palette, bool miniature)
@@ -427,14 +518,14 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         }
     }
 
-    private static void DrawShield(Graphics g, LynxPalette palette, bool miniature)
+    private static void DrawShield(Graphics g, LynxPalette palette, bool miniature, float pulse)
     {
         var saved = g.Save();
         try
         {
             // Seat the badge against the collar while retaining the exposed chest ruff.
             g.TranslateTransform(0, -1.5f);
-            DrawShieldBadge(g, palette, miniature);
+            DrawShieldBadge(g, palette, miniature, pulse);
         }
         finally
         {
@@ -442,13 +533,16 @@ internal sealed class GuardianV3Renderer : ILynxRenderer
         }
     }
 
-    private static void DrawShieldBadge(Graphics g, LynxPalette palette, bool miniature)
+    private static void DrawShieldBadge(Graphics g, LynxPalette palette, bool miniature, float pulse)
     {
         using var shield = Path(
             M(80, 96), L(91, 101), L(89, 113),
             L(80, 121), L(71, 113), L(69, 101), Z());
         var violet = Mix(Color.FromArgb(161, 102, 235), palette.Accent, 0.10f);
-        using var halo = new Pen(Color.FromArgb(38, violet), miniature ? 3.4f : 3f)
+        pulse = Math.Clamp(pulse, 0f, 1f);
+        var haloAlpha = 24 + (int)Math.Round(36f * pulse);
+        var haloWidth = (miniature ? 3.2f : 2.8f) + 0.45f * pulse;
+        using var halo = new Pen(Color.FromArgb(haloAlpha, violet), haloWidth)
         {
             LineJoin = LineJoin.Round
         };

@@ -13,6 +13,9 @@ internal sealed class LynxLabForm : Form
     private readonly CheckBox _desktopPreviewToggle;
     private readonly CheckBox _debugToggle;
     private readonly CheckBox _topMostToggle;
+    private readonly System.Windows.Forms.Timer _animationTimer;
+    private readonly System.Diagnostics.Stopwatch _animationClock =
+        System.Diagnostics.Stopwatch.StartNew();
 
     public LynxLabForm()
     {
@@ -55,10 +58,26 @@ internal sealed class LynxLabForm : Form
         _debugToggle = LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
 
+        _animationTimer = new System.Windows.Forms.Timer
+        {
+            Interval = 33
+        };
+        _animationTimer.Tick += (_, _) => AdvanceAnimation();
+
         Controls.Add(BuildLayout());
 
-        Shown += (_, _) => _desktopPreview.Show(this);
-        FormClosed += (_, _) => _desktopPreview.Dispose();
+        Shown += (_, _) =>
+        {
+            _desktopPreview.Show(this);
+            _animationTimer.Start();
+        };
+
+        FormClosed += (_, _) =>
+        {
+            _animationTimer.Stop();
+            _animationTimer.Dispose();
+            _desktopPreview.Dispose();
+        };
     }
 
     private Control BuildLayout()
@@ -341,6 +360,20 @@ internal sealed class LynxLabForm : Form
         return shell;
     }
 
+    private void AdvanceAnimation()
+    {
+        if (_renderer is not IAnimatedLynxRenderer animated)
+            return;
+
+        animated.SetAnimationFrame(
+            LynxAnimationFrame.FromSeconds(_animationClock.Elapsed.TotalSeconds));
+
+        _canvas.Invalidate();
+
+        if (_desktopPreview.Visible)
+            _desktopPreview.Invalidate();
+    }
+
     private void SetState(LynxVisualState state)
     {
         _canvas.State = state;
@@ -351,6 +384,13 @@ internal sealed class LynxLabForm : Form
     private void SetRenderer(ILynxRenderer renderer)
     {
         _renderer = renderer;
+
+        if (renderer is IAnimatedLynxRenderer animated)
+        {
+            animated.SetAnimationFrame(
+                LynxAnimationFrame.FromSeconds(_animationClock.Elapsed.TotalSeconds));
+        }
+
         _canvas.Renderer = renderer;
         _desktopPreview.Renderer = renderer;
         _viewportCaption.Text = "LAB VIEWPORT  ·  " + renderer.Name;
