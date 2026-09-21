@@ -7,6 +7,7 @@ internal sealed class LynxLabForm : Form
     private readonly LynxCanvas _canvas;
     private readonly Direct2DTestControl _direct2DCanvas;
     private readonly LynxDesktopPreviewForm _desktopPreview;
+    private readonly Direct2DDesktopPreviewForm _direct2DDesktopPreview;
     private readonly Label _viewportCaption;
     private readonly Label _rendererValue;
     private readonly Label _stateValue;
@@ -22,7 +23,10 @@ internal sealed class LynxLabForm : Form
     private readonly Label _dxgiValue;
     private readonly Label _direct2DTargetValue;
     private readonly Label _direct2DFramesValue;
+    private readonly Label _direct2DMiniTargetValue;
+    private readonly Label _direct2DMiniFramesValue;
     private readonly CheckBox _desktopPreviewToggle;
+    private readonly CheckBox _direct2DDesktopPreviewToggle;
     private readonly CheckBox _debugToggle;
     private readonly CheckBox _topMostToggle;
     private readonly System.Windows.Forms.Timer _animationTimer;
@@ -41,7 +45,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — Direct2D Guardian Migration 4";
+        Text = "Lynx Lab — Direct2D Guardian Migration 5";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -61,6 +65,9 @@ internal sealed class LynxLabForm : Form
         };
 
         _desktopPreview = new LynxDesktopPreviewForm(_renderer);
+        _direct2DDesktopPreview =
+            new Direct2DDesktopPreviewForm();
+
         _viewportCaption = new Label
         {
             Dock = DockStyle.Top,
@@ -85,12 +92,19 @@ internal sealed class LynxLabForm : Form
         _dxgiValue = ValueLabel("probing...");
         _direct2DTargetValue = ValueLabel("not initialized");
         _direct2DFramesValue = ValueLabel("0");
+        _direct2DMiniTargetValue = ValueLabel("not initialized");
+        _direct2DMiniFramesValue = ValueLabel("0");
+
         _direct2DCanvas.BackendStatusChanged += (_, _) =>
         {
             _direct2DTargetValue.Text = _direct2DCanvas.BackendStatus;
         };
-        _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
-        _debugToggle = LabCheckBox("Debug geometry", false);
+        _desktopPreviewToggle =
+            LabCheckBox("GDI+ desktop preview", true);
+        _direct2DDesktopPreviewToggle =
+            LabCheckBox("Direct2D 160×160 preview", true);
+        _debugToggle =
+            LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
 
         _animationTimer = new System.Windows.Forms.Timer
@@ -104,7 +118,11 @@ internal sealed class LynxLabForm : Form
         Shown += (_, _) =>
         {
             RefreshGraphicsDiagnostics();
+
             _desktopPreview.Show(this);
+            _direct2DDesktopPreview.Show(this);
+            PositionDesktopPreviewPair();
+
             _animationTimer.Start();
         };
 
@@ -112,6 +130,7 @@ internal sealed class LynxLabForm : Form
         {
             _animationTimer.Stop();
             _animationTimer.Dispose();
+            _direct2DDesktopPreview.Dispose();
             _desktopPreview.Dispose();
         };
     }
@@ -272,7 +291,7 @@ internal sealed class LynxLabForm : Form
 
         split.Panel2.Controls.Add(
             BackendPanel(
-                "DIRECT2D / GUARDIAN MIGRATION 4",
+                "DIRECT2D / GUARDIAN MIGRATION 5",
                 _direct2DCanvas,
                 Color.FromArgb(0x57, 0xD7, 0xA0)));
 
@@ -440,6 +459,8 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(KeyValueRow("DXGI", _dxgiValue));
         stack.Controls.Add(KeyValueRow("D2D target", _direct2DTargetValue));
         stack.Controls.Add(KeyValueRow("D2D frames", _direct2DFramesValue));
+        stack.Controls.Add(KeyValueRow("DX mini target", _direct2DMiniTargetValue));
+        stack.Controls.Add(KeyValueRow("DX mini frames", _direct2DMiniFramesValue));
 
         var probeGraphics = LabButton("Probe graphics again");
         probeGraphics.Click += (_, _) => RefreshGraphicsDiagnostics();
@@ -460,6 +481,24 @@ internal sealed class LynxLabForm : Form
             }
         };
 
+        _direct2DDesktopPreviewToggle.CheckedChanged +=
+            (_, _) =>
+            {
+                if (_direct2DDesktopPreviewToggle.Checked)
+                {
+                    if (!_direct2DDesktopPreview.Visible)
+                    {
+                        _direct2DDesktopPreview.Show(this);
+                        _direct2DDesktopPreview.PositionLeftOf(
+                            _desktopPreview);
+                    }
+                }
+                else
+                {
+                    _direct2DDesktopPreview.Hide();
+                }
+            };
+
         _debugToggle.CheckedChanged += (_, _) =>
         {
             _canvas.DebugOverlay = _debugToggle.Checked;
@@ -467,14 +506,21 @@ internal sealed class LynxLabForm : Form
         };
 
         _topMostToggle.CheckedChanged += (_, _) =>
-            _desktopPreview.TopMost = _topMostToggle.Checked;
+        {
+            _desktopPreview.TopMost =
+                _topMostToggle.Checked;
+            _direct2DDesktopPreview.TopMost =
+                _topMostToggle.Checked;
+        };
 
         stack.Controls.Add(_desktopPreviewToggle);
+        stack.Controls.Add(_direct2DDesktopPreviewToggle);
         stack.Controls.Add(_debugToggle);
         stack.Controls.Add(_topMostToggle);
 
         var reset = LabButton("Reset desktop position");
-        reset.Click += (_, _) => _desktopPreview.PositionAtBottomRight();
+        reset.Click += (_, _) =>
+            PositionDesktopPreviewPair();
         stack.Controls.Add(reset);
 
         stack.Controls.Add(Spacer());
@@ -482,7 +528,8 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(KeyValueRow("Renderer", _rendererValue));
         stack.Controls.Add(KeyValueRow("Canvas", "A/B · GDI+ Guardian + Direct2D HWND"));
         stack.Controls.Add(KeyValueRow("Pet size", "160 × 160"));
-        stack.Controls.Add(KeyValueRow("Desktop host", "240 × 246"));
+        stack.Controls.Add(KeyValueRow("GDI desktop host", "240 × 246"));
+        stack.Controls.Add(KeyValueRow("DX mini surface", "160 × 160 native"));
         stack.Controls.Add(KeyValueRow("State", _stateValue));
         stack.Controls.Add(KeyValueRow("Activity", _activityValue));
         stack.Controls.Add(KeyValueRow("Motion", _motionValue));
@@ -494,7 +541,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Direct2D Guardian Migration 4 adds full native activity FX parity: independently phased incoming/outgoing traffic, deliberate whole-pet scanning, asynchronous sorting chips, inward packing, opposing reconcile flows, success halo, counter-rotating warning with rocking alert, failure crash/recoil, and resting rings/z drift. GDI+ V9 remains beside it for parity checks.",
+            Text = "Direct2D Guardian Migration 5 validates the native Guardian at the real 160×160 desktop footprint. A second always-on-top preview now renders Direct2D without lab padding or diagnostic chrome, beside the existing GDI+ desktop preview. This is the final size/readability gate before moving the native renderer into a transparent DirectComposition desktop host.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -624,10 +671,24 @@ internal sealed class LynxLabForm : Form
             _canvas.State,
             _activity);
 
+        if (_direct2DDesktopPreview.Visible)
+        {
+            _direct2DDesktopPreview.SetFrame(
+                now,
+                _canvas.Palette,
+                _canvas.State,
+                _activity);
+        }
+
         _direct2DTargetValue.Text =
             _direct2DCanvas.BackendStatus;
         _direct2DFramesValue.Text =
             _direct2DCanvas.FrameCount.ToString("N0");
+
+        _direct2DMiniTargetValue.Text =
+            _direct2DDesktopPreview.BackendStatus;
+        _direct2DMiniFramesValue.Text =
+            _direct2DDesktopPreview.FrameCount.ToString("N0");
 
         _canvas.Invalidate();
 
@@ -692,6 +753,14 @@ internal sealed class LynxLabForm : Form
         _desktopPreview.Renderer = renderer;
         _viewportCaption.Text = "LAB VIEWPORT  ·  " + renderer.Name;
         _rendererValue.Text = renderer.Name;
+    }
+
+    private void PositionDesktopPreviewPair()
+    {
+        _desktopPreview.PositionAtBottomRight();
+
+        _direct2DDesktopPreview.PositionLeftOf(
+            _desktopPreview);
     }
 
     private static string ActivityName(LynxActivityState activity) =>

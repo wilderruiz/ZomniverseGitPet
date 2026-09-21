@@ -6,10 +6,9 @@ namespace LynxLab;
 /// <summary>
 /// First real Direct2D render target in Lynx Lab.
 ///
-/// Migration 4 completes native activity-effect parity for the Direct2D Guardian:
-/// independently phased whole-pet traffic, scanning, sorting, packing,
-/// reconciliation, success, warning, failure and resting effects. GDI+ V9
-/// remains the visual reference.
+/// Migration 5 validates the native Guardian at the production 160×160 size.
+/// The same Direct2D renderer can run with lab chrome/padding or in exact-size
+/// mode for desktop-pet readability checks before DirectComposition hosting.
 /// </summary>
 internal sealed class Direct2DTestControl : Control
 {
@@ -65,6 +64,8 @@ internal sealed class Direct2DTestControl : Control
     private LynxPalette _palette = LynxPalette.Default;
     private LynxVisualState _state = LynxVisualState.Idle;
     private LynxActivityState _activity = LynxActivityState.None;
+    private bool _showDiagnosticFrame = true;
+    private bool _productionSizeMode;
 
     public Direct2DTestControl()
     {
@@ -81,6 +82,32 @@ internal sealed class Direct2DTestControl : Control
 
     public string BackendStatus => _status;
     public long FrameCount => _frameCount;
+
+    public bool ShowDiagnosticFrame
+    {
+        get => _showDiagnosticFrame;
+        set
+        {
+            if (_showDiagnosticFrame == value)
+                return;
+
+            _showDiagnosticFrame = value;
+            Invalidate();
+        }
+    }
+
+    public bool ProductionSizeMode
+    {
+        get => _productionSizeMode;
+        set
+        {
+            if (_productionSizeMode == value)
+                return;
+
+            _productionSizeMode = value;
+            Invalidate();
+        }
+    }
 
     public event EventHandler? BackendStatusChanged;
 
@@ -245,7 +272,7 @@ internal sealed class Direct2DTestControl : Control
                 }
             }
 
-            SetStatus("DIRECT2D GUARDIAN MIGRATION 4 ✓");
+            SetStatus("DIRECT2D GUARDIAN MIGRATION 5 ✓");
             return true;
         }
         catch (Exception ex)
@@ -281,7 +308,12 @@ internal sealed class Direct2DTestControl : Control
         {
             accentBrush = CreateBrush(accent);
             partnerBrush = CreateBrush(partner);
-            frameBrush = CreateBrush(Color.FromArgb(0x45, 0x55, 0x64));
+
+            if (_showDiagnosticFrame)
+            {
+                frameBrush =
+                    CreateBrush(Color.FromArgb(0x45, 0x55, 0x64));
+            }
 
             beginDraw(_target);
             clear(_target, ref background);
@@ -298,13 +330,22 @@ internal sealed class Direct2DTestControl : Control
             var cy = height / 2f;
             var side = Math.Min(width, height);
 
-            var frame = new RectF(6f, 6f, width - 6f, height - 6f);
-            drawRectangle(
-                _target,
-                ref frame,
-                frameBrush,
-                1f,
-                IntPtr.Zero);
+            if (_showDiagnosticFrame)
+            {
+                var frame =
+                    new RectF(
+                        6f,
+                        6f,
+                        width - 6f,
+                        height - 6f);
+
+                drawRectangle(
+                    _target,
+                    ref frame,
+                    frameBrush,
+                    1f,
+                    IntPtr.Zero);
+            }
 
             // Activity motion is split around the mascot:
             // perimeter fields behind, readable cues above.
@@ -341,7 +382,7 @@ internal sealed class Direct2DTestControl : Control
             _frameCount++;
             if (_frameCount == 1 || _frameCount % 120 == 0)
                 SetStatus(
-                    $"DIRECT2D GUARDIAN MIGRATION 4 ✓ · {_frameCount} frames");
+                    $"DIRECT2D GUARDIAN MIGRATION 5 ✓ · {_frameCount} frames");
         }
         finally
         {
@@ -1029,10 +1070,15 @@ internal sealed class Direct2DTestControl : Control
         float width,
         float height)
     {
+        var margin =
+            _productionSizeMode
+                ? 0f
+                : 20f;
+
         var side =
             Math.Max(
                 1f,
-                Math.Min(width, height) - 20f);
+                Math.Min(width, height) - margin);
         var scale = side / 160f;
         var left = (width - side) / 2f;
         var top = (height - side) / 2f;
