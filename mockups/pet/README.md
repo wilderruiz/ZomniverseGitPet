@@ -15,7 +15,7 @@ This design-review pack defines one coherent **purple fox repository companion**
 
 Open `mockups/pet/index.html` directly in a browser. The gallery has no build step, framework, network request, or external dependency.
 
-The generic idle, happy, review-ready and warning images remain embedded for ordinary repository states.
+The original PNG/SVG states remain embedded as a compatibility fallback, but the production desktop mascot is now rendered live by `PetDirect2DControl`. The Direct2D Guardian keeps the same purple identity while repository and operation state drive expressions, tail motion, armor/palette transitions, and whole-pet activity effects at the 160 × 160 desktop size. If native Direct2D rendering fails, `PetForm` falls back to the embedded PNG states.
 
 ## Save lifecycle assets
 
