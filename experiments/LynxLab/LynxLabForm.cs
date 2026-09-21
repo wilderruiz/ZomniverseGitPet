@@ -30,9 +30,9 @@ internal sealed class LynxLabForm : Form
             new HairyGuardianRenderer(),
             new GuardianV3Renderer()
         ];
-        _renderer = _renderers[0];
+        _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — Phase 0";
+        Text = "Lynx Lab — V6 Activity Behaviors";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -422,7 +422,9 @@ internal sealed class LynxLabForm : Form
         _canvas.State = state;
         _desktopPreview.State = state;
         _stateValue.Text = state.ToString();
-        _expressionValue.Text = ExpressionName(state);
+        _expressionValue.Text = _activity == LynxActivityState.None
+            ? ExpressionName(state)
+            : ActivityExpressionName(_activity);
         _stateChangedAtSeconds = _animationClock.Elapsed.TotalSeconds;
 
         // Render the first reaction frame immediately rather than waiting for
@@ -435,6 +437,9 @@ internal sealed class LynxLabForm : Form
         _activity = activity;
         _activityChangedAtSeconds = _animationClock.Elapsed.TotalSeconds;
         _activityValue.Text = ActivityName(activity);
+        _expressionValue.Text = activity == LynxActivityState.None
+            ? ExpressionName(_canvas.State)
+            : ActivityExpressionName(activity);
         _desktopPreview.Activity = activity;
 
         AdvanceAnimation();
@@ -486,6 +491,24 @@ internal sealed class LynxLabForm : Form
             LynxActivityState.Failure => "failure / needs help",
             LynxActivityState.Resting => "resting / low activity",
             _ => "none"
+        };
+
+    private static string ActivityExpressionName(
+        LynxActivityState activity) =>
+        activity switch
+        {
+            LynxActivityState.Thinking => "focused / analysing",
+            LynxActivityState.Preparing => "inspecting / deliberate",
+            LynxActivityState.Sorting => "busy / coordinated",
+            LynxActivityState.Packing => "determined / locking",
+            LynxActivityState.Incoming => "surprised / attentive",
+            LynxActivityState.Outgoing => "confident / dispatching",
+            LynxActivityState.Reconciling => "intense / calculating",
+            LynxActivityState.Success => "pleased / complete",
+            LynxActivityState.Warning => "concerned / cautious",
+            LynxActivityState.Failure => "frustrated / guarded",
+            LynxActivityState.Resting => "sleepy / relaxed",
+            _ => "base state"
         };
 
     private static string ExpressionName(LynxVisualState state) =>
