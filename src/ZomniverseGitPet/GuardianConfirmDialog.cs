@@ -91,8 +91,8 @@ internal sealed class GuardianConfirmDialog : Form
             Use one continuous background across dialog.
             */
             BackColor = GuardianTheme.Window,            
-            ForeColor = GuardianTheme.HotPinkSoft,
-            Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+            ForeColor = GuardianTheme.Violet,
+            Font = new Font("Segoe UI", 12f, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
         };
 

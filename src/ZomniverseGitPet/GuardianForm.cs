@@ -119,8 +119,8 @@ public sealed class GuardianForm : Form
         var toolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 66,
-            Padding = new Padding(14, 10, 10, 8),
+            Height = 48,
+            Padding = new Padding(10, 6, 8, 5),
             WrapContents = true,
             AutoScroll = false,
             BackColor = GuardianTheme.Surface
@@ -258,9 +258,9 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 260,
-            Padding = new Padding(18, 16, 18, 18),
-            BackColor = GuardianTheme.SurfaceRaised
+            Height = 178,
+            Padding = new Padding(10, 10, 10, 10),
+            BackColor = GuardianTheme.Window
         };
 
         var repositoryCard = new OnboardingSurfacePanel
@@ -269,8 +269,8 @@ public sealed class GuardianForm : Form
             FillColor = GuardianTheme.Surface,
             BackColor = GuardianTheme.Surface,
             BorderColor = GuardianTheme.Border,
-            CornerRadius = 12,
-            Padding = new Padding(24, 20, 24, 20)
+            CornerRadius = 6,
+            Padding = new Padding(16, 12, 16, 12)
         };
 
         var repositoryLayout = new TableLayoutPanel
@@ -293,7 +293,7 @@ public sealed class GuardianForm : Form
            The complete branch name requires more card width without compressing another status column.
            ========================================================================== */
         repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 600));
+        repositoryLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
 
         var summary = new TableLayoutPanel
         {
@@ -303,10 +303,10 @@ public sealed class GuardianForm : Form
             Margin = new Padding(0, 0, 28, 0),
             BackColor = GuardianTheme.Surface
         };
-        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
 
         /* ==========================================================================
            PATCH: BUILD CURRENT PROJECT PILL HEADER
@@ -332,8 +332,8 @@ public sealed class GuardianForm : Form
         _projectContextLabel.AutoSize = true;
         _projectContextLabel.Text = "CURRENT PROJECT";
         _projectContextLabel.ForeColor = GuardianTheme.MutedInk;
-        _projectContextLabel.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
-        _projectContextLabel.Margin = new Padding(0, 10, 12, 0);
+        _projectContextLabel.Font = new Font("Cascadia Mono", 7.5f, FontStyle.Bold);
+        _projectContextLabel.Margin = new Padding(0, 7, 10, 0);
         _projectContextLabel.TextAlign = ContentAlignment.MiddleLeft;
 
         _projectTitle.Text = "NO PROJECT";
@@ -365,7 +365,7 @@ public sealed class GuardianForm : Form
             Dock = DockStyle.Fill,
             Text = "Repository overview and most recent checkpoint",
             ForeColor = GuardianTheme.MutedInk,
-            Font = new Font("Segoe UI", 9.5f),
+            Font = new Font("Segoe UI", 8.75f),
             TextAlign = ContentAlignment.TopLeft
         };
 
@@ -391,8 +391,8 @@ public sealed class GuardianForm : Form
 
         _watchingLabel.Dock = DockStyle.Fill;
         _watchingLabel.Text = "Watching this repository";
-        _watchingLabel.ForeColor = GuardianTheme.HotPinkSoft;
-        _watchingLabel.Font = new Font("Segoe UI", 9);
+        _watchingLabel.ForeColor = GuardianTheme.Violet;
+        _watchingLabel.Font = new Font("Cascadia Mono", 7.75f);
         _watchingLabel.TextAlign = ContentAlignment.MiddleLeft;
 
         summary.Controls.Add(projectHeading, 0, 0);
@@ -417,8 +417,8 @@ public sealed class GuardianForm : Form
             FillColor = GuardianTheme.SurfaceRaised,
             BackColor = GuardianTheme.SurfaceRaised,
             BorderColor = Color.FromArgb(145, GuardianTheme.BorderSoft),
-            CornerRadius = 10,
-            Padding = new Padding(14)
+            CornerRadius = 6,
+            Padding = new Padding(8)
         };
         var statusGrid = new TableLayoutPanel
         {
@@ -448,7 +448,7 @@ public sealed class GuardianForm : Form
         _onlineLabel.Dock = DockStyle.Fill;
         _onlineLabel.Text = "● ACTIVE";
         _onlineLabel.ForeColor = GuardianTheme.Healthy;
-        _onlineLabel.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+        _onlineLabel.Font = new Font("Cascadia Mono", 8.5f, FontStyle.Bold);
         _onlineLabel.TextAlign = ContentAlignment.MiddleLeft;
 
         var statusCaptions = new[] { "GUARDIAN", "HEALTH", "BRANCH", "WORKING TREE" };
@@ -465,17 +465,17 @@ public sealed class GuardianForm : Form
                 ColumnCount = 1,
                 RowCount = 2,
                 Margin = Padding.Empty,
-                Padding = new Padding(14, 10, 10, 8),
+                Padding = new Padding(10, 7, 8, 6),
                 BackColor = GuardianTheme.SurfaceRaised
             };
-            statusCell.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+            statusCell.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
             statusCell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             statusCell.Controls.Add(new Label
             {
                 Dock = DockStyle.Fill,
                 Text = statusCaptions[index],
                 ForeColor = GuardianTheme.FaintInk,
-                Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+                Font = new Font("Cascadia Mono", 7f, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft
             }, 0, 0);
             statusCell.Controls.Add(value, 0, 1);
@@ -557,27 +557,27 @@ public sealed class GuardianForm : Form
         _files.GridColor = GuardianTheme.BorderSoft;
         _files.RowHeadersVisible = false;
         _files.EnableHeadersVisualStyles = false;
-        _files.ColumnHeadersHeight = 40;
+        _files.ColumnHeadersHeight = 28;
         _files.ColumnHeadersDefaultCellStyle.BackColor = GuardianTheme.SurfaceSoft;
         _files.ColumnHeadersDefaultCellStyle.ForeColor = GuardianTheme.MutedInk;
-        _files.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        _files.ColumnHeadersDefaultCellStyle.Font = new Font("Cascadia Mono", 7.5f, FontStyle.Bold);
         _files.ColumnHeadersDefaultCellStyle.SelectionBackColor = GuardianTheme.SurfaceSoft;
         _files.ColumnHeadersDefaultCellStyle.SelectionForeColor = GuardianTheme.MutedInk;
         _files.DefaultCellStyle.BackColor = GuardianTheme.Surface;
         _files.DefaultCellStyle.ForeColor = GuardianTheme.Ink;
-        _files.DefaultCellStyle.SelectionBackColor = Color.FromArgb(57, 42, 77);
+        _files.DefaultCellStyle.SelectionBackColor = Color.FromArgb(21, 28, 35);
         _files.DefaultCellStyle.SelectionForeColor = Color.White;
-        _files.DefaultCellStyle.Font = new Font("Segoe UI", 9.25f);
+        _files.DefaultCellStyle.Font = new Font("Cascadia Mono", 8.25f);
         _files.DefaultCellStyle.Padding = new Padding(7, 2, 7, 2);
-        _files.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(31, 25, 42);
-        _files.RowTemplate.Height = 34;
+        _files.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(12, 17, 22);
+        _files.RowTemplate.Height = 27;
         _files.ShowCellToolTips = true;
 
         _files.Columns.Add("Status", "STATE");
         _files.Columns.Add("Path", "PATH");
         _files.Columns[0].FillWeight = 20;
         _files.Columns[1].FillWeight = 80;
-        _files.Columns[0].DefaultCellStyle.Font = new Font("Segoe UI", 8.75f, FontStyle.Bold);
+        _files.Columns[0].DefaultCellStyle.Font = new Font("Cascadia Mono", 7.75f, FontStyle.Bold);
         _files.Columns[0].HeaderCell.ToolTipText =
             "Human-readable Git state. Hover a row for the underlying Git status code.";
         _files.Columns[1].HeaderCell.ToolTipText =
@@ -706,9 +706,9 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 56,
-            BackColor = GuardianTheme.Surface,
-            Padding = new Padding(16, 8, 16, 8)
+            Height = 48,
+            BackColor = GuardianTheme.SurfaceRaised,
+            Padding = new Padding(12, 5, 12, 5)
         };
 
         var label = new Label
@@ -717,12 +717,12 @@ public sealed class GuardianForm : Form
             Location = new Point(16, 9),
             Text = "AUTOMATIC SAVING",
             ForeColor = GuardianTheme.FaintInk,
-            Font = new Font("Segoe UI", 7.5f, FontStyle.Bold)
+            Font = new Font("Cascadia Mono", 7f, FontStyle.Bold)
         };
 
         _automatic.Text = "Automatic verified saves";
         _automatic.AutoSize = true;
-        _automatic.Location = new Point(16, 28);
+        _automatic.Location = new Point(12, 24);
         _automatic.ForeColor = GuardianTheme.Ink;
         _automatic.BackColor = GuardianTheme.Surface;
         _automatic.Checked = _config.AutomaticCheckpointsEnabled;
@@ -730,10 +730,10 @@ public sealed class GuardianForm : Form
         var note = new Label
         {
             AutoSize = true,
-            Location = new Point(250, 29),
+            Location = new Point(246, 25),
             Text = "OFF BY DEFAULT · local saves only · never sends automatically",
             ForeColor = GuardianTheme.FaintInk,
-            Font = new Font("Segoe UI", 8)
+            Font = new Font("Cascadia Mono", 7.5f)
         };
 
         _toolTips.SetToolTip(_automatic,
@@ -759,12 +759,12 @@ public sealed class GuardianForm : Form
         var menu = new MenuStrip
         {
             Dock = DockStyle.Top,
-            BackColor = GuardianTheme.SurfaceRaised,
+            BackColor = GuardianTheme.Window,
             ForeColor = GuardianTheme.Ink,
             GripStyle = ToolStripGripStyle.Hidden,
             RenderMode = ToolStripRenderMode.Professional,
             Renderer = GuardianTheme.CreateMenuRenderer(),
-            Padding = new Padding(12, 3, 0, 3)
+            Padding = new Padding(10, 2, 0, 2)
         };
 
         var help = new ToolStripMenuItem("Help")
@@ -800,8 +800,8 @@ public sealed class GuardianForm : Form
             Text = text,
             Kind = kind,
             Width = width,
-            Height = 38,
-            Margin = new Padding(4, 2, 4, 2)
+            Height = 32,
+            Margin = new Padding(3, 1, 3, 1)
         };
         button.Click += async (_, _) => await action();
         return button;

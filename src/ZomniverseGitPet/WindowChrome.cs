@@ -22,9 +22,9 @@ internal static class WindowChrome
                 var enabled = 1;
                 DwmSetWindowAttribute(form.Handle, DwmwaUseImmersiveDarkMode, ref enabled, sizeof(int));
 
-                var caption = ToColorRef(Color.FromArgb(28, 22, 38));
-                var border = ToColorRef(GuardianTheme.HotPink);
-                var text = ToColorRef(Color.White);
+                var caption = ToColorRef(GuardianTheme.Window);
+                var border = ToColorRef(GuardianTheme.Border);
+                var text = ToColorRef(GuardianTheme.Ink);
                 DwmSetWindowAttribute(form.Handle, DwmwaCaptionColor, ref caption, sizeof(int));
                 DwmSetWindowAttribute(form.Handle, DwmwaBorderColor, ref border, sizeof(int));
                 DwmSetWindowAttribute(form.Handle, DwmwaTextColor, ref text, sizeof(int));

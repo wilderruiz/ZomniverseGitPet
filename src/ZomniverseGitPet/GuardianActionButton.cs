@@ -84,10 +84,10 @@ internal sealed class GuardianActionButton : Button
         FlatAppearance.BorderSize = 0;
         UseVisualStyleBackColor = false;
         ForeColor = GuardianTheme.Ink;
-        Font = new Font("Segoe UI", 9, FontStyle.Bold);
+        Font = new Font("Cascadia Mono", 8.25f, FontStyle.Bold);
         Cursor = Cursors.Hand;
         TabStop = true;
-        Height = 38;
+        Height = 32;
 
         GuardianSyncState.Changed += OnSyncStateChanged;
     }
@@ -256,7 +256,7 @@ internal sealed class GuardianActionButton : Button
             5.5f,
             Math.Max(1, Width - 3),
             Math.Max(1, Height - 7));
-        using var path = GuardianTheme.RoundedRectangle(bounds, 11f);
+        using var path = GuardianTheme.RoundedRectangle(bounds, 5f);
 
         var (fill, border, text) = Palette();
         using var fillBrush = new SolidBrush(fill);
@@ -432,9 +432,11 @@ internal sealed class GuardianActionButton : Button
         var y = 0f;
         var accent = _syncRole switch
         {
-            SyncRole.Get => GuardianTheme.Info,
-            SyncRole.Send => GuardianTheme.HotPink,
-            _ => GuardianTheme.HotPinkSoft
+            SyncRole.Get when Text.StartsWith("Reconcile", StringComparison.OrdinalIgnoreCase) => GuardianTheme.Reconcile,
+            SyncRole.Get => GuardianTheme.Get,
+            SyncRole.Send => GuardianTheme.Send,
+            SyncRole.Save => GuardianTheme.Save,
+            _ => GuardianTheme.Violet
         };
         var fill = Enabled ? accent : Color.FromArgb(150, accent);
 
@@ -455,34 +457,66 @@ internal sealed class GuardianActionButton : Button
     private (Color Fill, Color Border, Color Text) Palette()
     {
         if (!Enabled)
-            return (Color.FromArgb(39, 34, 47), Color.FromArgb(64, 56, 75), Color.FromArgb(121, 112, 133));
+            return (
+                Color.FromArgb(13, 18, 23),
+                Color.FromArgb(38, 48, 58),
+                Color.FromArgb(86, 98, 109));
+
+        Color Semantic(Color accent, bool fillStrong = false)
+        {
+            var alpha = _pressed ? 34 : _hovered ? 24 : fillStrong ? 18 : 10;
+            return Color.FromArgb(alpha, accent);
+        }
+
+        if (_syncRole == SyncRole.Save)
+            return (Semantic(GuardianTheme.Save), GuardianTheme.Save, GuardianTheme.Save);
+
+        if (_syncRole == SyncRole.Get)
+        {
+            var accent = Text.StartsWith("Reconcile", StringComparison.OrdinalIgnoreCase)
+                ? GuardianTheme.Reconcile
+                : GuardianTheme.Get;
+            return (Semantic(accent), accent, accent);
+        }
+
+        if (_syncRole == SyncRole.Send)
+            return (Semantic(GuardianTheme.Send), GuardianTheme.Send, GuardianTheme.Send);
 
         return Kind switch
         {
             GuardianActionKind.Primary => (
-                _pressed ? GuardianTheme.VioletPressed : _hovered ? GuardianTheme.VioletHover : GuardianTheme.Violet,
-                GuardianTheme.HotPinkSoft,
-                Color.White),
+                _pressed
+                    ? Color.FromArgb(205, GuardianTheme.Ink)
+                    : _hovered
+                        ? GuardianTheme.Send
+                        : GuardianTheme.Ink,
+                _hovered ? GuardianTheme.Send : GuardianTheme.Ink,
+                GuardianTheme.Window),
 
             GuardianActionKind.Pull => (
-                _pressed ? Color.FromArgb(32, 54, 91) : _hovered ? Color.FromArgb(40, 68, 111) : Color.FromArgb(28, 48, 80),
-                GuardianTheme.Info,
-                Color.White),
+                Semantic(GuardianTheme.Get),
+                GuardianTheme.Get,
+                GuardianTheme.Get),
 
             GuardianActionKind.Push => (
-                _pressed ? Color.FromArgb(78, 38, 112) : _hovered ? Color.FromArgb(106, 51, 146) : Color.FromArgb(79, 39, 111),
-                GuardianTheme.HotPink,
-                Color.White),
+                Semantic(GuardianTheme.Send),
+                GuardianTheme.Send,
+                GuardianTheme.Send),
 
             GuardianActionKind.Danger => (
-                _pressed ? Color.FromArgb(95, 34, 47) : _hovered ? Color.FromArgb(118, 43, 60) : Color.FromArgb(78, 31, 42),
+                Semantic(GuardianTheme.Warning),
                 GuardianTheme.Warning,
-                Color.White),
+                GuardianTheme.Warning),
 
             _ => (
-                _pressed ? Color.FromArgb(44, 35, 58) : _hovered ? Color.FromArgb(52, 42, 68) : GuardianTheme.SurfaceRaised,
-                _hovered ? Color.FromArgb(101, 78, 132) : GuardianTheme.Border,
-                GuardianTheme.Ink)
+                _pressed
+                    ? Color.FromArgb(22, 29, 35)
+                    : _hovered
+                        ? Color.FromArgb(21, 28, 35)
+                        : GuardianTheme.SurfaceRaised,
+                _hovered ? Color.FromArgb(81, 96, 109) : GuardianTheme.BorderSoft,
+                _hovered ? GuardianTheme.Ink : GuardianTheme.MutedInk)
         };
     }
+
 }

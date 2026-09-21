@@ -6,7 +6,7 @@ internal sealed class OnboardingSurfacePanel : Panel
 {
     public Color FillColor { get; set; } = GuardianTheme.Surface;
     public Color BorderColor { get; set; } = GuardianTheme.Border;
-    public float CornerRadius { get; set; } = 12f;
+    public float CornerRadius { get; set; } = 6f;
 
     public OnboardingSurfacePanel()
     {
@@ -27,7 +27,7 @@ internal sealed class OnboardingSurfacePanel : Panel
         var bounds = new RectangleF(1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
         using var path = GuardianTheme.RoundedRectangle(bounds, CornerRadius);
         using var fill = new SolidBrush(FillColor);
-        using var border = new Pen(BorderColor, 1.2f);
+        using var border = new Pen(BorderColor, 1f);
         e.Graphics.FillPath(fill, path);
         e.Graphics.DrawPath(border, path);
     }

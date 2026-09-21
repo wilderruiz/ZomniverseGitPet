@@ -54,10 +54,10 @@ internal sealed class ProjectNamePill : Control
             ControlStyles.UserPaint,
             true);
 
-        Height = 36;
-        MinimumSize = new Size(0, 36);
-        Font = new Font("Segoe UI", 11f, FontStyle.Bold);
-        ForeColor = GuardianTheme.Info;
+        Height = 30;
+        MinimumSize = new Size(0, 30);
+        Font = new Font("Cascadia Mono", 9.25f, FontStyle.Bold);
+        ForeColor = GuardianTheme.Violet;
         BackColor = GuardianTheme.Surface;
         Cursor = Cursors.Hand;
         TabStop = true;
@@ -130,9 +130,9 @@ internal sealed class ProjectNamePill : Control
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
         var pillBounds = new RectangleF(0.5f, 0.5f, Math.Max(1, Width - 1f), Math.Max(1, Height - 1f));
-        using var pillPath = GuardianTheme.RoundedRectangle(pillBounds, Height / 2f);
+        using var pillPath = GuardianTheme.RoundedRectangle(pillBounds, 6f);
         using var fill = new SolidBrush(_hovered || Focused ? GuardianTheme.SurfaceSoft : GuardianTheme.SurfaceRaised);
-        using var border = new Pen(_hovered || Focused ? GuardianTheme.VioletHover : GuardianTheme.Border);
+        using var border = new Pen(_hovered || Focused ? GuardianTheme.Violet : GuardianTheme.BorderSoft);
         e.Graphics.FillPath(fill, pillPath);
         e.Graphics.DrawPath(border, pillPath);
 
@@ -216,7 +216,7 @@ internal sealed class ProjectNamePill : Control
         var thumbLeft = textBounds.Left + (int)Math.Round(travel * (_scrollOffset / (double)maximumOffset));
         var thumbBounds = new Rectangle(thumbLeft, Height - 4, thumbWidth, 2);
 
-        using var thumb = new SolidBrush(Color.FromArgb(158, 197, 164, 235));
+        using var thumb = new SolidBrush(Color.FromArgb(150, GuardianTheme.Violet));
         graphics.FillRectangle(thumb, thumbBounds);
     }
 }

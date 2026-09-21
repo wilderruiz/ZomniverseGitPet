@@ -35,21 +35,21 @@ internal sealed class GuardianWorkboardControl : UserControl
 
         _save = new WorkboardSection(
             "SAVE — CHANGES ON THIS PC",
-            GuardianTheme.HotPinkSoft,
-            Color.FromArgb(62, 31, 62),
+            GuardianTheme.Save,
+            GuardianTheme.SurfaceSoft,
             saveGrid);
         _get = new WorkboardSection(
             "GET — WAITING TO COME IN",
-            GuardianTheme.Info,
-            GuardianTheme.InfoFill);
+            GuardianTheme.Get,
+            GuardianTheme.SurfaceSoft);
         _send = new WorkboardSection(
             "SEND — SAVED UPDATES",
-            GuardianTheme.Healthy,
-            GuardianTheme.HealthyFill);
+            GuardianTheme.Send,
+            GuardianTheme.SurfaceSoft);
         _reconcile = new WorkboardSection(
             "RECONCILE — HISTORIES",
-            GuardianTheme.Changes,
-            GuardianTheme.ChangesFill);
+            GuardianTheme.Reconcile,
+            GuardianTheme.SurfaceSoft);
 
         layout.Controls.Add(_save, 0, 0);
         layout.Controls.Add(_get, 1, 0);
@@ -167,7 +167,7 @@ internal sealed class GuardianWorkboardControl : UserControl
             DataGridView? existingGrid = null)
         {
             Dock = DockStyle.Fill;
-            Margin = new Padding(5);
+            Margin = new Padding(1);
             Padding = new Padding(1);
             BackColor = GuardianTheme.BorderSoft;
 
@@ -177,7 +177,7 @@ internal sealed class GuardianWorkboardControl : UserControl
             _header = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 34,
+                Height = 31,
                 BackColor = headerFill,
                 Padding = new Padding(10, 0, 8, 0)
             };
@@ -185,7 +185,7 @@ internal sealed class GuardianWorkboardControl : UserControl
             _title.Dock = DockStyle.Fill;
             _title.Text = title;
             _title.ForeColor = accent;
-            _title.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+            _title.Font = new Font("Cascadia Mono", 8.25f, FontStyle.Bold);
             _title.TextAlign = ContentAlignment.MiddleLeft;
             _title.AutoEllipsis = true;
 
@@ -193,7 +193,7 @@ internal sealed class GuardianWorkboardControl : UserControl
             _badge.Width = 150;
             _badge.Text = "CLEAR";
             _badge.ForeColor = accent;
-            _badge.Font = new Font("Segoe UI", 7.75f, FontStyle.Bold);
+            _badge.Font = new Font("Cascadia Mono", 7.5f, FontStyle.Bold);
             _badge.TextAlign = ContentAlignment.MiddleRight;
 
             _progressRing.Dock = DockStyle.Right;
@@ -217,7 +217,7 @@ internal sealed class GuardianWorkboardControl : UserControl
             _empty.Dock = DockStyle.Fill;
             _empty.BackColor = GuardianTheme.Surface;
             _empty.ForeColor = GuardianTheme.FaintInk;
-            _empty.Font = new Font("Segoe UI", 8.5f);
+            _empty.Font = new Font("Cascadia Mono", 8f);
             _empty.TextAlign = ContentAlignment.MiddleCenter;
             _empty.Padding = new Padding(18, 6, 18, 6);
 
@@ -247,7 +247,7 @@ internal sealed class GuardianWorkboardControl : UserControl
                         : $"{row.Path}\n\n{row.Detail}";
                     if (row.IsCommit)
                     {
-                        gridRow.DefaultCellStyle.BackColor = Color.FromArgb(31, 28, 38);
+                        gridRow.DefaultCellStyle.BackColor = GuardianTheme.SurfaceRaised;
                         gridRow.DefaultCellStyle.Font = _commitFont;
                     }
                 }
@@ -352,14 +352,14 @@ internal sealed class GuardianWorkboardControl : UserControl
 
             grid.ColumnHeadersDefaultCellStyle.BackColor = GuardianTheme.SurfaceSoft;
             grid.ColumnHeadersDefaultCellStyle.ForeColor = GuardianTheme.MutedInk;
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 7.5f, FontStyle.Bold);
+            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Cascadia Mono", 7.25f, FontStyle.Bold);
             grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = GuardianTheme.SurfaceSoft;
             grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = GuardianTheme.MutedInk;
             grid.DefaultCellStyle.BackColor = GuardianTheme.Surface;
             grid.DefaultCellStyle.ForeColor = GuardianTheme.Ink;
-            grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(57, 42, 77);
+            grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(21, 28, 35);
             grid.DefaultCellStyle.SelectionForeColor = Color.White;
-            grid.DefaultCellStyle.Font = new Font("Segoe UI", 8.25f);
+            grid.DefaultCellStyle.Font = new Font("Cascadia Mono", 8f);
             grid.DefaultCellStyle.Padding = new Padding(5, 1, 5, 1);
             grid.RowTemplate.Height = 26;
 
@@ -367,7 +367,7 @@ internal sealed class GuardianWorkboardControl : UserControl
             grid.Columns.Add("Path", "ITEM");
             grid.Columns[0].FillWeight = 26;
             grid.Columns[1].FillWeight = 74;
-            grid.Columns[0].DefaultCellStyle.Font = new Font("Segoe UI", 7.75f, FontStyle.Bold);
+            grid.Columns[0].DefaultCellStyle.Font = new Font("Cascadia Mono", 7.5f, FontStyle.Bold);
             return grid;
         }
     }
@@ -401,8 +401,8 @@ internal sealed class GuardianWorkboardControl : UserControl
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             var size = Math.Min(16, Math.Min(Width - 6, Height - 6));
             var bounds = new Rectangle((Width - size) / 2, (Height - size) / 2, size, size);
-            using var track = new Pen(Color.FromArgb(70, GuardianTheme.HotPinkSoft), 2.4f);
-            using var arc = new Pen(GuardianTheme.HotPinkSoft, 2.4f)
+            using var track = new Pen(Color.FromArgb(70, GuardianTheme.Violet), 2.2f);
+            using var arc = new Pen(GuardianTheme.Violet, 2.2f)
             {
                 StartCap = System.Drawing.Drawing2D.LineCap.Round,
                 EndCap = System.Drawing.Drawing2D.LineCap.Round
