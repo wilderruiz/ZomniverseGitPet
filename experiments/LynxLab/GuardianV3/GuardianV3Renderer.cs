@@ -338,16 +338,40 @@ internal sealed class GuardianV3Renderer :
         g.FillPath(fill, actual);
         g.DrawPath(edge, actual);
 
-        var pawRect = left
-            ? new RectangleF(56, 143, 20, 11)
-            : new RectangleF(84, 143, 20, 11);
-
-        using var paw = new GraphicsPath();
-        paw.AddEllipse(pawRect);
+        using var leftPaw = Path(
+            M(56, 146),
+            C(57, 142, 61, 140, 66, 140),
+            C(71, 140, 75, 142, 76, 146),
+            C(77, 150, 74, 153, 70, 154),
+            C(66, 155, 61, 154, 58, 152),
+            C(56, 150, 55, 148, 56, 146),
+            Z());
+        using var paw = left
+            ? (GraphicsPath)leftPaw.Clone()
+            : Mirror(leftPaw);
         using var pawFill = new SolidBrush(c.Paw);
 
         g.FillPath(pawFill, paw);
         g.DrawPath(edge, paw);
+
+        using var toe = new Pen(
+            Mix(c.Paw, c.Edge, 0.42f),
+            0.85f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+
+        if (left)
+        {
+            g.DrawLine(toe, 63f, 147f, 63.5f, 152f);
+            g.DrawLine(toe, 68.5f, 146.5f, 68f, 152f);
+        }
+        else
+        {
+            g.DrawLine(toe, 97f, 147f, 96.5f, 152f);
+            g.DrawLine(toe, 91.5f, 146.5f, 92f, 152f);
+        }
     }
 
     private static void DrawBodyArmor(
