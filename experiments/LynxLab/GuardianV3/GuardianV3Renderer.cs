@@ -12,7 +12,7 @@ internal sealed class GuardianV3Renderer :
     private LynxActivityState _activity = LynxActivityState.None;
     private double _activityElapsed;
 
-    public string Name => "Guardian V8 armored · kinetic moods";
+    public string Name => "Guardian V9 armored · traffic flow";
 
     public void SetAnimationFrame(LynxAnimationFrame frame) => _animation = frame;
 
@@ -1254,9 +1254,90 @@ internal sealed class GuardianV3Renderer :
 
             case LynxActivityState.Incoming:
             case LynxActivityState.Outgoing:
-                g.DrawArc(outer, outerRect, 205f, 130f);
-                g.DrawArc(inner, innerRect, 24f, 130f);
+            {
+                // Three independent perimeter waves travel across the whole
+                // mascot. Incoming contracts outside -> pet; Outgoing is the
+                // exact inverse. Each wave fades in and out during travel.
+                var farRect = new RectangleF(
+                    -3f,
+                    -6f,
+                    166f,
+                    172f);
+                var nearRect = new RectangleF(
+                    18f,
+                    13f,
+                    124f,
+                    135f);
+
+                for (var i = 0; i < 3; i++)
+                {
+                    var speed = i switch
+                    {
+                        0 => 0.62d,
+                        1 => 0.91d,
+                        _ => 1.24d
+                    };
+                    var offset = i switch
+                    {
+                        0 => 0.00d,
+                        1 => 0.37d,
+                        _ => 0.71d
+                    };
+
+                    var phase =
+                        (float)((elapsed * speed + offset) % 1d);
+                    var travel =
+                        activity == LynxActivityState.Incoming
+                            ? phase
+                            : 1f - phase;
+                    var fade =
+                        (float)Math.Sin(phase * Math.PI);
+
+                    var ring = LerpRect(
+                        farRect,
+                        nearRect,
+                        travel);
+
+                    var ringColor =
+                        i % 2 == 0
+                            ? Mix(
+                                selectedAccent,
+                                partnerAccent,
+                                travel)
+                            : Mix(
+                                partnerAccent,
+                                selectedAccent,
+                                travel);
+
+                    using var trafficRing = new Pen(
+                        Color.FromArgb(
+                            Math.Max(
+                                0,
+                                (int)((miniature ? 188f : 132f) * fade)),
+                            ringColor),
+                        miniature ? 1.8f : 0.95f)
+                    {
+                        StartCap = LineCap.Round,
+                        EndCap = LineCap.Round
+                    };
+
+                    var spin =
+                        (float)((elapsed * (24d + i * 8d)) % 360d);
+
+                    g.DrawArc(
+                        trafficRing,
+                        ring,
+                        spin + i * 28f,
+                        145f);
+                    g.DrawArc(
+                        trafficRing,
+                        ring,
+                        spin + 185f + i * 28f,
+                        145f);
+                }
+
                 break;
+            }
 
             case LynxActivityState.Reconciling:
                 g.DrawArc(outer, outerRect, rotation, 148f);
@@ -1542,23 +1623,51 @@ internal sealed class GuardianV3Renderer :
 
             case LynxActivityState.Incoming:
             {
-                DrawArrow(g, primaryPen, 2f, 45f, 29f, 45f);
-                DrawArrow(g, secondaryPen, 158f, 45f, 131f, 45f);
-                DrawArrow(g, secondaryPen, 2f, 98f, 25f, 98f);
-                DrawArrow(g, primaryPen, 158f, 98f, 135f, 98f);
-                DrawArrow(g, primaryPen, 10f, 139f, 34f, 139f);
-                DrawArrow(g, secondaryPen, 150f, 139f, 126f, 139f);
+                DrawTrafficArrow(
+                    g, primary, true, false, 43f,
+                    elapsed, 1.52d, 0.02d, miniature);
+                DrawTrafficArrow(
+                    g, secondary, true, true, 43f,
+                    elapsed, 0.68d, 0.44d, miniature);
+
+                DrawTrafficArrow(
+                    g, secondary, true, false, 91f,
+                    elapsed, 0.96d, 0.21d, miniature);
+                DrawTrafficArrow(
+                    g, primary, true, true, 91f,
+                    elapsed, 1.31d, 0.67d, miniature);
+
+                DrawTrafficArrow(
+                    g, primary, true, false, 132f,
+                    elapsed, 0.74d, 0.56d, miniature);
+                DrawTrafficArrow(
+                    g, secondary, true, true, 132f,
+                    elapsed, 1.15d, 0.11d, miniature);
                 break;
             }
 
             case LynxActivityState.Outgoing:
             {
-                DrawArrow(g, primaryPen, 29f, 45f, 2f, 45f);
-                DrawArrow(g, secondaryPen, 131f, 45f, 158f, 45f);
-                DrawArrow(g, secondaryPen, 25f, 98f, 2f, 98f);
-                DrawArrow(g, primaryPen, 135f, 98f, 158f, 98f);
-                DrawArrow(g, primaryPen, 34f, 139f, 10f, 139f);
-                DrawArrow(g, secondaryPen, 126f, 139f, 150f, 139f);
+                DrawTrafficArrow(
+                    g, primary, false, false, 43f,
+                    elapsed, 1.52d, 0.02d, miniature);
+                DrawTrafficArrow(
+                    g, secondary, false, true, 43f,
+                    elapsed, 0.68d, 0.44d, miniature);
+
+                DrawTrafficArrow(
+                    g, secondary, false, false, 91f,
+                    elapsed, 0.96d, 0.21d, miniature);
+                DrawTrafficArrow(
+                    g, primary, false, true, 91f,
+                    elapsed, 1.31d, 0.67d, miniature);
+
+                DrawTrafficArrow(
+                    g, primary, false, false, 132f,
+                    elapsed, 0.74d, 0.56d, miniature);
+                DrawTrafficArrow(
+                    g, secondary, false, true, 132f,
+                    elapsed, 1.15d, 0.11d, miniature);
                 break;
             }
 
@@ -1760,6 +1869,105 @@ internal sealed class GuardianV3Renderer :
             miniature ? 0.9f : 0.6f);
         g.FillRectangle(fill, x, y, width, height);
         g.DrawRectangle(edge, x, y, width, height);
+    }
+
+    private static RectangleF LerpRect(
+        RectangleF from,
+        RectangleF to,
+        float amount)
+    {
+        amount = Math.Clamp(amount, 0f, 1f);
+
+        return new RectangleF(
+            from.X + (to.X - from.X) * amount,
+            from.Y + (to.Y - from.Y) * amount,
+            from.Width + (to.Width - from.Width) * amount,
+            from.Height + (to.Height - from.Height) * amount);
+    }
+
+    private static void DrawTrafficArrow(
+        Graphics g,
+        Color accent,
+        bool incoming,
+        bool fromRight,
+        float y,
+        double elapsed,
+        double speed,
+        double offset,
+        bool miniature)
+    {
+        var phase =
+            (float)((elapsed * speed + offset) % 1d);
+
+        // Full opacity around mid-flight; invisible at both endpoints.
+        var fade =
+            (float)Math.Sin(phase * Math.PI);
+        var alpha =
+            Math.Max(
+                0,
+                (int)((miniature ? 248f : 215f) * fade));
+
+        // The travel corridor intentionally stops before the body so the
+        // packet fades away at the moment it visually reaches the pet.
+        const float outerLeft = -7f;
+        const float innerLeft = 31f;
+        const float innerRight = 129f;
+        const float outerRight = 167f;
+
+        float tailX;
+        float headX;
+
+        if (incoming)
+        {
+            if (fromRight)
+            {
+                headX =
+                    outerRight +
+                    (innerRight - outerRight) * phase;
+                tailX = headX + 10f;
+            }
+            else
+            {
+                headX =
+                    outerLeft +
+                    (innerLeft - outerLeft) * phase;
+                tailX = headX - 10f;
+            }
+        }
+        else
+        {
+            if (fromRight)
+            {
+                headX =
+                    innerRight +
+                    (outerRight - innerRight) * phase;
+                tailX = headX - 10f;
+            }
+            else
+            {
+                headX =
+                    innerLeft +
+                    (outerLeft - innerLeft) * phase;
+                tailX = headX + 10f;
+            }
+        }
+
+        using var pen = new Pen(
+            Color.FromArgb(alpha, accent),
+            miniature ? 2.15f : 1.10f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round
+        };
+
+        DrawArrow(
+            g,
+            pen,
+            tailX,
+            y,
+            headX,
+            y);
     }
 
     private static void DrawArrow(
