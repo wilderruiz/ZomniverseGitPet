@@ -385,6 +385,8 @@ internal sealed class Direct2DTestControl : Control
                 activePalette);
 
         IntPtr tailBrush = IntPtr.Zero;
+        IntPtr tailAccentBrush = IntPtr.Zero;
+        IntPtr tailShadeBrush = IntPtr.Zero;
         IntPtr bodyBrush = IntPtr.Zero;
         IntPtr limbBrush = IntPtr.Zero;
         IntPtr pawBrush = IntPtr.Zero;
@@ -412,6 +414,15 @@ internal sealed class Direct2DTestControl : Control
         try
         {
             tailBrush = CreateBrush(colors.Tail);
+            tailAccentBrush =
+                CreateBrush(
+                    Mix(
+                        colors.TailAccent,
+                        colors.EarInner,
+                        0.22f));
+            tailShadeBrush =
+                CreateBrush(
+                    Color.FromArgb(92, 12, 7, 25));
             bodyBrush = CreateBrush(colors.Body);
             limbBrush = CreateBrush(colors.Limb);
             pawBrush = CreateBrush(colors.Paw);
@@ -514,6 +525,29 @@ internal sealed class Direct2DTestControl : Control
                 edgeBrush,
                 edgeWidth);
 
+            // V9 tail detail: these layered sweeps are what make the tail
+            // read as a plume instead of disappearing into the torso.
+            fillGeometry(
+                _target,
+                _tailUpperTuftGeometry,
+                tailAccentBrush,
+                IntPtr.Zero);
+            fillGeometry(
+                _target,
+                _tailMiddleSweepGeometry,
+                tailAccentBrush,
+                IntPtr.Zero);
+            fillGeometry(
+                _target,
+                _tailLowerSweepGeometry,
+                tailAccentBrush,
+                IntPtr.Zero);
+            fillGeometry(
+                _target,
+                _tailFoldGeometry,
+                tailShadeBrush,
+                IntPtr.Zero);
+
             var bodyTransform = ToD2D(viewport);
             setTransform(_target, ref bodyTransform);
 
@@ -555,29 +589,47 @@ internal sealed class Direct2DTestControl : Control
                 edgeBrush,
                 edgeWidth);
 
-            var leftPaw = new Ellipse(
-                new Point2F(66f, 148.5f),
-                10f,
-                5.5f);
-            var rightPaw = new Ellipse(
-                new Point2F(94f, 148.5f),
-                10f,
-                5.5f);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _leftPawGeometry,
+                pawBrush,
+                edgeBrush,
+                edgeWidth);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _rightPawGeometry,
+                pawBrush,
+                edgeBrush,
+                edgeWidth);
 
-            fillEllipse(_target, ref leftPaw, pawBrush);
-            drawEllipse(
-                _target,
-                ref leftPaw,
+            // Two restrained toe creases per paw so the silhouette reads as
+            // paws at 160 × 160 rather than as flat shoes.
+            DrawLine(
+                drawLine,
                 edgeBrush,
-                edgeWidth,
-                IntPtr.Zero);
-            fillEllipse(_target, ref rightPaw, pawBrush);
-            drawEllipse(
-                _target,
-                ref rightPaw,
+                63f, 147f,
+                63.5f, 152f,
+                0.85f);
+            DrawLine(
+                drawLine,
                 edgeBrush,
-                edgeWidth,
-                IntPtr.Zero);
+                68.5f, 146.5f,
+                68f, 152f,
+                0.85f);
+            DrawLine(
+                drawLine,
+                edgeBrush,
+                97f, 147f,
+                96.5f, 152f,
+                0.85f);
+            DrawLine(
+                drawLine,
+                edgeBrush,
+                91.5f, 146.5f,
+                92f, 152f,
+                0.85f);
 
             // Dark torso armor before the white chest ruff.
             FillAndStroke(
@@ -779,6 +831,8 @@ internal sealed class Direct2DTestControl : Control
             ReleaseCom(ref pawBrush);
             ReleaseCom(ref limbBrush);
             ReleaseCom(ref bodyBrush);
+            ReleaseCom(ref tailShadeBrush);
+            ReleaseCom(ref tailAccentBrush);
             ReleaseCom(ref tailBrush);
         }
     }
