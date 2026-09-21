@@ -189,6 +189,48 @@ internal static class StandaloneProjectPublishingRegression
                 throw new InvalidOperationException("Standalone branch workspaces are not isolated.");
 
             /* ==========================================================================
+               PATCH: READ-ONLY PUBLISHING CACHE REGRESSION
+               DATE.TIME: 2026-09-21
+               Windows Git metadata can become read-only inside the preserved .git tree.
+               ========================================================================== */
+            var cleanupWorkspace = Path.Combine(root, "publishing-cleanup-regression");
+            var cleanupGitInfo = Path.Combine(cleanupWorkspace, ".git", "objects", "info");
+            var staleDirectory = Path.Combine(cleanupWorkspace, "stale", "nested");
+            Directory.CreateDirectory(cleanupGitInfo);
+            Directory.CreateDirectory(staleDirectory);
+
+            var commitGraphChain = Path.Combine(cleanupGitInfo, "commit-graph-chain");
+            var staleReadOnlyFile = Path.Combine(staleDirectory, "readonly.txt");
+            var rootStaleFile = Path.Combine(cleanupWorkspace, "root-stale.txt");
+
+            File.WriteAllText(commitGraphChain, "chain");
+            File.WriteAllText(staleReadOnlyFile, "stale");
+            File.WriteAllText(rootStaleFile, "root stale");
+
+            File.SetAttributes(
+                commitGraphChain,
+                File.GetAttributes(commitGraphChain) | FileAttributes.ReadOnly);
+            File.SetAttributes(
+                staleReadOnlyFile,
+                File.GetAttributes(staleReadOnlyFile) | FileAttributes.ReadOnly);
+            File.SetAttributes(
+                rootStaleFile,
+                File.GetAttributes(rootStaleFile) | FileAttributes.ReadOnly);
+
+            StandaloneProjectPublishing.CleanPublishingWorkspace(cleanupWorkspace);
+
+            if (!Directory.Exists(Path.Combine(cleanupWorkspace, ".git")))
+                throw new InvalidOperationException("Publishing cleanup deleted the preserved .git directory.");
+            if (!File.Exists(commitGraphChain))
+                throw new InvalidOperationException("Publishing cleanup deleted preserved Git metadata.");
+            if ((File.GetAttributes(commitGraphChain) & FileAttributes.ReadOnly) != 0)
+                throw new InvalidOperationException("Publishing cleanup left preserved Git metadata read-only.");
+            if (Directory.Exists(Path.Combine(cleanupWorkspace, "stale")))
+                throw new InvalidOperationException("Publishing cleanup did not remove a stale directory containing a read-only file.");
+            if (File.Exists(rootStaleFile))
+                throw new InvalidOperationException("Publishing cleanup did not remove a stale read-only root file.");
+
+            /* ==========================================================================
                PATCH: STANDALONE GET BOUNDARY REGRESSION
                DATE.TIME: 2026-09-20 17:46 +03:00
                Incoming remote changes must remain inside the logical-project scope.
@@ -221,7 +263,7 @@ internal static class StandaloneProjectPublishingRegression
             if (StandaloneProjectPublishing.IsPathInsideProjectScope(config, root, "unrelated/never-send.txt"))
                 throw new InvalidOperationException("Standalone Get allowed an unrelated parent-repository path.");
 
-            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get + branch isolation).");
+            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get + branch isolation + read-only cache cleanup).");
         }
         finally
         {

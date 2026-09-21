@@ -1142,19 +1142,70 @@ internal static class StandaloneProjectPublishing
         entry.LastPublishedUtc = state.LastPublishedUtc;
     }
 
-    private static void CleanPublishingWorkspace(string workspace)
+    internal static void CleanPublishingWorkspace(string workspace)
     {
+        /*
+         * The isolated workspace is a disposable cache, but its top-level .git
+         * directory is intentionally preserved between Send/Get operations.
+         *
+         * Git for Windows can leave metadata inside that preserved .git tree
+         * with the ReadOnly bit set (for example objects/info/commit-graph-chain).
+         * It can also happen inside stale copied directories. Directory.Delete
+         * and later Git maintenance then fail with Access denied unless the bit
+         * is cleared recursively first.
+         *
+         * Clear ONLY ReadOnly. Preserve Hidden/System and never traverse
+         * reparse points so cleanup cannot escape the isolated workspace.
+         */
+        MakePublishingTreeWritable(workspace);
+
         foreach (var file in Directory.EnumerateFiles(workspace))
-        {
-            try { File.SetAttributes(file, FileAttributes.Normal); } catch { }
             File.Delete(file);
-        }
 
         foreach (var directory in Directory.EnumerateDirectories(workspace))
         {
-            if (Path.GetFileName(directory).Equals(".git", StringComparison.OrdinalIgnoreCase)) continue;
+            if (Path.GetFileName(directory).Equals(".git", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             Directory.Delete(directory, true);
         }
+    }
+
+    private static void MakePublishingTreeWritable(string workspace)
+    {
+        var pending = new Stack<string>();
+        pending.Push(workspace);
+
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+            ClearReadOnlyAttribute(directory);
+
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                var attributes = File.GetAttributes(entry);
+                var isDirectory = (attributes & FileAttributes.Directory) != 0;
+                var isReparsePoint = (attributes & FileAttributes.ReparsePoint) != 0;
+
+                ClearReadOnlyAttribute(entry, attributes);
+
+                if (isDirectory && !isReparsePoint)
+                    pending.Push(entry);
+            }
+        }
+    }
+
+    private static void ClearReadOnlyAttribute(string path)
+    {
+        ClearReadOnlyAttribute(path, File.GetAttributes(path));
+    }
+
+    private static void ClearReadOnlyAttribute(string path, FileAttributes attributes)
+    {
+        if ((attributes & FileAttributes.ReadOnly) == 0)
+            return;
+
+        File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
     }
 
     private static string ResolveInside(string root, string relative)
