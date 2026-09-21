@@ -30,6 +30,27 @@ internal sealed class Direct2DTestControl : Control
     private IntPtr _leftInnerEarGeometry;
     private IntPtr _rightInnerEarGeometry;
 
+    private IntPtr _chestGeometry;
+    private IntPtr _faceMaskGeometry;
+    private IntPtr _leftEyeGeometry;
+    private IntPtr _rightEyeGeometry;
+    private IntPtr _noseGeometry;
+
+    private IntPtr _leftArmorGeometry;
+    private IntPtr _rightArmorGeometry;
+    private IntPtr _leftShoulderArmorGeometry;
+    private IntPtr _rightShoulderArmorGeometry;
+    private IntPtr _leftBracerGeometry;
+    private IntPtr _rightBracerGeometry;
+
+    private IntPtr _leftCollarGeometry;
+    private IntPtr _rightCollarGeometry;
+    private IntPtr _leftCollarFacetGeometry;
+    private IntPtr _rightCollarFacetGeometry;
+
+    private IntPtr _shieldGeometry;
+    private IntPtr _shieldInsetGeometry;
+
     private string _status = "not initialized";
     private long _frameCount;
 
@@ -736,6 +757,159 @@ internal sealed class Direct2DTestControl : Control
             CreatePathGeometry(leftInnerEar);
         _rightInnerEarGeometry =
             CreatePathGeometry(Mirror(leftInnerEar));
+
+        _chestGeometry = CreatePathGeometry(
+        [
+            MoveTo(60, 89),
+            Bezier(69, 86, 91, 86, 100, 89),
+            Bezier(100, 97, 98, 103, 96, 107),
+            Line(94, 102),
+            Bezier(93, 110, 90, 115, 87, 119),
+            Line(88, 114),
+            Bezier(83, 122, 84, 133, 80, 140),
+            Bezier(76, 133, 77, 122, 72, 114),
+            Line(73, 119),
+            Bezier(70, 115, 67, 110, 66, 102),
+            Line(64, 107),
+            Bezier(62, 103, 60, 97, 60, 89),
+            Close()
+        ]);
+
+        _faceMaskGeometry = CreatePathGeometry(
+        [
+            MoveTo(47, 66),
+            Bezier(49, 59, 56, 56, 63, 58),
+            Bezier(70, 60, 76, 65, 80, 70),
+            Bezier(84, 65, 90, 60, 97, 58),
+            Bezier(104, 56, 111, 59, 113, 66),
+            Bezier(117, 74, 111, 81, 104, 85),
+            Bezier(96, 91, 88, 94, 80, 95),
+            Bezier(72, 94, 64, 91, 56, 85),
+            Bezier(49, 81, 43, 74, 47, 66),
+            Close()
+        ]);
+
+        var leftEye =
+            new[]
+            {
+                MoveTo(54, 51),
+                Bezier(58, 51, 64, 53.5f, 68, 56.5f),
+                Bezier(67, 63, 64, 66, 60, 65),
+                Bezier(56, 64, 53, 59, 54, 51),
+                Close()
+            };
+        _leftEyeGeometry =
+            CreatePathGeometry(leftEye);
+        _rightEyeGeometry =
+            CreatePathGeometry(Mirror(leftEye));
+
+        _noseGeometry = CreatePathGeometry(
+        [
+            MoveTo(75, 72),
+            Bezier(77, 70.5f, 83, 70.5f, 85, 72),
+            Bezier(85, 74, 82, 77, 80, 77.5f),
+            Bezier(78, 77, 75, 74, 75, 72),
+            Close()
+        ]);
+
+        var leftArmor =
+            new[]
+            {
+                MoveTo(49, 92),
+                Line(63, 96),
+                Line(73, 105),
+                Line(69, 127),
+                Line(60, 139),
+                Line(53, 131),
+                Line(48, 110),
+                Close()
+            };
+        _leftArmorGeometry =
+            CreatePathGeometry(leftArmor);
+        _rightArmorGeometry =
+            CreatePathGeometry(Mirror(leftArmor));
+
+        var leftShoulderArmor =
+            new[]
+            {
+                MoveTo(48, 91),
+                Line(58, 87),
+                Line(70, 94),
+                Line(63, 101),
+                Line(53, 98),
+                Close()
+            };
+        _leftShoulderArmorGeometry =
+            CreatePathGeometry(leftShoulderArmor);
+        _rightShoulderArmorGeometry =
+            CreatePathGeometry(Mirror(leftShoulderArmor));
+
+        var leftBracer =
+            new[]
+            {
+                MoveTo(58.5f, 118),
+                Line(72.5f, 118),
+                Line(72.3f, 139),
+                Line(60, 139),
+                Close()
+            };
+        _leftBracerGeometry =
+            CreatePathGeometry(leftBracer);
+        _rightBracerGeometry =
+            CreatePathGeometry(Mirror(leftBracer));
+
+        var leftCollar =
+            new[]
+            {
+                MoveTo(57, 90),
+                Line(66, 95),
+                Line(80, 99),
+                Line(80, 108),
+                Line(65, 106),
+                Line(53, 100),
+                Line(55, 94),
+                Close()
+            };
+        _leftCollarGeometry =
+            CreatePathGeometry(leftCollar);
+        _rightCollarGeometry =
+            CreatePathGeometry(Mirror(leftCollar));
+
+        var leftFacet =
+            new[]
+            {
+                MoveTo(56, 96),
+                Line(64, 100),
+                Line(69, 104),
+                Line(61, 102),
+                Close()
+            };
+        _leftCollarFacetGeometry =
+            CreatePathGeometry(leftFacet);
+        _rightCollarFacetGeometry =
+            CreatePathGeometry(Mirror(leftFacet));
+
+        _shieldGeometry = CreatePathGeometry(
+        [
+            MoveTo(80, 94.5f),
+            Line(91, 99.5f),
+            Line(89, 111.5f),
+            Line(80, 119.5f),
+            Line(71, 111.5f),
+            Line(69, 99.5f),
+            Close()
+        ]);
+
+        _shieldInsetGeometry = CreatePathGeometry(
+        [
+            MoveTo(80, 97.5f),
+            Line(88, 101.5f),
+            Line(86.5f, 110f),
+            Line(80, 116f),
+            Line(73.5f, 110f),
+            Line(72, 101.5f),
+            Close()
+        ]);
     }
 
     private IntPtr CreatePathGeometry(
