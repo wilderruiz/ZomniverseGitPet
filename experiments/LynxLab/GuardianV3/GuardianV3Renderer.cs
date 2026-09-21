@@ -91,6 +91,7 @@ internal sealed class GuardianV3Renderer :
                 DrawHaunches(graphics, colors);
                 DrawForelegs(graphics, colors);
                 DrawBodyArmor(graphics, armorPalette, state, _activity, miniature);
+                DrawFrontPaws(graphics, colors);
                 DrawChestFur(graphics);
                 DrawCollarArmor(graphics, armorPalette, state, _activity, miniature);
                 var headSaved = graphics.Save();
@@ -319,6 +320,12 @@ internal sealed class GuardianV3Renderer :
         DrawForeleg(g, left: false, c);
     }
 
+    private static void DrawFrontPaws(Graphics g, SilhouetteColors c)
+    {
+        DrawFrontPaw(g, left: true, c);
+        DrawFrontPaw(g, left: false, c);
+    }
+
     private static void DrawForeleg(Graphics g, bool left, SilhouetteColors c)
     {
         using var leg = Path(
@@ -337,19 +344,25 @@ internal sealed class GuardianV3Renderer :
 
         g.FillPath(fill, actual);
         g.DrawPath(edge, actual);
+    }
 
+    private static void DrawFrontPaw(Graphics g, bool left, SilhouetteColors c)
+    {
         using var leftPaw = Path(
-            M(56, 146),
-            C(57, 142, 61, 140, 66, 140),
-            C(71, 140, 75, 142, 76, 146),
-            C(77, 150, 74, 153, 70, 154),
-            C(66, 155, 61, 154, 58, 152),
-            C(56, 150, 55, 148, 56, 146),
+            M(58, 147),
+            C(58, 144, 60.5f, 142, 63.5f, 141.5f),
+            C(65, 140.5f, 67, 140.3f, 68.5f, 141.2f),
+            C(72, 141.5f, 74.5f, 143.5f, 75.5f, 146),
+            C(76.2f, 148.2f, 75.2f, 150.4f, 73.2f, 151.6f),
+            C(71.6f, 153.2f, 69.1f, 153.8f, 67, 152.8f),
+            C(65.1f, 154f, 62.5f, 153.7f, 60.5f, 152.5f),
+            C(58.6f, 151.3f, 57.4f, 149.3f, 58, 147),
             Z());
         using var paw = left
             ? (GraphicsPath)leftPaw.Clone()
             : Mirror(leftPaw);
         using var pawFill = new SolidBrush(c.Paw);
+        using var edge = Outline(c);
 
         g.FillPath(pawFill, paw);
         g.DrawPath(edge, paw);
@@ -364,13 +377,13 @@ internal sealed class GuardianV3Renderer :
 
         if (left)
         {
-            g.DrawLine(toe, 63f, 147f, 63.5f, 152f);
-            g.DrawLine(toe, 68.5f, 146.5f, 68f, 152f);
+            g.DrawLine(toe, 63.3f, 148.0f, 63.7f, 151.6f);
+            g.DrawLine(toe, 68.3f, 147.3f, 68.0f, 151.8f);
         }
         else
         {
-            g.DrawLine(toe, 97f, 147f, 96.5f, 152f);
-            g.DrawLine(toe, 91.5f, 146.5f, 92f, 152f);
+            g.DrawLine(toe, 96.7f, 148.0f, 96.3f, 151.6f);
+            g.DrawLine(toe, 91.7f, 147.3f, 92.0f, 151.8f);
         }
     }
 
@@ -2331,7 +2344,7 @@ internal sealed class GuardianV3Renderer :
                 Body: Mix(Color.FromArgb(48, 27, 80), palette.Fur, 0.12f),
                 BodyAccent: Mix(Color.FromArgb(91, 51, 160), palette.Accent, 0.20f),
                 Limb: Mix(Color.FromArgb(35, 20, 59), palette.Fur, 0.10f),
-                Paw: Mix(Color.FromArgb(25, 14, 43), palette.Fur, 0.08f),
+                Paw: Mix(Color.FromArgb(25, 14, 43), palette.Fur, 0.22f),
                 Head: Mix(Color.FromArgb(111, 58, 203), palette.Accent, 0.18f),
                 Ear: Mix(Color.FromArgb(57, 31, 96), palette.Fur, 0.12f),
                 EarInner: Mix(Color.FromArgb(177, 125, 248), palette.Eye, 0.22f),

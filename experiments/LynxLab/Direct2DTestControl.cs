@@ -631,48 +631,6 @@ internal sealed class Direct2DTestControl : Control
                 edgeBrush,
                 edgeWidth);
 
-            FillAndStroke(
-                fillGeometry,
-                drawGeometry,
-                _leftPawGeometry,
-                pawBrush,
-                edgeBrush,
-                edgeWidth);
-            FillAndStroke(
-                fillGeometry,
-                drawGeometry,
-                _rightPawGeometry,
-                pawBrush,
-                edgeBrush,
-                edgeWidth);
-
-            // Two restrained toe creases per paw so the silhouette reads as
-            // paws at 160 × 160 rather than as flat shoes.
-            DrawLine(
-                drawLine,
-                edgeBrush,
-                63f, 147f,
-                63.5f, 152f,
-                0.85f);
-            DrawLine(
-                drawLine,
-                edgeBrush,
-                68.5f, 146.5f,
-                68f, 152f,
-                0.85f);
-            DrawLine(
-                drawLine,
-                edgeBrush,
-                97f, 147f,
-                96.5f, 152f,
-                0.85f);
-            DrawLine(
-                drawLine,
-                edgeBrush,
-                91.5f, 146.5f,
-                92f, 152f,
-                0.85f);
-
             // Dark torso armor before the white chest ruff.
             FillAndStroke(
                 fillGeometry,
@@ -716,6 +674,48 @@ internal sealed class Direct2DTestControl : Control
                 armorDarkBrush,
                 armorEdgeBrush,
                 1.0f);
+
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _leftPawGeometry,
+                pawBrush,
+                edgeBrush,
+                edgeWidth);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _rightPawGeometry,
+                pawBrush,
+                edgeBrush,
+                edgeWidth);
+
+            // Two restrained toe creases per paw so the silhouette reads as
+            // paws at 160 × 160 rather than as flat shoes.
+            DrawLine(
+                drawLine,
+                edgeBrush,
+                63.3f, 148.0f,
+                63.7f, 151.6f,
+                0.82f);
+            DrawLine(
+                drawLine,
+                edgeBrush,
+                68.3f, 147.3f,
+                68.0f, 151.8f,
+                0.82f);
+            DrawLine(
+                drawLine,
+                edgeBrush,
+                96.7f, 148.0f,
+                96.3f, 151.6f,
+                0.82f);
+            DrawLine(
+                drawLine,
+                edgeBrush,
+                91.7f, 147.3f,
+                92.0f, 151.8f,
+                0.82f);
 
             fillGeometry(
                 _target,
@@ -1512,7 +1512,7 @@ internal sealed class Direct2DTestControl : Control
             Paw: Mix(
                 Color.FromArgb(25, 14, 43),
                 active.Fur,
-                0.08f),
+                0.22f),
             Head: Mix(
                 Color.FromArgb(111, 58, 203),
                 active.Accent,
@@ -1590,12 +1590,14 @@ internal sealed class Direct2DTestControl : Control
         var leftPaw =
             new[]
             {
-                MoveTo(56, 146),
-                Bezier(57, 142, 61, 140, 66, 140),
-                Bezier(71, 140, 75, 142, 76, 146),
-                Bezier(77, 150, 74, 153, 70, 154),
-                Bezier(66, 155, 61, 154, 58, 152),
-                Bezier(56, 150, 55, 148, 56, 146),
+                MoveTo(58, 147),
+                Bezier(58, 144, 60.5f, 142, 63.5f, 141.5f),
+                Bezier(65, 140.5f, 67, 140.3f, 68.5f, 141.2f),
+                Bezier(72, 141.5f, 74.5f, 143.5f, 75.5f, 146),
+                Bezier(76.2f, 148.2f, 75.2f, 150.4f, 73.2f, 151.6f),
+                Bezier(71.6f, 153.2f, 69.1f, 153.8f, 67, 152.8f),
+                Bezier(65.1f, 154f, 62.5f, 153.7f, 60.5f, 152.5f),
+                Bezier(58.6f, 151.3f, 57.4f, 149.3f, 58, 147),
                 Close()
             };
         _leftPawGeometry =
