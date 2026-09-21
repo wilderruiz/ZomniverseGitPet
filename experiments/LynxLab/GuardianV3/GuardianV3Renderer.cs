@@ -1048,9 +1048,10 @@ internal sealed class GuardianV3Renderer :
         };
     }
 
-    private static void DrawActivityEffect(
+    private static void DrawActivityField(
         Graphics g,
-        LynxPalette palette,
+        LynxPalette selectedPalette,
+        LynxPalette activePalette,
         LynxVisualState state,
         LynxActivityState activity,
         double elapsed,
@@ -1059,90 +1060,327 @@ internal sealed class GuardianV3Renderer :
         if (activity == LynxActivityState.None)
             return;
 
-        var accent = CombinedAccent(state, activity, palette);
-        var pulse = 0.5f + 0.5f * (float)Math.Sin(elapsed * Math.PI * 2d / 1.2d);
-        var strong = Color.FromArgb(
-            miniature ? 235 : 210,
-            accent);
+        var partner = LynxPalette.ActivityPartner(activity);
+        var mix = LynxPalette.ActivityMix(activity, elapsed);
+        var semantic = CombinedAccent(state, activity, activePalette);
 
-        using var pen = new Pen(
-            strong,
-            miniature ? 1.9f : 1.0f)
+        var selectedAccent = Mix(
+            selectedPalette.Accent,
+            semantic,
+            0.22f);
+        var partnerAccent = Mix(
+            partner.Accent,
+            semantic,
+            0.22f);
+
+        var rotation = (float)((elapsed * 42d) % 360d);
+        var pulse = 0.5f +
+            0.5f * (float)Math.Sin(elapsed * Math.PI * 2d / 1.6d);
+
+        var outerRect = new RectangleF(8f, 4f, 144f, 151f);
+        var innerRect = new RectangleF(15f, 10f, 130f, 141f);
+
+        var outerAlpha = miniature ? 165 : 120;
+        var innerAlpha = miniature ? 135 : 95;
+
+        using var outer = new Pen(
+            Color.FromArgb(outerAlpha, Mix(selectedAccent, partnerAccent, mix)),
+            miniature ? 2.1f : 1.15f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+
+        using var inner = new Pen(
+            Color.FromArgb(innerAlpha, Mix(partnerAccent, selectedAccent, mix)),
+            miniature ? 1.45f : 0.85f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+
+        switch (activity)
+        {
+            case LynxActivityState.Thinking:
+            case LynxActivityState.Preparing:
+                g.DrawArc(outer, outerRect, rotation, 118f);
+                g.DrawArc(inner, innerRect, rotation + 178f, 82f);
+                break;
+
+            case LynxActivityState.Sorting:
+                g.DrawArc(outer, outerRect, rotation, 72f);
+                g.DrawArc(outer, outerRect, rotation + 120f, 72f);
+                g.DrawArc(outer, outerRect, rotation + 240f, 72f);
+                g.DrawArc(inner, innerRect, -rotation * 0.72f, 120f);
+                break;
+
+            case LynxActivityState.Packing:
+            {
+                var inset = 5f + pulse * 5f;
+                using var bracket = new Pen(
+                    Color.FromArgb(
+                        miniature ? 195 : 145,
+                        Mix(selectedAccent, partnerAccent, mix)),
+                    miniature ? 1.9f : 1.0f)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round
+                };
+
+                g.DrawLine(bracket, 10f + inset, 44f, 10f + inset, 118f);
+                g.DrawLine(bracket, 150f - inset, 44f, 150f - inset, 118f);
+                g.DrawLine(bracket, 10f + inset, 44f, 25f + inset, 44f);
+                g.DrawLine(bracket, 150f - inset, 44f, 135f - inset, 44f);
+                g.DrawLine(bracket, 10f + inset, 118f, 25f + inset, 118f);
+                g.DrawLine(bracket, 150f - inset, 118f, 135f - inset, 118f);
+                break;
+            }
+
+            case LynxActivityState.Incoming:
+            case LynxActivityState.Outgoing:
+                g.DrawArc(outer, outerRect, 205f, 130f);
+                g.DrawArc(inner, innerRect, 24f, 130f);
+                break;
+
+            case LynxActivityState.Reconciling:
+                g.DrawArc(outer, outerRect, rotation, 148f);
+                g.DrawArc(inner, innerRect, -rotation, 148f);
+                break;
+
+            case LynxActivityState.Success:
+                using (var success = new Pen(
+                    Color.FromArgb(
+                        miniature ? 145 + (int)(75f * pulse) : 105 + (int)(55f * pulse),
+                        Mix(selectedAccent, partnerAccent, mix)),
+                    miniature ? 2.5f : 1.4f))
+                {
+                    g.DrawEllipse(success, outerRect);
+                }
+                break;
+
+            case LynxActivityState.Warning:
+                g.DrawArc(outer, outerRect, 205f, 130f);
+                g.DrawArc(outer, outerRect, 25f, 130f);
+                break;
+
+            case LynxActivityState.Failure:
+                using (var fail = new Pen(
+                    Color.FromArgb(
+                        miniature ? 215 : 165,
+                        Mix(selectedAccent, partnerAccent, mix)),
+                    miniature ? 2.3f : 1.25f)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round
+                })
+                {
+                    g.DrawArc(fail, outerRect, 208f, 54f);
+                    g.DrawArc(fail, outerRect, 278f, 54f);
+                    g.DrawArc(fail, outerRect, 28f, 54f);
+                    g.DrawArc(fail, outerRect, 98f, 54f);
+                }
+                break;
+
+            case LynxActivityState.Resting:
+                using (var rest = new Pen(
+                    Color.FromArgb(
+                        miniature ? 90 : 62,
+                        Mix(selectedAccent, partnerAccent, mix)),
+                    miniature ? 1.4f : 0.8f))
+                {
+                    g.DrawArc(rest, innerRect, 205f, 130f);
+                }
+                break;
+        }
+    }
+
+    private static void DrawActivityEffect(
+        Graphics g,
+        LynxPalette selectedPalette,
+        LynxPalette activePalette,
+        LynxVisualState state,
+        LynxActivityState activity,
+        double elapsed,
+        bool miniature)
+    {
+        if (activity == LynxActivityState.None)
+            return;
+
+        var partner = LynxPalette.ActivityPartner(activity);
+        var mix = LynxPalette.ActivityMix(activity, elapsed);
+        var accentA = Mix(
+            selectedPalette.Accent,
+            CombinedAccent(state, activity, activePalette),
+            0.25f);
+        var accentB = Mix(
+            partner.Accent,
+            CombinedAccent(state, activity, activePalette),
+            0.25f);
+
+        var primary = Mix(accentA, accentB, mix);
+        var secondary = Mix(accentB, accentA, mix);
+        var pulse = 0.5f +
+            0.5f * (float)Math.Sin(elapsed * Math.PI * 2d / 1.2d);
+
+        using var primaryPen = new Pen(
+            Color.FromArgb(miniature ? 235 : 200, primary),
+            miniature ? 2.0f : 1.05f)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,
             LineJoin = LineJoin.Round
         };
-        using var brush = new SolidBrush(strong);
+
+        using var secondaryPen = new Pen(
+            Color.FromArgb(miniature ? 215 : 175, secondary),
+            miniature ? 1.7f : 0.9f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round
+        };
+
+        using var primaryBrush = new SolidBrush(
+            Color.FromArgb(miniature ? 235 : 205, primary));
+        using var secondaryBrush = new SolidBrush(
+            Color.FromArgb(miniature ? 220 : 185, secondary));
 
         switch (activity)
         {
             case LynxActivityState.Thinking:
             case LynxActivityState.Preparing:
             {
-                var sweep = (float)((elapsed * 42d) % 30d);
-                g.DrawArc(pen, 65, 91, 30, 30, 195 + sweep, 72);
-                for (var i = 0; i < 3; i++)
+                for (var i = 0; i < 4; i++)
                 {
-                    var angle = elapsed * 1.7 + i * Math.PI * 2d / 3d;
-                    var x = 80f + (float)Math.Cos(angle) * 17f;
-                    var y = 106f + (float)Math.Sin(angle) * 13f;
-                    var size = miniature ? 2.5f : 1.8f;
-                    g.FillEllipse(brush, x - size / 2f, y - size / 2f, size, size);
+                    var angle =
+                        elapsed * 1.45 +
+                        i * Math.PI * 2d / 4d;
+                    var x = 80f + (float)Math.Cos(angle) * 67f;
+                    var y = 80f + (float)Math.Sin(angle) * 70f;
+                    var size = miniature ? 3.2f : 2.1f;
+
+                    g.FillEllipse(
+                        i % 2 == 0 ? primaryBrush : secondaryBrush,
+                        x - size / 2f,
+                        y - size / 2f,
+                        size,
+                        size);
                 }
+
+                var scanY = 22f + (float)((elapsed * 26d) % 116d);
+                using var scan = new Pen(
+                    Color.FromArgb(
+                        miniature ? 135 : 90,
+                        Mix(primary, secondary, 0.5f)),
+                    miniature ? 1.25f : 0.7f);
+                g.DrawLine(scan, 25f, scanY, 135f, scanY);
                 break;
             }
 
             case LynxActivityState.Sorting:
             {
-                var phase = (float)((elapsed * 34d) % 24d);
-                DrawDataChip(g, 48f + phase, 111f, accent, miniature);
-                DrawDataChip(g, 88f - phase * 0.55f, 121f, accent, miniature);
-                DrawDataChip(g, 56f + phase * 0.35f, 131f, accent, miniature);
+                var phase = (float)((elapsed * 34d) % 118d);
+                DrawDataChip(
+                    g,
+                    7f,
+                    22f + phase,
+                    primary,
+                    miniature);
+                DrawDataChip(
+                    g,
+                    146f,
+                    140f - phase,
+                    secondary,
+                    miniature);
+                DrawDataChip(
+                    g,
+                    22f + phase * 0.82f,
+                    7f,
+                    primary,
+                    miniature);
+                DrawDataChip(
+                    g,
+                    132f - phase * 0.75f,
+                    149f,
+                    secondary,
+                    miniature);
                 break;
             }
 
             case LynxActivityState.Packing:
             {
-                var inward = 4f + pulse * 6f;
-                g.DrawLine(pen, 52f + inward, 110f, 69f, 110f);
-                g.DrawLine(pen, 108f - inward, 110f, 91f, 110f);
-                g.DrawLine(pen, 58f + inward, 117f, 71f, 114f);
-                g.DrawLine(pen, 102f - inward, 117f, 89f, 114f);
+                var inward = 2f + pulse * 8f;
+
+                DrawArrow(g, primaryPen, 5f + inward, 62f, 29f + inward, 62f);
+                DrawArrow(g, secondaryPen, 155f - inward, 62f, 131f - inward, 62f);
+                DrawArrow(g, primaryPen, 10f + inward, 122f, 34f + inward, 122f);
+                DrawArrow(g, secondaryPen, 150f - inward, 122f, 126f - inward, 122f);
                 break;
             }
 
             case LynxActivityState.Incoming:
             {
-                DrawArrow(g, pen, 43f, 103f, 66f, 103f);
-                DrawArrow(g, pen, 117f, 103f, 94f, 103f);
+                DrawArrow(g, primaryPen, 2f, 45f, 29f, 45f);
+                DrawArrow(g, secondaryPen, 158f, 45f, 131f, 45f);
+                DrawArrow(g, secondaryPen, 2f, 98f, 25f, 98f);
+                DrawArrow(g, primaryPen, 158f, 98f, 135f, 98f);
+                DrawArrow(g, primaryPen, 10f, 139f, 34f, 139f);
+                DrawArrow(g, secondaryPen, 150f, 139f, 126f, 139f);
                 break;
             }
 
             case LynxActivityState.Outgoing:
             {
-                DrawArrow(g, pen, 66f, 103f, 43f, 103f);
-                DrawArrow(g, pen, 94f, 103f, 117f, 103f);
+                DrawArrow(g, primaryPen, 29f, 45f, 2f, 45f);
+                DrawArrow(g, secondaryPen, 131f, 45f, 158f, 45f);
+                DrawArrow(g, secondaryPen, 25f, 98f, 2f, 98f);
+                DrawArrow(g, primaryPen, 135f, 98f, 158f, 98f);
+                DrawArrow(g, primaryPen, 34f, 139f, 10f, 139f);
+                DrawArrow(g, secondaryPen, 126f, 139f, 150f, 139f);
                 break;
             }
 
             case LynxActivityState.Reconciling:
             {
-                DrawArrow(g, pen, 48f, 106f, 73f, 106f);
-                DrawArrow(g, pen, 112f, 106f, 87f, 106f);
-                using var center = new Pen(
-                    Color.FromArgb(150 + (int)(80f * pulse), accent),
-                    miniature ? 2.3f : 1.3f);
-                g.DrawEllipse(center, 75f, 101f, 10f, 10f);
+                var angle = elapsed * 1.65d;
+
+                for (var i = 0; i < 6; i++)
+                {
+                    var orbit =
+                        angle +
+                        i * Math.PI * 2d / 6d;
+                    var x = 80f + (float)Math.Cos(orbit) * 69f;
+                    var y = 81f + (float)Math.Sin(orbit) * 71f;
+                    var size = miniature ? 2.8f : 1.9f;
+
+                    g.FillEllipse(
+                        i % 2 == 0 ? primaryBrush : secondaryBrush,
+                        x - size / 2f,
+                        y - size / 2f,
+                        size,
+                        size);
+                }
                 break;
             }
 
             case LynxActivityState.Success:
             {
-                using var halo = new Pen(
-                    Color.FromArgb(100 + (int)(100f * pulse), accent),
-                    miniature ? 3.2f : 2.0f);
-                g.DrawEllipse(halo, 67f, 94f, 26f, 30f);
+                for (var i = 0; i < 5; i++)
+                {
+                    var angle =
+                        -Math.PI / 2d +
+                        i * Math.PI * 2d / 5d;
+                    var radius = 67f + pulse * 4f;
+                    var x = 80f + (float)Math.Cos(angle) * radius;
+                    var y = 80f + (float)Math.Sin(angle) * radius;
+                    var size = miniature ? 3.3f : 2.2f;
+                    g.FillEllipse(
+                        i % 2 == 0 ? primaryBrush : secondaryBrush,
+                        x - size / 2f,
+                        y - size / 2f,
+                        size,
+                        size);
+                }
                 break;
             }
 
@@ -1151,34 +1389,37 @@ internal sealed class GuardianV3Renderer :
                 using var triangle = new GraphicsPath();
                 triangle.AddPolygon(
                 [
-                    new PointF(80f, 91f),
-                    new PointF(88f, 104f),
-                    new PointF(72f, 104f)
+                    new PointF(80f, 3f),
+                    new PointF(89f, 18f),
+                    new PointF(71f, 18f)
                 ]);
-                g.DrawPath(pen, triangle);
-                g.DrawLine(pen, 80f, 95f, 80f, 99f);
-                g.FillEllipse(brush, 79.1f, 101f, 1.8f, 1.8f);
+                g.DrawPath(primaryPen, triangle);
+                g.DrawLine(primaryPen, 80f, 8f, 80f, 12f);
+                g.FillEllipse(primaryBrush, 79f, 14.5f, 2f, 2f);
                 break;
             }
 
             case LynxActivityState.Failure:
             {
-                g.DrawLine(pen, 73f, 101f, 87f, 115f);
-                g.DrawLine(pen, 87f, 101f, 73f, 115f);
+                g.DrawLine(primaryPen, 6f, 36f, 20f, 50f);
+                g.DrawLine(primaryPen, 20f, 36f, 6f, 50f);
+                g.DrawLine(secondaryPen, 140f, 36f, 154f, 50f);
+                g.DrawLine(secondaryPen, 154f, 36f, 140f, 50f);
                 break;
             }
 
             case LynxActivityState.Resting:
             {
-                var alpha = miniature ? 190 : 150;
+                var alpha = miniature ? 220 : 180;
                 using var restBrush = new SolidBrush(
-                    Color.FromArgb(alpha, accent));
+                    Color.FromArgb(alpha, primary));
                 using var font = new Font(
                     "Segoe UI",
-                    miniature ? 5.5f : 4.2f,
+                    miniature ? 7.2f : 5.0f,
                     FontStyle.Bold);
-                g.DrawString("z", font, restBrush, 106f, 52f);
-                g.DrawString("z", font, restBrush, 113f, 45f);
+
+                g.DrawString("z", font, restBrush, 126f, 42f);
+                g.DrawString("z", font, restBrush, 137f, 30f);
                 break;
             }
         }
