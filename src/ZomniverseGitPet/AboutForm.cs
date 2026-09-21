@@ -6,13 +6,13 @@ namespace ZomniverseGitPet;
 
 internal sealed class AboutForm : Form
 {
-    private static readonly Color Surface = Color.FromArgb(27, 20, 40);
-    private static readonly Color PanelSurface = Color.FromArgb(45, 31, 66);
-    private static readonly Color CardSurface = Color.FromArgb(35, 27, 51);
-    private static readonly Color Ink = Color.FromArgb(242, 237, 249);
-    private static readonly Color MutedInk = Color.FromArgb(187, 176, 205);
-    private static readonly Color Purple = Color.FromArgb(112, 70, 180);
-    private static readonly Color HotPink = Color.FromArgb(236, 70, 170);
+    private static readonly Color Surface = GuardianTheme.Window;
+    private static readonly Color PanelSurface = GuardianTheme.Surface;
+    private static readonly Color CardSurface = GuardianTheme.SurfaceRaised;
+    private static readonly Color Ink = GuardianTheme.Ink;
+    private static readonly Color MutedInk = GuardianTheme.MutedInk;
+    private static readonly Color Purple = GuardianTheme.VioletPressed;
+    private static readonly Color HotPink = GuardianTheme.Violet;
     private const string RepositoryUrl = "https://github.com/wilderruiz/ZomniverseGitPet";
     private const string LicenseUrl = "https://github.com/wilderruiz/ZomniverseGitPet/blob/main/LICENSE";
 
@@ -28,6 +28,7 @@ internal sealed class AboutForm : Form
         BackColor = Surface;
         ForeColor = Ink;
         Font = new Font("Segoe UI", 9);
+        WindowChrome.ApplyGuardianChrome(this);
 
         var root = new TableLayoutPanel
         {
@@ -74,7 +75,7 @@ internal sealed class AboutForm : Form
             Dock = DockStyle.Fill,
             Text = "Your purple desktop Git guardian",
             Font = new Font("Segoe UI", 10),
-            ForeColor = Color.FromArgb(205, 192, 224),
+            ForeColor = GuardianTheme.SoftInk,
             TextAlign = ContentAlignment.MiddleLeft
         };
 
@@ -91,7 +92,7 @@ internal sealed class AboutForm : Form
             Padding = new Padding(30, 18, 30, 8),
             Text = "ZomniverseGitPet is a lightweight Windows Git guardian designed to make repository safety visible, understandable, and friendly for both developers and non-programmers.",
             Font = new Font("Segoe UI", 10),
-            ForeColor = Color.FromArgb(224, 216, 237),
+            ForeColor = GuardianTheme.SoftInk,
             TextAlign = ContentAlignment.TopLeft
         };
     }
@@ -155,7 +156,8 @@ internal sealed class AboutForm : Form
         };
         close.FlatAppearance.BorderSize = 2;
         close.FlatAppearance.BorderColor = HotPink;
-        close.FlatAppearance.MouseOverBackColor = Color.FromArgb(132, 79, 198);
+        close.FlatAppearance.MouseOverBackColor = GuardianTheme.Violet;
+        close.FlatAppearance.MouseDownBackColor = GuardianTheme.VioletPressed;
         close.Click += (_, _) => Close();
         footer.Controls.Add(close);
         AcceptButton = close;
@@ -201,9 +203,9 @@ internal sealed class AboutForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             AutoEllipsis = true,
             Font = new Font("Segoe UI", 9.5f),
-            LinkColor = Color.FromArgb(215, 173, 255),
-            ActiveLinkColor = HotPink,
-            VisitedLinkColor = Color.FromArgb(215, 173, 255),
+            LinkColor = GuardianTheme.Violet,
+            ActiveLinkColor = GuardianTheme.VioletHover,
+            VisitedLinkColor = GuardianTheme.Violet,
             Cursor = Cursors.Hand
         };
         link.LinkClicked += (_, _) => OpenUrl(url);
