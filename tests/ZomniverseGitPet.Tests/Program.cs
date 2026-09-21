@@ -2,6 +2,34 @@ using ZomniverseGitPet;
 
 var failures = new List<string>();
 
+Check("standalone Get stays disabled when project is current", () =>
+{
+    var current = new GuardianSyncSnapshot(true, "main", 0, 0, 0, true, true, true, false);
+    return !StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        current, onlineMode: true, linked: true, noLocalBaseline: false, operationRunning: false);
+});
+
+Check("standalone Get enables for incoming project changes", () =>
+{
+    var incoming = new GuardianSyncSnapshot(true, "main", 0, 0, 1, true, true, true, false);
+    return StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        incoming, onlineMode: true, linked: true, noLocalBaseline: false, operationRunning: false);
+});
+
+Check("standalone Get enables to establish an existing remote baseline", () =>
+{
+    var unbased = new GuardianSyncSnapshot(true, "main", 0, 0, 0, true, true, true, false);
+    return StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        unbased, onlineMode: true, linked: true, noLocalBaseline: true, operationRunning: false);
+});
+
+Check("standalone Get stays disabled when no remote branch exists", () =>
+{
+    var missingRemote = new GuardianSyncSnapshot(true, "main", 0, 0, 0, true, true, false, false);
+    return !StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+        missingRemote, onlineMode: true, linked: true, noLocalBaseline: true, operationRunning: false);
+});
+
 Check("clean status", () =>
 {
     var status = GitService.ParsePorcelainV2("# branch.head main\n");
@@ -658,7 +686,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 48 ZomniverseGitPet tests passed.");
+Console.WriteLine("All 52 ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)

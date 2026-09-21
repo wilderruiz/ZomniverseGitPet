@@ -124,6 +124,11 @@ internal sealed class GuardianActionButton : Button
         if (Text.Equals("Refresh", StringComparison.OrdinalIgnoreCase))
         {
             await GuardianSyncState.RefreshAsync(true);
+            try { await GuardianWorkboardRuntime.RefreshNowAsync(); }
+            catch
+            {
+                // The periodic workboard refresh will retry; keep the main Refresh action responsive.
+            }
             base.OnClick(e);
             return;
         }

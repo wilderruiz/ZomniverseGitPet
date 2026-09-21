@@ -217,13 +217,12 @@ internal static class StandaloneProjectPublishingUiRuntime
 
         standaloneGet.Text = "Get ↓";
         standaloneGet.Width = 92;
-        standaloneGet.Enabled = onlineMode &&
-                                linked &&
-                                snapshot.HasRepository &&
-                                snapshot.OnlineReachable &&
-                                snapshot.Unsaved == 0 &&
-                                (snapshot.Ahead == 0 || noLocalBaseline) &&
-                                !operationRunning;
+        standaloneGet.Enabled = ShouldEnableGet(
+            snapshot,
+            onlineMode,
+            linked,
+            noLocalBaseline,
+            operationRunning);
         standaloneGet.Cursor = standaloneGet.Enabled ? Cursors.Hand : Cursors.Default;
 
         standaloneSend.Text = "Send ↑";
@@ -239,6 +238,21 @@ internal static class StandaloneProjectPublishingUiRuntime
                                  !operationRunning;
         standaloneSend.Cursor = standaloneSend.Enabled ? Cursors.Hand : Cursors.Default;
     }
+
+    internal static bool ShouldEnableGet(
+        GuardianSyncSnapshot snapshot,
+        bool onlineMode,
+        bool linked,
+        bool noLocalBaseline,
+        bool operationRunning) =>
+        onlineMode &&
+        linked &&
+        snapshot.HasRepository &&
+        snapshot.OnlineReachable &&
+        snapshot.Unsaved == 0 &&
+        (snapshot.Ahead == 0 || noLocalBaseline) &&
+        (snapshot.Behind > 0 || (noLocalBaseline && snapshot.RemoteBranchExists)) &&
+        !operationRunning;
 
     private static async Task SelectBranchAsync(GuardianForm guardian)
     {
