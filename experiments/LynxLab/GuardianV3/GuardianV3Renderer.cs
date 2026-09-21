@@ -1228,38 +1228,144 @@ internal sealed class GuardianV3Renderer :
                 break;
 
             case LynxActivityState.Warning:
-                g.DrawArc(outer, outerRect, 205f, 130f);
-                g.DrawArc(outer, outerRect, 25f, 130f);
+            {
+                // Two perimeter traces rotate continuously in opposite
+                // directions so the warning reads even at desktop size.
+                g.DrawArc(outer, outerRect, rotation, 132f);
+                g.DrawArc(
+                    inner,
+                    innerRect,
+                    180f - rotation * 1.18f,
+                    132f);
                 break;
+            }
 
             case LynxActivityState.Failure:
-                using (var fail = new Pen(
+            {
+                // Two segments converge on the same collision point, touch,
+                // then recoil. A triangular wave makes the motion repeat
+                // without teleporting.
+                var phase =
+                    (float)((elapsed % 1.7d) / 1.7d);
+                var collision =
+                    phase <= 0.5f
+                        ? phase * 2f
+                        : (1f - phase) * 2f;
+
+                var leftCenter = 198f + 72f * collision;
+                var rightCenter = 342f - 72f * collision;
+                var failColor = Mix(
+                    Color.FromArgb(226, 58, 86),
+                    partnerAccent,
+                    0.36f);
+
+                using var failA = new Pen(
                     Color.FromArgb(
-                        miniature ? 215 : 165,
-                        Mix(selectedAccent, partnerAccent, mix)),
+                        miniature ? 235 : 185,
+                        failColor),
+                    miniature ? 2.6f : 1.35f)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round
+                };
+                using var failB = new Pen(
+                    Color.FromArgb(
+                        miniature ? 225 : 175,
+                        Mix(
+                            Color.FromArgb(141, 74, 222),
+                            selectedAccent,
+                            0.30f)),
                     miniature ? 2.3f : 1.25f)
                 {
                     StartCap = LineCap.Round,
                     EndCap = LineCap.Round
-                })
+                };
+
+                g.DrawArc(
+                    failA,
+                    outerRect,
+                    leftCenter - 24f,
+                    48f);
+                g.DrawArc(
+                    failB,
+                    outerRect,
+                    rightCenter - 24f,
+                    48f);
+
+                if (collision > 0.86f)
                 {
-                    g.DrawArc(fail, outerRect, 208f, 54f);
-                    g.DrawArc(fail, outerRect, 278f, 54f);
-                    g.DrawArc(fail, outerRect, 28f, 54f);
-                    g.DrawArc(fail, outerRect, 98f, 54f);
+                    var impact =
+                        (collision - 0.86f) / 0.14f;
+                    using var impactPen = new Pen(
+                        Color.FromArgb(
+                            miniature
+                                ? (int)(210f * impact)
+                                : (int)(155f * impact),
+                            Mix(failColor, partnerAccent, 0.45f)),
+                        miniature ? 2.0f : 1.0f)
+                    {
+                        StartCap = LineCap.Round,
+                        EndCap = LineCap.Round
+                    };
+
+                    g.DrawLine(
+                        impactPen,
+                        80f,
+                        2f,
+                        80f,
+                        13f);
+                    g.DrawLine(
+                        impactPen,
+                        73f,
+                        6f,
+                        77f,
+                        15f);
+                    g.DrawLine(
+                        impactPen,
+                        87f,
+                        6f,
+                        83f,
+                        15f);
                 }
                 break;
+            }
 
             case LynxActivityState.Resting:
-                using (var rest = new Pen(
-                    Color.FromArgb(
-                        miniature ? 90 : 62,
-                        Mix(selectedAccent, partnerAccent, mix)),
-                    miniature ? 1.4f : 0.8f))
+            {
+                // Quiet rings drift away from the mascot and disappear.
+                for (var i = 0; i < 3; i++)
                 {
-                    g.DrawArc(rest, innerRect, 205f, 130f);
+                    var phase =
+                        (float)((elapsed * 0.28d + i / 3d) % 1d);
+                    var expand = 4f + phase * 14f;
+                    var alpha =
+                        (int)((1f - phase) *
+                            (miniature ? 118f : 82f));
+
+                    using var rest = new Pen(
+                        Color.FromArgb(
+                            Math.Max(0, alpha),
+                            Mix(
+                                selectedAccent,
+                                partnerAccent,
+                                phase)),
+                        miniature ? 1.5f : 0.82f)
+                    {
+                        StartCap = LineCap.Round,
+                        EndCap = LineCap.Round
+                    };
+
+                    var ring = new RectangleF(
+                        innerRect.X - expand,
+                        innerRect.Y - expand,
+                        innerRect.Width + expand * 2f,
+                        innerRect.Height + expand * 2f);
+
+                    g.DrawArc(rest, ring, 205f, 130f);
+                    g.DrawArc(rest, ring, 25f, 130f);
                 }
                 break;
+            }
         }
     }
 
