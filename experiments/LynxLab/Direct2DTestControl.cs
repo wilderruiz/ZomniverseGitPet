@@ -19,6 +19,12 @@ internal sealed class Direct2DTestControl : Control
     private IntPtr _target;
 
     private IntPtr _tailGeometry;
+    private IntPtr _tailUpperTuftGeometry;
+    private IntPtr _tailMiddleSweepGeometry;
+    private IntPtr _tailLowerSweepGeometry;
+    private IntPtr _tailFoldGeometry;
+    private IntPtr _leftPawGeometry;
+    private IntPtr _rightPawGeometry;
     private IntPtr _torsoGeometry;
     private IntPtr _leftHaunchGeometry;
     private IntPtr _rightHaunchGeometry;
@@ -1385,6 +1391,10 @@ internal sealed class Direct2DTestControl : Control
                 Color.FromArgb(27, 16, 48),
                 active.Fur,
                 0.12f),
+            TailAccent: Mix(
+                Color.FromArgb(92, 48, 171),
+                active.Accent,
+                0.30f),
             Body: Mix(
                 Color.FromArgb(48, 27, 80),
                 active.Fur,
@@ -1432,6 +1442,60 @@ internal sealed class Direct2DTestControl : Control
             Bezier(51, 132, 48, 139, 49, 143),
             Close()
         ]);
+
+        _tailUpperTuftGeometry = CreatePathGeometry(
+        [
+            MoveTo(17, 79),
+            Line(10, 75),
+            Line(20, 70),
+            Line(17, 64),
+            Bezier(27, 59, 38, 58, 48, 60),
+            Bezier(37, 62, 28, 68, 22, 77),
+            Close()
+        ]);
+
+        _tailMiddleSweepGeometry = CreatePathGeometry(
+        [
+            MoveTo(13, 108),
+            Bezier(18, 91, 30, 77, 49, 70),
+            Bezier(38, 70, 28, 78, 22, 90),
+            Bezier(18, 98, 15, 104, 13, 108),
+            Close()
+        ]);
+
+        _tailLowerSweepGeometry = CreatePathGeometry(
+        [
+            MoveTo(15, 121),
+            Bezier(23, 132, 35, 138, 49, 136),
+            Line(44, 142),
+            Bezier(31, 143, 21, 136, 15, 121),
+            Close()
+        ]);
+
+        _tailFoldGeometry = CreatePathGeometry(
+        [
+            MoveTo(49, 70),
+            Bezier(36, 86, 19, 106, 24, 123),
+            Bezier(17, 112, 22, 91, 36, 79),
+            Bezier(41, 75, 45, 72, 49, 70),
+            Close()
+        ]);
+
+        var leftPaw =
+            new[]
+            {
+                MoveTo(56, 146),
+                Bezier(57, 142, 61, 140, 66, 140),
+                Bezier(71, 140, 75, 142, 76, 146),
+                Bezier(77, 150, 74, 153, 70, 154),
+                Bezier(66, 155, 61, 154, 58, 152),
+                Bezier(56, 150, 55, 148, 56, 146),
+                Close()
+            };
+        _leftPawGeometry =
+            CreatePathGeometry(leftPaw);
+        _rightPawGeometry =
+            CreatePathGeometry(Mirror(leftPaw));
 
         _torsoGeometry = CreatePathGeometry(
         [
@@ -3310,6 +3374,12 @@ internal sealed class Direct2DTestControl : Control
         ReleaseCom(ref _rightHaunchGeometry);
         ReleaseCom(ref _leftHaunchGeometry);
         ReleaseCom(ref _torsoGeometry);
+        ReleaseCom(ref _rightPawGeometry);
+        ReleaseCom(ref _leftPawGeometry);
+        ReleaseCom(ref _tailFoldGeometry);
+        ReleaseCom(ref _tailLowerSweepGeometry);
+        ReleaseCom(ref _tailMiddleSweepGeometry);
+        ReleaseCom(ref _tailUpperTuftGeometry);
         ReleaseCom(ref _tailGeometry);
 
         if (_factory != IntPtr.Zero)
@@ -3452,6 +3522,7 @@ internal sealed class Direct2DTestControl : Control
 
     private readonly record struct CoreColors(
         Color Tail,
+        Color TailAccent,
         Color Body,
         Color Limb,
         Color Paw,
