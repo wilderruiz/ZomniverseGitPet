@@ -414,11 +414,23 @@ internal sealed class GuardianV3Renderer : ILynxRenderer, IAnimatedLynxRenderer
         using var eye = right ? Mirror(leftEye) : (GraphicsPath)leftEye.Clone();
 
         var eyeOpen = Math.Clamp(1f - blink * 0.90f, 0.10f, 1f);
+
+        // Blink around the eye's fixed vertical centre.
+        //
+        // With MatrixOrder.Append, points are transformed in the order the
+        // operations are appended. The previous +pivot / scale / -pivot order
+        // moved the eye geometry vertically as it closed, which made the eyes
+        // jump outside their sockets and flicker badly in the 160x160 preview.
+        //
+        // Move the eye centre to the origin first, squash it there, then move
+        // it back. The socket therefore stays spatially locked throughout the
+        // blink; only its vertical aperture changes.
+        const float blinkPivotY = 58.5f;
         using (var blinkMatrix = new Matrix())
         {
-            blinkMatrix.Translate(0f, 58.5f, MatrixOrder.Append);
+            blinkMatrix.Translate(0f, -blinkPivotY, MatrixOrder.Append);
             blinkMatrix.Scale(1f, eyeOpen, MatrixOrder.Append);
-            blinkMatrix.Translate(0f, -58.5f, MatrixOrder.Append);
+            blinkMatrix.Translate(0f, blinkPivotY, MatrixOrder.Append);
             eye.Transform(blinkMatrix);
         }
 
