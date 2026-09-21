@@ -32,7 +32,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — V7 Whole-Body Activity";
+        Text = "Lynx Lab — V8 Kinetic Moods";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -359,7 +359,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V7 moves activity cues around the whole mascot so they remain readable at desktop size. Each activity smoothly blends the selected palette with a second mood palette; the pet keeps its purple identity while armor, fur undertones and perimeter effects transition together.",
+            Text = "Guardian V8 kinetic moods: Warning counter-rotates perimeter traces with a large rocking alert; Failure converges and repels with red/purple eyes; Resting emits fading outward rings and drifting z glyphs; tail motion is stronger; armor continuously transitions Midnight Blue ↔ Forest Emerald.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
