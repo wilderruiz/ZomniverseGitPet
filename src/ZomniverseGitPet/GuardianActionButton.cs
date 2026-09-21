@@ -260,8 +260,7 @@ internal sealed class GuardianActionButton : Button
 
         var (fill, border, text) = Palette();
         using var fillBrush = new SolidBrush(fill);
-        using var borderPen = new Pen(border,
-            Kind is GuardianActionKind.Pull or GuardianActionKind.Push or GuardianActionKind.Primary ? 1.8f : 1.2f);
+        using var borderPen = new Pen(border, 1f);
 
         e.Graphics.FillPath(fillBrush, path);
         e.Graphics.DrawPath(borderPen, path);
@@ -444,7 +443,7 @@ internal sealed class GuardianActionButton : Button
         using var border = new Pen(Color.FromArgb(220, Color.White), 1f);
         graphics.FillEllipse(brush, x, y, size, size);
         graphics.DrawEllipse(border, x, y, size, size);
-        using var badgeFont = new Font("Segoe UI", 7f, FontStyle.Bold);
+        using var badgeFont = new Font("Cascadia Mono", 6.75f, FontStyle.Bold);
         TextRenderer.DrawText(
             graphics,
             value,

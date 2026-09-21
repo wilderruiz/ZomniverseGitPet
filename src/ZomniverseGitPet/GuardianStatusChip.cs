@@ -41,7 +41,7 @@ internal sealed class GuardianStatusChip : Control
                  ControlStyles.UserPaint |
                  ControlStyles.Selectable, true);
         Size = new Size(132, 30);
-        Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        Font = new Font("Cascadia Mono", 8f, FontStyle.Bold);
         ForeColor = GuardianTheme.Ink;
         TabStop = false;
     }

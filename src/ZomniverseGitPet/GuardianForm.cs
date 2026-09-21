@@ -303,8 +303,8 @@ public sealed class GuardianForm : Form
             Margin = new Padding(0, 0, 28, 0),
             BackColor = GuardianTheme.Surface
         };
-        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
 
