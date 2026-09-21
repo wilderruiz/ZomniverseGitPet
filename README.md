@@ -142,7 +142,7 @@ New files clearly show that no saved version existed. Deleted files show that th
   </tr>
 </table>
 
-The executable, taskbar, Guardian window, and tray all use the same canonical fox-head identity. Additional approved mascot states remain available for richer idle/sleep behavior later.
+The executable, taskbar, Guardian window, and tray use the same canonical fox-head identity. The desktop mascot itself is now a live 160 × 160 Direct2D Guardian: repository and operation states drive expressions, tail motion, palette/armor transitions, and whole-pet activity effects for Save, Get, Send, Reconcile, warnings, failures, success, and rest. If native Direct2D initialization or rendering fails, GitPet automatically falls back to the previous embedded PNG pet states.
 
 ---
 
