@@ -358,8 +358,25 @@ internal sealed class Direct2DTestControl : Control
             GetComDelegate<FillEllipseDelegate>(_target, 21);
         var drawEllipse =
             GetComDelegate<DrawEllipseDelegate>(_target, 20);
+        var drawLine =
+            GetComDelegate<DrawLineDelegate>(_target, 15);
         var setTransform =
             GetComDelegate<SetTransformDelegate>(_target, 30);
+
+        var expression =
+            ResolveExpression(_state, _activity, _seconds);
+        var activePalette =
+            LynxPalette.Blend(
+                _palette,
+                _activity,
+                _seconds);
+        var armorPalette =
+            ResolveArmorPalette(activePalette, _seconds);
+        var accent =
+            ResolveStateAccent(
+                _state,
+                _activity,
+                activePalette);
 
         IntPtr tailBrush = IntPtr.Zero;
         IntPtr bodyBrush = IntPtr.Zero;
@@ -369,6 +386,22 @@ internal sealed class Direct2DTestControl : Control
         IntPtr earBrush = IntPtr.Zero;
         IntPtr innerEarBrush = IntPtr.Zero;
         IntPtr edgeBrush = IntPtr.Zero;
+
+        IntPtr whiteBrush = IntPtr.Zero;
+        IntPtr chestShadeBrush = IntPtr.Zero;
+        IntPtr inkBrush = IntPtr.Zero;
+        IntPtr irisBrush = IntPtr.Zero;
+        IntPtr failureBrush = IntPtr.Zero;
+        IntPtr highlightBrush = IntPtr.Zero;
+
+        IntPtr armorDarkBrush = IntPtr.Zero;
+        IntPtr armorMidBrush = IntPtr.Zero;
+        IntPtr armorEdgeBrush = IntPtr.Zero;
+        IntPtr collarBrush = IntPtr.Zero;
+        IntPtr facetBrush = IntPtr.Zero;
+        IntPtr shieldBrush = IntPtr.Zero;
+        IntPtr shieldInsetBrush = IntPtr.Zero;
+        IntPtr shieldBorderBrush = IntPtr.Zero;
 
         try
         {
@@ -381,11 +414,81 @@ internal sealed class Direct2DTestControl : Control
             innerEarBrush = CreateBrush(colors.EarInner);
             edgeBrush = CreateBrush(colors.Edge);
 
-            var viewport = ViewportTransform(width, height);
-            var edgeWidth = 1.0f;
+            whiteBrush =
+                CreateBrush(Color.FromArgb(248, 244, 253));
+            chestShadeBrush =
+                CreateBrush(Color.FromArgb(222, 211, 237));
+            inkBrush =
+                CreateBrush(Color.FromArgb(24, 13, 38));
+            irisBrush =
+                CreateBrush(
+                    Mix(
+                        Color.FromArgb(139, 70, 221),
+                        activePalette.Eye,
+                        0.18f));
+            failureBrush =
+                CreateBrush(
+                    Mix(
+                        Color.FromArgb(238, 58, 86),
+                        Color.FromArgb(142, 67, 224),
+                        0.46f));
+            highlightBrush =
+                CreateBrush(Color.White);
 
-            // Tail gets an independent transform so the first migrated
-            // silhouette already preserves character movement.
+            var armorDark =
+                Mix(
+                    Color.FromArgb(13, 18, 24),
+                    armorPalette.Fur,
+                    0.22f);
+            var armorMid =
+                Mix(
+                    Color.FromArgb(34, 46, 58),
+                    armorPalette.Accent,
+                    0.36f);
+            var armorEdge =
+                Mix(
+                    armorPalette.Accent,
+                    accent,
+                    0.42f);
+
+            armorDarkBrush = CreateBrush(armorDark);
+            armorMidBrush = CreateBrush(armorMid);
+            armorEdgeBrush = CreateBrush(armorEdge);
+            collarBrush =
+                CreateBrush(
+                    Mix(
+                        Color.FromArgb(24, 31, 39),
+                        armorPalette.Accent,
+                        0.24f));
+            facetBrush =
+                CreateBrush(
+                    Mix(
+                        armorPalette.Accent,
+                        accent,
+                        0.32f));
+            shieldBrush =
+                CreateBrush(
+                    Mix(
+                        Color.FromArgb(48, 75, 96),
+                        armorPalette.Accent,
+                        0.58f));
+            shieldInsetBrush =
+                CreateBrush(
+                    Mix(
+                        Color.FromArgb(35, 70, 79),
+                        armorPalette.Accent,
+                        0.62f));
+            shieldBorderBrush =
+                CreateBrush(
+                    Mix(
+                        Color.FromArgb(201, 166, 249),
+                        armorPalette.Eye,
+                        0.14f));
+
+            var viewport =
+                ViewportTransform(width, height);
+            const float edgeWidth = 1.0f;
+
             var tailAngle =
                 TailSwayDegrees(_activity, _seconds) *
                 MathF.PI / 180f;
@@ -397,17 +500,13 @@ internal sealed class Direct2DTestControl : Control
 
             var tailTransform = ToD2D(tailMotion);
             setTransform(_target, ref tailTransform);
-            fillGeometry(
-                _target,
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
                 _tailGeometry,
                 tailBrush,
-                IntPtr.Zero);
-            drawGeometry(
-                _target,
-                _tailGeometry,
                 edgeBrush,
-                edgeWidth,
-                IntPtr.Zero);
+                edgeWidth);
 
             var bodyTransform = ToD2D(viewport);
             setTransform(_target, ref bodyTransform);
@@ -459,20 +558,14 @@ internal sealed class Direct2DTestControl : Control
                 10f,
                 5.5f);
 
-            fillEllipse(
-                _target,
-                ref leftPaw,
-                pawBrush);
+            fillEllipse(_target, ref leftPaw, pawBrush);
             drawEllipse(
                 _target,
                 ref leftPaw,
                 edgeBrush,
                 edgeWidth,
                 IntPtr.Zero);
-            fillEllipse(
-                _target,
-                ref rightPaw,
-                pawBrush);
+            fillEllipse(_target, ref rightPaw, pawBrush);
             drawEllipse(
                 _target,
                 ref rightPaw,
@@ -480,7 +573,95 @@ internal sealed class Direct2DTestControl : Control
                 edgeWidth,
                 IntPtr.Zero);
 
-            // Ears sit behind the skull, matching the V9 layer order.
+            // Dark torso armor before the white chest ruff.
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _leftArmorGeometry,
+                armorMidBrush,
+                armorEdgeBrush,
+                1.1f);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _rightArmorGeometry,
+                armorMidBrush,
+                armorEdgeBrush,
+                1.1f);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _leftShoulderArmorGeometry,
+                armorDarkBrush,
+                armorEdgeBrush,
+                1.0f);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _rightShoulderArmorGeometry,
+                armorDarkBrush,
+                armorEdgeBrush,
+                1.0f);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _leftBracerGeometry,
+                armorDarkBrush,
+                armorEdgeBrush,
+                1.0f);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _rightBracerGeometry,
+                armorDarkBrush,
+                armorEdgeBrush,
+                1.0f);
+
+            fillGeometry(
+                _target,
+                _chestGeometry,
+                whiteBrush,
+                IntPtr.Zero);
+
+            // Collar armor locks the white ruff into the torso.
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _leftCollarGeometry,
+                collarBrush,
+                armorEdgeBrush,
+                1.1f);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _rightCollarGeometry,
+                collarBrush,
+                armorEdgeBrush,
+                1.1f);
+            fillGeometry(
+                _target,
+                _leftCollarFacetGeometry,
+                facetBrush,
+                IntPtr.Zero);
+            fillGeometry(
+                _target,
+                _rightCollarFacetGeometry,
+                facetBrush,
+                IntPtr.Zero);
+
+            // Head group uses the same state/activity tilt semantics as V9.
+            var headLocal =
+                Matrix3x2.CreateTranslation(
+                    0f,
+                    expression.HeadOffsetY) *
+                Matrix3x2.CreateRotation(
+                    expression.HeadTiltDegrees *
+                    MathF.PI / 180f,
+                    new Vector2(80f, 79f));
+            var headTransform =
+                ToD2D(headLocal * viewport);
+            setTransform(_target, ref headTransform);
+
             FillAndStroke(
                 fillGeometry,
                 drawGeometry,
@@ -495,7 +676,6 @@ internal sealed class Direct2DTestControl : Control
                 earBrush,
                 edgeBrush,
                 edgeWidth);
-
             fillGeometry(
                 _target,
                 _leftInnerEarGeometry,
@@ -514,12 +694,78 @@ internal sealed class Direct2DTestControl : Control
                 headBrush,
                 edgeBrush,
                 edgeWidth);
+            fillGeometry(
+                _target,
+                _faceMaskGeometry,
+                whiteBrush,
+                IntPtr.Zero);
+
+            DrawDirectFace(
+                fillGeometry,
+                drawGeometry,
+                fillEllipse,
+                drawEllipse,
+                drawLine,
+                setTransform,
+                viewport,
+                headLocal,
+                expression,
+                inkBrush,
+                irisBrush,
+                failureBrush,
+                highlightBrush);
+
+            // Shield remains in body space, exactly as in V9.
+            setTransform(_target, ref bodyTransform);
+            FillAndStroke(
+                fillGeometry,
+                drawGeometry,
+                _shieldGeometry,
+                shieldBrush,
+                shieldBorderBrush,
+                1.35f);
+            fillGeometry(
+                _target,
+                _shieldInsetGeometry,
+                shieldInsetBrush,
+                IntPtr.Zero);
+
+            drawLine(
+                _target,
+                new Point2F(75.5f, 106f),
+                new Point2F(79f, 109.5f),
+                highlightBrush,
+                2.2f,
+                IntPtr.Zero);
+            drawLine(
+                _target,
+                new Point2F(79f, 109.5f),
+                new Point2F(85f, 103f),
+                highlightBrush,
+                2.2f,
+                IntPtr.Zero);
 
             var identity = Matrix3x2F.Identity;
             setTransform(_target, ref identity);
         }
         finally
         {
+            ReleaseCom(ref shieldBorderBrush);
+            ReleaseCom(ref shieldInsetBrush);
+            ReleaseCom(ref shieldBrush);
+            ReleaseCom(ref facetBrush);
+            ReleaseCom(ref collarBrush);
+            ReleaseCom(ref armorEdgeBrush);
+            ReleaseCom(ref armorMidBrush);
+            ReleaseCom(ref armorDarkBrush);
+
+            ReleaseCom(ref highlightBrush);
+            ReleaseCom(ref failureBrush);
+            ReleaseCom(ref irisBrush);
+            ReleaseCom(ref inkBrush);
+            ReleaseCom(ref chestShadeBrush);
+            ReleaseCom(ref whiteBrush);
+
             ReleaseCom(ref edgeBrush);
             ReleaseCom(ref innerEarBrush);
             ReleaseCom(ref earBrush);
@@ -530,6 +776,171 @@ internal sealed class Direct2DTestControl : Control
             ReleaseCom(ref tailBrush);
         }
     }
+
+    private void DrawDirectFace(
+        FillGeometryDelegate fillGeometry,
+        DrawGeometryDelegate drawGeometry,
+        FillEllipseDelegate fillEllipse,
+        DrawEllipseDelegate drawEllipse,
+        DrawLineDelegate drawLine,
+        SetTransformDelegate setTransform,
+        Matrix3x2 viewport,
+        Matrix3x2 headLocal,
+        DirectExpression expression,
+        IntPtr inkBrush,
+        IntPtr irisBrush,
+        IntPtr failureBrush,
+        IntPtr highlightBrush)
+    {
+        var blink = BlinkAmount(_seconds);
+        var eyeOpen =
+            Math.Clamp(
+                expression.EyeOpenness -
+                blink * 0.90f,
+                0.10f,
+                1.12f);
+
+        DrawEye(
+            false,
+            61f,
+            _leftEyeGeometry);
+        DrawEye(
+            true,
+            99f,
+            _rightEyeGeometry);
+
+        var baseTransform =
+            ToD2D(headLocal * viewport);
+        setTransform(_target, ref baseTransform);
+
+        fillGeometry(
+            _target,
+            _noseGeometry,
+            inkBrush,
+            IntPtr.Zero);
+
+        drawLine(
+            _target,
+            new Point2F(80f, 76.5f),
+            new Point2F(80f, 81.5f),
+            inkBrush,
+            1.2f,
+            IntPtr.Zero);
+
+        var mouthEdgeY = 84.3f;
+        var mouthCenterY =
+            mouthEdgeY + expression.MouthCurve;
+
+        drawLine(
+            _target,
+            new Point2F(73f, mouthEdgeY),
+            new Point2F(80f, mouthCenterY),
+            inkBrush,
+            1.25f,
+            IntPtr.Zero);
+        drawLine(
+            _target,
+            new Point2F(80f, mouthCenterY),
+            new Point2F(87f, mouthEdgeY),
+            inkBrush,
+            1.25f,
+            IntPtr.Zero);
+
+        var leftOuterY =
+            50.8f + expression.BrowLift;
+        var leftInnerY =
+            56.5f +
+            expression.BrowInnerDrop +
+            expression.BrowLift;
+
+        drawLine(
+            _target,
+            new Point2F(53.5f, leftOuterY),
+            new Point2F(68.5f, leftInnerY),
+            inkBrush,
+            1.25f,
+            IntPtr.Zero);
+        drawLine(
+            _target,
+            new Point2F(106.5f, leftOuterY),
+            new Point2F(91.5f, leftInnerY),
+            inkBrush,
+            1.25f,
+            IntPtr.Zero);
+
+        void DrawEye(
+            bool right,
+            float center,
+            IntPtr eyeGeometry)
+        {
+            var eyeScale =
+                Matrix3x2.CreateScale(
+                    1f,
+                    eyeOpen,
+                    new Vector2(center, 58.5f));
+            var eyeTransform =
+                ToD2D(
+                    eyeScale *
+                    headLocal *
+                    viewport);
+
+            setTransform(_target, ref eyeTransform);
+            fillGeometry(
+                _target,
+                eyeGeometry,
+                inkBrush,
+                IntPtr.Zero);
+
+            var irisHeight =
+                11f *
+                eyeOpen *
+                expression.PupilScale;
+            var pupilHeight =
+                8.8f *
+                eyeOpen *
+                expression.PupilScale;
+
+            var iris = new Ellipse(
+                new Point2F(center, 58.8f),
+                4.5f * expression.PupilScale,
+                Math.Max(1.2f, irisHeight / 2f));
+            var pupil = new Ellipse(
+                new Point2F(center, 58.5f),
+                2.1f * expression.PupilScale,
+                Math.Max(1f, pupilHeight / 2f));
+
+            var headOnly =
+                ToD2D(headLocal * viewport);
+            setTransform(_target, ref headOnly);
+
+            fillEllipse(
+                _target,
+                ref iris,
+                _activity == LynxActivityState.Failure
+                    ? failureBrush
+                    : irisBrush);
+            fillEllipse(
+                _target,
+                ref pupil,
+                inkBrush);
+
+            if (blink < 0.72f)
+            {
+                var highlight = new Ellipse(
+                    new Point2F(
+                        center - 2.2f,
+                        55.2f),
+                    1.2f,
+                    Math.Max(0.7f, 1.2f * eyeOpen));
+
+                fillEllipse(
+                    _target,
+                    ref highlight,
+                    highlightBrush);
+            }
+        }
+    }
+
 
     private void FillAndStroke(
         FillGeometryDelegate fillGeometry,
