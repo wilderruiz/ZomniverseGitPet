@@ -41,7 +41,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — Direct2D Target Phase";
+        Text = "Lynx Lab — Direct2D Guardian Migration 1";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -272,7 +272,7 @@ internal sealed class LynxLabForm : Form
 
         split.Panel2.Controls.Add(
             BackendPanel(
-                "DIRECT2D / NATIVE HWND TARGET",
+                "DIRECT2D / GUARDIAN CORE MIGRATION 1",
                 _direct2DCanvas,
                 Color.FromArgb(0x57, 0xD7, 0xA0)));
 
@@ -494,7 +494,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Direct2D Target Phase: the left viewport remains the approved Guardian V9 on GDI+. The right viewport is a real native Direct2D HWND render target driven by the same state, activity, palette and animation clock. This validates the hardware path before Guardian geometry is ported layer-by-layer.",
+            Text = "Direct2D Guardian Migration 1: the right viewport now uses native Direct2D path geometries built from the same V9 control points for tail, torso, haunches, forelegs, head and ears. Tail motion is live. Face, chest fur, armor and detailed activity effects remain intentionally on the GDI+ reference until the core silhouette is validated.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
