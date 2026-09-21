@@ -1641,7 +1641,11 @@ internal sealed class GuardianV3Renderer :
     }
 
     private static Pen Outline(SilhouetteColors c) =>
-        new(c.Edge, 1.8f)
+        new(
+            Color.FromArgb(
+                205,
+                Mix(Color.FromArgb(19, 15, 27), c.Edge, 0.16f)),
+            1.0f)
         {
             LineJoin = LineJoin.Round,
             StartCap = LineCap.Round,
@@ -1770,16 +1774,16 @@ internal sealed class GuardianV3Renderer :
             // Palette only adds a restrained undertone so we can judge anatomy
             // without color becoming the design decision.
             return new SilhouetteColors(
-                Tail: Mix(Color.FromArgb(27, 16, 48), palette.Fur, 0.08f),
-                TailAccent: Mix(Color.FromArgb(92, 48, 171), palette.Accent, 0.10f),
-                Body: Mix(Color.FromArgb(48, 27, 80), palette.Fur, 0.08f),
-                BodyAccent: Mix(Color.FromArgb(91, 51, 160), palette.Accent, 0.08f),
-                Limb: Mix(Color.FromArgb(35, 20, 59), palette.Fur, 0.07f),
-                Paw: Mix(Color.FromArgb(25, 14, 43), palette.Fur, 0.05f),
-                Head: Mix(Color.FromArgb(111, 58, 203), palette.Accent, 0.08f),
-                Ear: Mix(Color.FromArgb(57, 31, 96), palette.Fur, 0.08f),
-                EarInner: Mix(Color.FromArgb(177, 125, 248), palette.Eye, 0.08f),
-                Edge: Mix(Color.FromArgb(137, 88, 209), palette.Edge, 0.10f));
+                Tail: Mix(Color.FromArgb(27, 16, 48), palette.Fur, 0.12f),
+                TailAccent: Mix(Color.FromArgb(92, 48, 171), palette.Accent, 0.24f),
+                Body: Mix(Color.FromArgb(48, 27, 80), palette.Fur, 0.12f),
+                BodyAccent: Mix(Color.FromArgb(91, 51, 160), palette.Accent, 0.20f),
+                Limb: Mix(Color.FromArgb(35, 20, 59), palette.Fur, 0.10f),
+                Paw: Mix(Color.FromArgb(25, 14, 43), palette.Fur, 0.08f),
+                Head: Mix(Color.FromArgb(111, 58, 203), palette.Accent, 0.18f),
+                Ear: Mix(Color.FromArgb(57, 31, 96), palette.Fur, 0.12f),
+                EarInner: Mix(Color.FromArgb(177, 125, 248), palette.Eye, 0.22f),
+                Edge: Mix(Color.FromArgb(31, 25, 42), palette.Edge, 0.08f));
         }
     }
 
