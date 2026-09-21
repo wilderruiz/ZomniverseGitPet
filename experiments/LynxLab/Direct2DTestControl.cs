@@ -6,9 +6,9 @@ namespace LynxLab;
 /// <summary>
 /// First real Direct2D render target in Lynx Lab.
 ///
-/// Migration 1 keeps the proven HWND render target and ports the Guardian's
-/// core silhouette to native Direct2D path geometry: tail, torso, haunches,
-/// forelegs, head and ears. The GDI+ V9 viewport remains the visual reference.
+/// Migration 2 keeps the proven HWND render target and adds the Guardian's
+/// identity layers to the native Direct2D core: muzzle/chest, face expression,
+/// armor, collar and shield. The GDI+ V9 viewport remains the visual reference.
 /// </summary>
 internal sealed class Direct2DTestControl : Control
 {
