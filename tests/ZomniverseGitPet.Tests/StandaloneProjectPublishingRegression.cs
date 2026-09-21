@@ -231,6 +231,67 @@ internal static class StandaloneProjectPublishingRegression
                 throw new InvalidOperationException("Publishing cleanup did not remove a stale read-only root file.");
 
             /* ==========================================================================
+               PATCH: PUBLISHING WORKSPACE SERIALIZATION REGRESSION
+               DATE.TIME: 2026-09-21
+               Send/Get/inspection must not mutate the same isolated .git concurrently.
+               ========================================================================== */
+            var gateWorkspace = Path.Combine(root, "publishing-workspace-gate");
+            Directory.CreateDirectory(gateWorkspace);
+
+            using (var firstLease = StandaloneProjectPublishing
+                       .EnterWorkspaceAsync(gateWorkspace)
+                       .GetAwaiter().GetResult())
+            {
+                var secondLeaseTask = StandaloneProjectPublishing.EnterWorkspaceAsync(gateWorkspace);
+
+                if (secondLeaseTask.Wait(TimeSpan.FromMilliseconds(120)))
+                {
+                    secondLeaseTask.Result.Dispose();
+                    throw new InvalidOperationException(
+                        "Publishing workspace gate allowed concurrent access to the same isolated workspace.");
+                }
+
+                // firstLease is released at the end of this using scope.
+            }
+
+            using (var verifiedLease = StandaloneProjectPublishing
+                       .EnterWorkspaceAsync(gateWorkspace)
+                       .GetAwaiter().GetResult())
+            {
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                var retryWorkspace = Path.Combine(root, "publishing-retry-regression");
+                var retryNested = Path.Combine(retryWorkspace, "stale");
+                Directory.CreateDirectory(retryNested);
+                var retryFile = Path.Combine(retryNested, "briefly-locked.txt");
+                File.WriteAllText(retryFile, "lock");
+
+                using var held = new FileStream(
+                    retryFile,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.None);
+
+                var cleanupTask = Task.Run(() =>
+                    StandaloneProjectPublishing.CleanPublishingWorkspace(retryWorkspace));
+
+                Thread.Sleep(180);
+                held.Dispose();
+
+                if (!cleanupTask.Wait(TimeSpan.FromSeconds(3)))
+                    throw new InvalidOperationException(
+                        "Publishing cleanup did not recover after a transient Windows file lock.");
+
+                cleanupTask.GetAwaiter().GetResult();
+
+                if (Directory.Exists(retryNested))
+                    throw new InvalidOperationException(
+                        "Publishing cleanup left the transiently locked stale directory behind.");
+            }
+
+            /* ==========================================================================
                PATCH: STANDALONE GET BOUNDARY REGRESSION
                DATE.TIME: 2026-09-20 17:46 +03:00
                Incoming remote changes must remain inside the logical-project scope.
@@ -263,7 +324,7 @@ internal static class StandaloneProjectPublishingRegression
             if (StandaloneProjectPublishing.IsPathInsideProjectScope(config, root, "unrelated/never-send.txt"))
                 throw new InvalidOperationException("Standalone Get allowed an unrelated parent-repository path.");
 
-            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get + branch isolation + read-only cache cleanup).");
+            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get + branch isolation + read-only cache cleanup + workspace serialization).");
         }
         finally
         {

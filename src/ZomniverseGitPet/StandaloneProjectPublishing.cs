@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -71,6 +72,8 @@ internal static class StandaloneProjectPublishing
 {
     private static readonly object StoreGate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> WorkspaceGates =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public static bool IsLogicalProject(AppConfig config, string repositoryRoot)
     {
@@ -420,6 +423,7 @@ internal static class StandaloneProjectPublishing
         }
 
         var workspace = GetWorkspacePath(project, link.Branch);
+        using var workspaceLease = await EnterWorkspaceAsync(workspace, token);
         try
         {
             Directory.CreateDirectory(workspace);
@@ -567,6 +571,7 @@ internal static class StandaloneProjectPublishing
             return new(false, false, [], "No standalone project remote is connected.");
 
         var workspace = GetWorkspacePath(project, link.Branch);
+        using var workspaceLease = await EnterWorkspaceAsync(workspace, token);
         var gitDirectory = Path.Combine(workspace, ".git");
         if (!Directory.Exists(gitDirectory))
         {
@@ -682,6 +687,7 @@ internal static class StandaloneProjectPublishing
             project.Id,
             Guid.NewGuid().ToString("N"));
 
+        using var workspaceLease = await EnterWorkspaceAsync(workspace, token);
         try
         {
             Directory.CreateDirectory(workspace);
@@ -1142,6 +1148,16 @@ internal static class StandaloneProjectPublishing
         entry.LastPublishedUtc = state.LastPublishedUtc;
     }
 
+    internal static async Task<IDisposable> EnterWorkspaceAsync(
+        string workspace,
+        CancellationToken token = default)
+    {
+        var key = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace));
+        var gate = WorkspaceGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(token);
+        return new WorkspaceLease(gate);
+    }
+
     internal static void CleanPublishingWorkspace(string workspace)
     {
         /*
@@ -1149,25 +1165,23 @@ internal static class StandaloneProjectPublishing
          * directory is intentionally preserved between Send/Get operations.
          *
          * Git for Windows can leave metadata inside that preserved .git tree
-         * with the ReadOnly bit set (for example objects/info/commit-graph-chain).
-         * It can also happen inside stale copied directories. Directory.Delete
-         * and later Git maintenance then fail with Access denied unless the bit
-         * is cleared recursively first.
-         *
-         * Clear ONLY ReadOnly. Preserve Hidden/System and never traverse
-         * reparse points so cleanup cannot escape the isolated workspace.
+         * with the ReadOnly bit set (for example objects/info/commit-graphs/
+         * commit-graph-chain). A background remote inspection can also briefly
+         * hold those files open. Workspace-level serialization prevents GitPet
+         * operations from racing one another; bounded retries cover short-lived
+         * Windows/AV handles that can outlive a process by a moment.
          */
         MakePublishingTreeWritable(workspace);
 
         foreach (var file in Directory.EnumerateFiles(workspace))
-            File.Delete(file);
+            DeleteFileWithRetry(file);
 
         foreach (var directory in Directory.EnumerateDirectories(workspace))
         {
             if (Path.GetFileName(directory).Equals(".git", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            Directory.Delete(directory, true);
+            DeleteDirectoryWithRetry(directory);
         }
     }
 
@@ -1179,15 +1193,19 @@ internal static class StandaloneProjectPublishing
         while (pending.Count > 0)
         {
             var directory = pending.Pop();
-            ClearReadOnlyAttribute(directory);
+            ClearReadOnlyAttributeWithRetry(directory);
 
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
             {
-                var attributes = File.GetAttributes(entry);
+                var attributes = GetAttributesWithRetry(entry);
                 var isDirectory = (attributes & FileAttributes.Directory) != 0;
                 var isReparsePoint = (attributes & FileAttributes.ReparsePoint) != 0;
 
-                ClearReadOnlyAttribute(entry, attributes);
+                if ((attributes & FileAttributes.ReadOnly) != 0)
+                {
+                    RetryPublishingIo(() =>
+                        File.SetAttributes(entry, attributes & ~FileAttributes.ReadOnly));
+                }
 
                 if (isDirectory && !isReparsePoint)
                     pending.Push(entry);
@@ -1195,17 +1213,60 @@ internal static class StandaloneProjectPublishing
         }
     }
 
-    private static void ClearReadOnlyAttribute(string path)
+    private static FileAttributes GetAttributesWithRetry(string path)
     {
-        ClearReadOnlyAttribute(path, File.GetAttributes(path));
+        FileAttributes attributes = default;
+        RetryPublishingIo(() => attributes = File.GetAttributes(path));
+        return attributes;
     }
 
-    private static void ClearReadOnlyAttribute(string path, FileAttributes attributes)
+    private static void ClearReadOnlyAttributeWithRetry(string path)
     {
-        if ((attributes & FileAttributes.ReadOnly) == 0)
-            return;
+        RetryPublishingIo(() =>
+        {
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.ReadOnly) != 0)
+                File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
+        });
+    }
 
-        File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
+    private static void DeleteFileWithRetry(string path) =>
+        RetryPublishingIo(() => File.Delete(path));
+
+    private static void DeleteDirectoryWithRetry(string path) =>
+        RetryPublishingIo(() => Directory.Delete(path, true));
+
+    private static void RetryPublishingIo(Action action)
+    {
+        const int maxAttempts = 7;
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                action();
+                return;
+            }
+            catch (Exception ex) when (
+                attempt < maxAttempts &&
+                (ex is IOException || ex is UnauthorizedAccessException))
+            {
+                Thread.Sleep(50 * attempt);
+            }
+        }
+    }
+
+    private sealed class WorkspaceLease : IDisposable
+    {
+        private SemaphoreSlim? _gate;
+
+        public WorkspaceLease(SemaphoreSlim gate) => _gate = gate;
+
+        public void Dispose()
+        {
+            var gate = Interlocked.Exchange(ref _gate, null);
+            gate?.Release();
+        }
     }
 
     private static string ResolveInside(string root, string relative)
