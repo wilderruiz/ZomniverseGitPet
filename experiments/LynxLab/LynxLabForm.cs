@@ -5,6 +5,7 @@ internal sealed class LynxLabForm : Form
     private readonly IReadOnlyList<ILynxRenderer> _renderers;
     private ILynxRenderer _renderer;
     private readonly LynxCanvas _canvas;
+    private readonly Direct2DTestControl _direct2DCanvas;
     private readonly LynxDesktopPreviewForm _desktopPreview;
     private readonly Label _viewportCaption;
     private readonly Label _rendererValue;
@@ -19,6 +20,8 @@ internal sealed class LynxLabForm : Form
     private readonly Label _d3d11Value;
     private readonly Label _featureLevelValue;
     private readonly Label _dxgiValue;
+    private readonly Label _direct2DTargetValue;
+    private readonly Label _direct2DFramesValue;
     private readonly CheckBox _desktopPreviewToggle;
     private readonly CheckBox _debugToggle;
     private readonly CheckBox _topMostToggle;
@@ -38,7 +41,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — V9 Traffic Flow";
+        Text = "Lynx Lab — Direct2D Target Phase";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -48,6 +51,11 @@ internal sealed class LynxLabForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
 
         _canvas = new LynxCanvas(_renderer)
+        {
+            Dock = DockStyle.Fill
+        };
+
+        _direct2DCanvas = new Direct2DTestControl
         {
             Dock = DockStyle.Fill
         };
@@ -75,6 +83,12 @@ internal sealed class LynxLabForm : Form
         _d3d11Value = ValueLabel("probing...");
         _featureLevelValue = ValueLabel("probing...");
         _dxgiValue = ValueLabel("probing...");
+        _direct2DTargetValue = ValueLabel("not initialized");
+        _direct2DFramesValue = ValueLabel("0");
+        _direct2DCanvas.BackendStatusChanged += (_, _) =>
+        {
+            _direct2DTargetValue.Text = _direct2DCanvas.BackendStatus;
+        };
         _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
         _debugToggle = LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
@@ -231,9 +245,102 @@ internal sealed class LynxLabForm : Form
         inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         inner.Controls.Add(_viewportCaption, 0, 0);
-        inner.Controls.Add(_canvas, 0, 1);
+        inner.Controls.Add(BuildBackendComparisonPanel(), 0, 1);
         shell.Controls.Add(inner);
         return shell;
+    }
+
+    private Control BuildBackendComparisonPanel()
+    {
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            BorderStyle = BorderStyle.None,
+            SplitterWidth = 6,
+            BackColor = Color.FromArgb(0x1B, 0x28, 0x34),
+            Margin = Padding.Empty
+        };
+
+        split.Panel1.Padding = Padding.Empty;
+        split.Panel2.Padding = Padding.Empty;
+        split.Panel1.Controls.Add(
+            BackendPanel(
+                "GDI+ / GUARDIAN V9",
+                _canvas,
+                Color.FromArgb(0x8C, 0x73, 0xE8)));
+
+        split.Panel2.Controls.Add(
+            BackendPanel(
+                "DIRECT2D / NATIVE HWND TARGET",
+                _direct2DCanvas,
+                Color.FromArgb(0x57, 0xD7, 0xA0)));
+
+        void ApplyInitialSplitter()
+        {
+            var available =
+                split.ClientSize.Width -
+                split.SplitterWidth;
+
+            if (available < 260)
+                return;
+
+            split.SplitterDistance =
+                Math.Clamp(
+                    available / 2,
+                    130,
+                    available - 130);
+        }
+
+        split.HandleCreated +=
+            (_, _) => BeginInvoke(ApplyInitialSplitter);
+
+        return split;
+    }
+
+    private static Control BackendPanel(
+        string title,
+        Control content,
+        Color accent)
+    {
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = Color.FromArgb(0x0B, 0x10, 0x16)
+        };
+
+        panel.ColumnStyles.Add(
+            new ColumnStyle(SizeType.Percent, 100));
+        panel.RowStyles.Add(
+            new RowStyle(SizeType.Absolute, 24));
+        panel.RowStyles.Add(
+            new RowStyle(SizeType.Percent, 100));
+
+        var label = new Label
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+            Padding = new Padding(7, 0, 0, 0),
+            BackColor = Color.FromArgb(0x0F, 0x16, 0x1E),
+            ForeColor = accent,
+            Font = new Font(
+                "Segoe UI",
+                7.5f,
+                FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        content.Dock = DockStyle.Fill;
+
+        panel.Controls.Add(label, 0, 0);
+        panel.Controls.Add(content, 0, 1);
+
+        return panel;
     }
 
     private Control BuildControlPanel()
@@ -331,6 +438,8 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(KeyValueRow("D3D11", _d3d11Value));
         stack.Controls.Add(KeyValueRow("Feature level", _featureLevelValue));
         stack.Controls.Add(KeyValueRow("DXGI", _dxgiValue));
+        stack.Controls.Add(KeyValueRow("D2D target", _direct2DTargetValue));
+        stack.Controls.Add(KeyValueRow("D2D frames", _direct2DFramesValue));
 
         var probeGraphics = LabButton("Probe graphics again");
         probeGraphics.Click += (_, _) => RefreshGraphicsDiagnostics();
@@ -371,7 +480,7 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(Spacer());
         stack.Controls.Add(SectionLabel("TELEMETRY"));
         stack.Controls.Add(KeyValueRow("Renderer", _rendererValue));
-        stack.Controls.Add(KeyValueRow("Canvas", "GDI+ V9 · DirectX probe enabled"));
+        stack.Controls.Add(KeyValueRow("Canvas", "A/B · GDI+ Guardian + Direct2D HWND"));
         stack.Controls.Add(KeyValueRow("Pet size", "160 × 160"));
         stack.Controls.Add(KeyValueRow("Desktop host", "240 × 246"));
         stack.Controls.Add(KeyValueRow("State", _stateValue));
@@ -385,7 +494,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "DX Foundation Phase: V9 remains the safe GDI+ renderer while Lynx Lab now probes native Direct2D, DirectComposition, DXGI and D3D11 hardware/WARP capability. The first Direct2D render target comes next after this machine passes the probe.",
+            Text = "Direct2D Target Phase: the left viewport remains the approved Guardian V9 on GDI+. The right viewport is a real native Direct2D HWND render target driven by the same state, activity, palette and animation clock. This validates the hardware path before Guardian geometry is ported layer-by-layer.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -508,6 +617,17 @@ internal sealed class LynxLabForm : Form
                     $"{_canvas.Palette.Name} ↔ {partner.Name} · {(int)Math.Round(mix * 100f)}%";
             }
         }
+
+        _direct2DCanvas.SetFrame(
+            now,
+            _canvas.Palette,
+            _canvas.State,
+            _activity);
+
+        _direct2DTargetValue.Text =
+            _direct2DCanvas.BackendStatus;
+        _direct2DFramesValue.Text =
+            _direct2DCanvas.FrameCount.ToString("N0");
 
         _canvas.Invalidate();
 
