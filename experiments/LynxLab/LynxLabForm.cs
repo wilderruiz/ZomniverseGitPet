@@ -41,7 +41,7 @@ internal sealed class LynxLabForm : Form
         ];
         _renderer = _renderers[^1];
 
-        Text = "Lynx Lab — Direct2D Guardian Migration 1";
+        Text = "Lynx Lab — Direct2D Guardian Migration 2";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(700, 500);
         Size = new Size(1100, 760);
@@ -272,7 +272,7 @@ internal sealed class LynxLabForm : Form
 
         split.Panel2.Controls.Add(
             BackendPanel(
-                "DIRECT2D / GUARDIAN CORE MIGRATION 1",
+                "DIRECT2D / GUARDIAN MIGRATION 2",
                 _direct2DCanvas,
                 Color.FromArgb(0x57, 0xD7, 0xA0)));
 
@@ -494,7 +494,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Direct2D Guardian Migration 1: the right viewport now uses native Direct2D path geometries built from the same V9 control points for tail, torso, haunches, forelegs, head and ears. Tail motion is live. Face, chest fur, armor and detailed activity effects remain intentionally on the GDI+ reference until the core silhouette is validated.",
+            Text = "Direct2D Guardian Migration 2: the right viewport now adds the V9 white muzzle and chest, eyes/pupils/brows, nose/mouth, state/activity head expressions, dark torso/collar armor, animated blue ↔ Forest Emerald armor color, and shield/check. The left GDI+ V9 remains the visual reference while activity-specific perimeter effects are migrated next.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
