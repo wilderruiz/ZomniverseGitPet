@@ -49,6 +49,12 @@ if (-not [string]::IsNullOrWhiteSpace(($sourceStatus -join "`n").Trim())) {
 $releaseBase = Join-Path $repositoryParent 'ZomniverseGitPet_Releases'
 $releaseRoot = Join-Path $releaseBase ("packages\{0}" -f $version)
 $stagingRoot = Join-Path $releaseBase ("staging\{0}" -f $version)
+
+# Keep every release build intermediate/output outside the source repository.
+# This avoids file-lock collisions with VS Code, DEV builds, test discovery,
+# or a running developer copy of GitPet.
+$artifactsRoot = Join-Path $releaseBase ("artifacts\{0}" -f $version)
+$testAssemblyName = 'ZomniverseGitPet.Tests.dll'
 $publishDirectory = Join-Path $stagingRoot 'publish'
 $installerDirectory = Join-Path $releaseRoot 'installer'
 $portableDirectory = Join-Path $releaseRoot 'portable'
@@ -136,12 +142,37 @@ Write-Host "Source: $sourceBranch @ $sourceCommit"
 Write-Host ''
 
 if (-not $SkipTests) {
-    Write-Host '1/4  Building solution...'
-    Invoke-CheckedCommand dotnet 'build' $solutionPath '-c' 'Release'
+    Write-Host '1/4  Building solution in isolated release artifacts...'
+
+    if (Test-Path -LiteralPath $artifactsRoot) {
+        Remove-Item -LiteralPath $artifactsRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $artifactsRoot | Out-Null
+
+    Invoke-CheckedCommand dotnet `
+        'build' $solutionPath `
+        '--configuration' 'Release' `
+        '--artifacts-path' $artifactsRoot
 
     Write-Host ''
-    Write-Host '2/4  Running regression suite...'
-    Invoke-CheckedCommand dotnet 'run' '--project' $testsPath '-c' 'Release'
+    Write-Host '2/4  Running regression suite from isolated artifacts...'
+
+    $testAssembly = Get-ChildItem `
+        -LiteralPath $artifactsRoot `
+        -Recurse `
+        -File `
+        -Filter $testAssemblyName |
+        Where-Object {
+            $_.FullName -match '[\\/]bin[\\/]'
+        } |
+        Select-Object -First 1
+
+    if ($null -eq $testAssembly) {
+        throw "Release build completed without the expected regression assembly: $testAssemblyName"
+    }
+
+    Write-Host "Regression assembly: $($testAssembly.FullName)"
+    Invoke-CheckedCommand dotnet $testAssembly.FullName
 }
 else {
     Write-Host '1/4  Build/tests skipped by request.'
@@ -171,6 +202,7 @@ Invoke-CheckedCommand dotnet `
     '--runtime' 'win-x64' `
     '--self-contained' 'true' `
     '-p:PublishSingleFile=true' `
+    '--artifacts-path' $artifactsRoot `
     '--output' $publishDirectory
 
 if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
@@ -245,6 +277,9 @@ $packageInfoPath = Join-Path $releaseRoot 'PACKAGE-INFO.txt'
 
 if (Test-Path -LiteralPath $stagingRoot) {
     Remove-Item -LiteralPath $stagingRoot -Recurse -Force
+}
+if (Test-Path -LiteralPath $artifactsRoot) {
+    Remove-Item -LiteralPath $artifactsRoot -Recurse -Force
 }
 
 Write-Host ''
