@@ -7,6 +7,7 @@ public sealed class PetForm : Form
 
     private readonly PetMessageBubble _bubble;
     private readonly PictureBox _fox;
+    private readonly PetDirect2DControl _guardianPet;
     private readonly NotifyIcon _tray;
     private readonly PetAssets _assets;
     private readonly ToolTip _toolTip;
@@ -16,6 +17,10 @@ public sealed class PetForm : Form
     private readonly System.Windows.Forms.Timer _incomingHoldTimer = new() { Interval = 6500 };
     private readonly System.Windows.Forms.Timer _operationAnimationTimer = new() { Interval = 260 };
     private readonly System.Windows.Forms.Timer _operationHoldTimer = new() { Interval = 2200 };
+    private readonly System.Windows.Forms.Timer _guardianFrameTimer = new() { Interval = 16 };
+    private readonly System.Diagnostics.Stopwatch _guardianClock =
+        System.Diagnostics.Stopwatch.StartNew();
+
     private Rectangle _normalFoxBounds = new(40, 0, 160, 160);
     private Point _dragOffset;
     private bool _dragging;
@@ -25,6 +30,10 @@ public sealed class PetForm : Form
     private SaveOperationVisualState _saveOperationState =
         new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
     private bool _operationAnimationFrame;
+    private bool _direct2DGuardianEnabled = true;
+    private LynxVisualState _baseVisualState = LynxVisualState.Idle;
+    private LynxVisualState _visualState = LynxVisualState.Idle;
+    private LynxActivityState _activityState = LynxActivityState.None;
 
     /* ==========================================================================
        PATCH: PERSISTENT PET GUIDANCE STATE
@@ -69,8 +78,20 @@ public sealed class PetForm : Form
             SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.Transparent,
             Bounds = _normalFoxBounds,
+            TabStop = false,
+            Visible = false
+        };
+
+        _guardianPet = new PetDirect2DControl
+        {
+            Bounds = _normalFoxBounds,
+            ShowDiagnosticFrame = false,
+            ProductionSizeMode = true,
+            CanvasBackgroundColor = TransparencyColor,
             TabStop = false
         };
+        _guardianPet.BackendStatusChanged +=
+            (_, _) => HandleGuardianBackendStatus();
 
         _bubble = new PetMessageBubble
         {
@@ -81,11 +102,18 @@ public sealed class PetForm : Form
         _minimize = CreatePetButton(PetChromeKind.Minimize, (_, _) => WindowState = FormWindowState.Minimized);
         _close = CreatePetButton(PetChromeKind.CloseRibbon, (_, _) => exit());
 
-        Controls.AddRange([_bubble, _fox, _minimize, _close]);
+        Controls.AddRange([
+            _bubble,
+            _fox,
+            _guardianPet,
+            _minimize,
+            _close
+        ]);
         LayoutPet();
 
         _toolTip = new ToolTip { AutomaticDelay = 350, AutoPopDelay = 7000, ReshowDelay = 100 };
         _toolTip.SetToolTip(_fox, "Double-click to open Guardian • Drag to move • Right-click for options");
+        _toolTip.SetToolTip(_guardianPet, "Direct2D Guardian • Double-click to open • Drag to move • Right-click for options");
         _toolTip.SetToolTip(_bubble, "Repository status • Scroll for longer messages • Double-click to open Guardian");
         _toolTip.SetToolTip(_minimize, "Minimize the pet to the Windows taskbar");
         _toolTip.SetToolTip(_close, "Exit ZomniverseGitPet");
@@ -97,9 +125,21 @@ public sealed class PetForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit ZomniverseGitPet", null, (_, _) => exit());
         ContextMenuStrip = menu;
-        foreach (Control control in new Control[] { _fox, _bubble }) control.ContextMenuStrip = menu;
+        foreach (Control control in new Control[]
+                 {
+                     _fox,
+                     _guardianPet,
+                     _bubble
+                 })
+            control.ContextMenuStrip = menu;
 
-        foreach (Control control in new Control[] { this, _fox, _bubble })
+        foreach (Control control in new Control[]
+                 {
+                     this,
+                     _fox,
+                     _guardianPet,
+                     _bubble
+                 })
         {
             control.DoubleClick += (_, _) => showGuardian();
             control.MouseDown += (_, e) =>
@@ -156,6 +196,8 @@ public sealed class PetForm : Form
         _incomingHoldTimer.Tick += (_, _) => EndIncomingUpdateAlert();
         _operationAnimationTimer.Tick += (_, _) => AdvanceOperationAnimation();
         _operationHoldTimer.Tick += (_, _) => EndOperationHold();
+        _guardianFrameTimer.Tick += (_, _) => AdvanceGuardianFrame();
+        _guardianFrameTimer.Start();
 
         FormClosing += (_, e) =>
         {
@@ -169,7 +211,10 @@ public sealed class PetForm : Form
 
     public void SetNeedsRepository()
     {
-        SetPetState(_assets.Idle, "● NO PROJECT\nOpen Projects to begin");
+        SetPetState(
+            _assets.Idle,
+            "● NO PROJECT\nOpen Projects to begin",
+            LynxVisualState.Idle);
     }
 
     public void SetStatus(RepositoryStatus status)
@@ -182,17 +227,26 @@ public sealed class PetForm : Form
 
         if (status.Files.Count == 0)
         {
-            SetPetState(_assets.Happy, $"● CLEAN\n{status.Branch}");
+            SetPetState(
+                _assets.Happy,
+                $"● CLEAN\n{status.Branch}",
+                LynxVisualState.Clean);
         }
         else
         {
-            SetPetState(_assets.ReviewReady, $"● CHANGES DETECTED\n{status.Files.Count} ready to review");
+            SetPetState(
+                _assets.ReviewReady,
+                $"● CHANGES DETECTED\n{status.Files.Count} ready to review",
+                LynxVisualState.Changes);
         }
     }
 
     public void SetError(string error)
     {
-        SetPetState(_assets.Warning, "● GIT NEEDS ATTENTION\nOpen Guardian");
+        SetPetState(
+            _assets.Warning,
+            "● GIT NEEDS ATTENTION\nOpen Guardian",
+            LynxVisualState.Attention);
         _tray.Text = error.Length > 60 ? error[..60] : error;
     }
 
@@ -221,6 +275,9 @@ public sealed class PetForm : Form
         if (!Visible) Show();
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         _fox.Image = _assets.Happy;
+        SetGuardianPresentation(
+            LynxVisualState.Clean,
+            LynxActivityState.Success);
         _bubble.SetMessage(message.Trim());
         LayoutPet();
     }
@@ -245,6 +302,9 @@ public sealed class PetForm : Form
             WindowState = FormWindowState.Normal;
 
         _fox.Image = _assets.Warning;
+        SetGuardianPresentation(
+            LynxVisualState.Attention,
+            LynxActivityState.Warning);
         _bubble.SetMessage(message.Trim());
         LayoutPet();
     }
@@ -268,6 +328,7 @@ public sealed class PetForm : Form
         else
         {
             _fox.Image = _stateImage;
+            RestoreGuardianBaseState();
             _bubble.SetMessage(_stateMessage);
             LayoutPet();
         }
@@ -284,6 +345,9 @@ public sealed class PetForm : Form
             _incomingHoldTimer.Dispose();
             _operationAnimationTimer.Dispose();
             _operationHoldTimer.Dispose();
+            _guardianFrameTimer.Stop();
+            _guardianFrameTimer.Dispose();
+            _guardianPet.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
             _toolTip.Dispose();
@@ -305,10 +369,14 @@ public sealed class PetForm : Form
         return button;
     }
 
-    private void SetPetState(Image image, string message)
+    private void SetPetState(
+        Image image,
+        string message,
+        LynxVisualState visualState)
     {
         _stateImage = image;
         _stateMessage = message;
+        _baseVisualState = visualState;
 
         /* ==========================================================================
            PATCH: PRESERVE ACTIVE PET GUIDANCE
@@ -323,6 +391,9 @@ public sealed class PetForm : Form
         if (_incomingAlertActive || _guidanceHoldActive || _saveOperationState.Phase != SaveOperationPhase.Idle) return;
 
         _fox.Image = image;
+        SetGuardianPresentation(
+            visualState,
+            LynxActivityState.None);
         _bubble.SetMessage(message);
         LayoutPet();
     }
@@ -342,6 +413,12 @@ public sealed class PetForm : Form
     {
         var phase = _saveOperationState.Phase;
         var image = _assets.ForOperation(_saveOperationState, _operationAnimationFrame, _stateImage);
+        var (visualState, activityState) =
+            MapOperationGuardianState(_saveOperationState);
+        SetGuardianPresentation(
+            visualState,
+            activityState);
+
         var heading = (state: phase, operation: _saveOperationState.Operation) switch
         {
             (SaveOperationPhase.Preparing, _) => "● THINKING",
@@ -374,6 +451,7 @@ public sealed class PetForm : Form
         _saveOperationState = new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
         if (_incomingAlertActive || _guidanceHoldActive) return;
         _fox.Image = _stateImage;
+        RestoreGuardianBaseState();
         _bubble.SetMessage(_stateMessage);
         LayoutPet();
     }
@@ -430,6 +508,9 @@ public sealed class PetForm : Form
 
         _fox.Image = _assets.ReviewReady;
         _fox.Bounds = _normalFoxBounds;
+        SetGuardianPresentation(
+            LynxVisualState.Get,
+            LynxActivityState.Incoming);
         _incomingAnimationTimer.Start();
     }
 
@@ -471,9 +552,153 @@ public sealed class PetForm : Form
         else
         {
             _fox.Image = _stateImage;
+            RestoreGuardianBaseState();
             _bubble.SetMessage(_stateMessage);
             LayoutPet();
         }
+    }
+
+    private void AdvanceGuardianFrame()
+    {
+        if (!_direct2DGuardianEnabled ||
+            !_guardianPet.Visible ||
+            IsDisposed)
+            return;
+
+        _guardianPet.SetFrame(
+            _guardianClock.Elapsed.TotalSeconds,
+            LynxPalette.Default,
+            _visualState,
+            _activityState);
+    }
+
+    private void SetGuardianPresentation(
+        LynxVisualState visualState,
+        LynxActivityState activityState)
+    {
+        _visualState = visualState;
+        _activityState = activityState;
+        AdvanceGuardianFrame();
+    }
+
+    private void RestoreGuardianBaseState() =>
+        SetGuardianPresentation(
+            _baseVisualState,
+            LynxActivityState.None);
+
+    private void HandleGuardianBackendStatus()
+    {
+        if (!_direct2DGuardianEnabled ||
+            _guardianPet.IsDisposed)
+            return;
+
+        var status = _guardianPet.BackendStatus;
+
+        if (!status.Contains(
+                "failed",
+                StringComparison.OrdinalIgnoreCase) &&
+            !status.Contains(
+                "exception",
+                StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _direct2DGuardianEnabled = false;
+        _guardianFrameTimer.Stop();
+        _guardianPet.Visible = false;
+        _fox.Visible = true;
+        _fox.Image = _stateImage;
+        _fox.Bounds = _normalFoxBounds;
+    }
+
+    private static (
+        LynxVisualState Visual,
+        LynxActivityState Activity)
+        MapOperationGuardianState(
+            SaveOperationVisualState state)
+    {
+        var visual = state.Operation switch
+        {
+            GuardianOperationKind.Get =>
+                LynxVisualState.Get,
+            GuardianOperationKind.Send =>
+                LynxVisualState.Send,
+            GuardianOperationKind.Reconcile =>
+                LynxVisualState.Conflict,
+            _ =>
+                LynxVisualState.Save
+        };
+
+        var activity = state.Phase switch
+        {
+            SaveOperationPhase.Idle =>
+                LynxActivityState.None,
+
+            SaveOperationPhase.Preparing =>
+                LynxActivityState.Thinking,
+
+            SaveOperationPhase.CheckingPathSupport =>
+                LynxActivityState.Preparing,
+
+            SaveOperationPhase.Staging
+                when state.Operation ==
+                     GuardianOperationKind.Get =>
+                LynxActivityState.Incoming,
+
+            SaveOperationPhase.Staging
+                when state.Operation ==
+                     GuardianOperationKind.Send =>
+                LynxActivityState.Outgoing,
+
+            SaveOperationPhase.Staging
+                when state.Operation ==
+                     GuardianOperationKind.Reconcile =>
+                LynxActivityState.Reconciling,
+
+            SaveOperationPhase.Staging =>
+                LynxActivityState.Sorting,
+
+            SaveOperationPhase.CreatingCheckpoint
+                when state.Operation ==
+                     GuardianOperationKind.Get =>
+                LynxActivityState.Incoming,
+
+            SaveOperationPhase.CreatingCheckpoint
+                when state.Operation ==
+                     GuardianOperationKind.Send =>
+                LynxActivityState.Outgoing,
+
+            SaveOperationPhase.CreatingCheckpoint
+                when state.Operation ==
+                     GuardianOperationKind.Reconcile =>
+                LynxActivityState.Reconciling,
+
+            SaveOperationPhase.CreatingCheckpoint =>
+                LynxActivityState.Packing,
+
+            SaveOperationPhase.Completed =>
+                LynxActivityState.Success,
+
+            SaveOperationPhase.Warning =>
+                LynxActivityState.Warning,
+
+            SaveOperationPhase.Failed =>
+                LynxActivityState.Failure,
+
+            SaveOperationPhase.Cancelled =>
+                LynxActivityState.Warning,
+
+            _ =>
+                LynxActivityState.None
+        };
+
+        if (state.Phase is
+            SaveOperationPhase.Warning or
+            SaveOperationPhase.Failed)
+        {
+            visual = LynxVisualState.Attention;
+        }
+
+        return (visual, activity);
     }
 
     private void LayoutPet()
@@ -482,6 +707,8 @@ public sealed class PetForm : Form
         _normalFoxBounds = new Rectangle(40, _bubble.Bottom - 3, 160, 160);
         if (!_incomingAlertActive || !_incomingAnimationTimer.Enabled)
             _fox.Bounds = _normalFoxBounds;
+
+        _guardianPet.Bounds = _normalFoxBounds;
 
         // Minimize lives in the speech-bubble chrome; close is a hot-pink ribbon on the fox's left ear.
         _minimize.Location = new Point(_bubble.Right - _minimize.Width - 10, _bubble.Top + 8);
