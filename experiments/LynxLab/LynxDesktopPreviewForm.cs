@@ -23,8 +23,11 @@ internal sealed class LynxDesktopPreviewForm : Form
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         ClientSize = new Size(240, 246);
-        BackColor = Color.Magenta;
-        TransparencyKey = Color.Magenta;
+        // A near-black chroma key avoids the magenta fringe that appeared
+        // around anti-aliased mascot edges on the transparent desktop host.
+        var transparencyKey = Color.FromArgb(1, 2, 3);
+        BackColor = transparencyKey;
+        TransparencyKey = transparencyKey;
         DoubleBuffered = true;
 
         MouseDown += BeginDrag;
