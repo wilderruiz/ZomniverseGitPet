@@ -238,7 +238,7 @@ internal sealed class Direct2DTestControl : Control
                 }
             }
 
-            SetStatus("DIRECT2D GUARDIAN CORE ✓");
+            SetStatus("DIRECT2D GUARDIAN MIGRATION 2 ✓");
             return true;
         }
         catch (Exception ex)
@@ -334,7 +334,7 @@ internal sealed class Direct2DTestControl : Control
             _frameCount++;
             if (_frameCount == 1 || _frameCount % 120 == 0)
                 SetStatus(
-                    $"DIRECT2D GUARDIAN CORE ✓ · {_frameCount} frames");
+                    $"DIRECT2D GUARDIAN MIGRATION 2 ✓ · {_frameCount} frames");
         }
         finally
         {
@@ -1002,6 +1002,374 @@ internal sealed class Direct2DTestControl : Control
             LynxActivityState.Resting => -6.0f + slow * 1.8f,
             _ => slow * 2.2f
         };
+    }
+
+    private static float BlinkAmount(double seconds)
+    {
+        var phase = seconds % 4.8d;
+
+        if (phase < 4.42d)
+            return 0f;
+
+        var t =
+            (float)((phase - 4.42d) / 0.38d);
+
+        return MathF.Sin(
+            Math.Clamp(t, 0f, 1f) *
+            MathF.PI);
+    }
+
+    private DirectExpression ResolveExpression(
+        LynxVisualState state,
+        LynxActivityState activity,
+        double seconds)
+    {
+        var expression = state switch
+        {
+            LynxVisualState.Clean =>
+                new DirectExpression(
+                    0.84f, 1.02f,
+                    -2.0f, -4.0f,
+                    2.6f,
+                    0.0f, 0.8f),
+
+            LynxVisualState.Changes =>
+                new DirectExpression(
+                    1.12f, 1.18f,
+                    -3.8f, -5.0f,
+                    -2.0f,
+                    -2.5f, -0.8f),
+
+            LynxVisualState.Attention =>
+                new DirectExpression(
+                    0.70f, 0.82f,
+                    1.4f, 4.2f,
+                    -3.4f,
+                    0.0f, -1.2f),
+
+            LynxVisualState.Save =>
+                new DirectExpression(
+                    0.80f, 1.04f,
+                    -2.2f, -3.7f,
+                    3.8f,
+                    2.2f, 0.8f),
+
+            LynxVisualState.Get =>
+                new DirectExpression(
+                    1.16f, 1.26f,
+                    -4.4f, -5.8f,
+                    0.7f,
+                    -4.0f, -1.0f),
+
+            LynxVisualState.Send =>
+                new DirectExpression(
+                    0.82f, 0.96f,
+                    -1.0f, -2.0f,
+                    3.2f,
+                    2.8f, -0.4f),
+
+            LynxVisualState.Conflict =>
+                new DirectExpression(
+                    0.58f, 0.70f,
+                    2.8f, 6.0f,
+                    -4.8f,
+                    0.0f, -1.8f),
+
+            _ =>
+                new DirectExpression(
+                    0.90f, 1.00f,
+                    0f, 0f,
+                    -1.4f,
+                    0f, 0f)
+        };
+
+        var breathe =
+            (float)Math.Sin(
+                seconds * Math.PI * 1.35d);
+
+        return activity switch
+        {
+            LynxActivityState.Thinking =>
+                expression with
+                {
+                    EyeOpenness = 0.78f,
+                    PupilScale = 0.88f,
+                    BrowLift = 0.8f,
+                    BrowInnerDrop = 2.6f,
+                    MouthCurve = -0.7f,
+                    HeadTiltDegrees =
+                        -2.2f + breathe * 0.7f,
+                    HeadOffsetY = -0.8f
+                },
+
+            LynxActivityState.Preparing =>
+                expression with
+                {
+                    EyeOpenness = 0.84f,
+                    PupilScale = 0.92f,
+                    BrowLift = 0.1f,
+                    BrowInnerDrop = 1.8f,
+                    MouthCurve = -0.4f,
+                    HeadTiltDegrees = 1.8f,
+                    HeadOffsetY = -0.8f
+                },
+
+            LynxActivityState.Sorting =>
+                expression with
+                {
+                    EyeOpenness = 0.94f,
+                    PupilScale = 1.02f,
+                    BrowLift = -1.0f,
+                    BrowInnerDrop = -1.4f,
+                    MouthCurve = 0.4f,
+                    HeadTiltDegrees = breathe * 1.1f,
+                    HeadOffsetY = -0.4f
+                },
+
+            LynxActivityState.Packing =>
+                expression with
+                {
+                    EyeOpenness = 0.80f,
+                    PupilScale = 0.94f,
+                    BrowLift = 0.2f,
+                    BrowInnerDrop = 1.2f,
+                    MouthCurve = 1.2f,
+                    HeadTiltDegrees = 0f,
+                    HeadOffsetY = -0.5f
+                },
+
+            LynxActivityState.Incoming =>
+                expression with
+                {
+                    EyeOpenness = 1.14f,
+                    PupilScale = 1.22f,
+                    BrowLift = -4.0f,
+                    BrowInnerDrop = -5.0f,
+                    MouthCurve = 0.2f,
+                    HeadTiltDegrees = -4.4f,
+                    HeadOffsetY = -1.3f
+                },
+
+            LynxActivityState.Outgoing =>
+                expression with
+                {
+                    EyeOpenness = 0.82f,
+                    PupilScale = 0.96f,
+                    BrowLift = -1.4f,
+                    BrowInnerDrop = -2.0f,
+                    MouthCurve = 2.8f,
+                    HeadTiltDegrees = 3.0f,
+                    HeadOffsetY = -0.3f
+                },
+
+            LynxActivityState.Reconciling =>
+                expression with
+                {
+                    EyeOpenness = 0.62f,
+                    PupilScale = 0.76f,
+                    BrowLift = 2.0f,
+                    BrowInnerDrop = 5.2f,
+                    MouthCurve = -3.6f,
+                    HeadTiltDegrees = 0f,
+                    HeadOffsetY = -1.4f
+                },
+
+            LynxActivityState.Success =>
+                expression with
+                {
+                    EyeOpenness = 0.76f,
+                    PupilScale = 1.02f,
+                    BrowLift = -2.8f,
+                    BrowInnerDrop = -4.4f,
+                    MouthCurve = 4.8f,
+                    HeadTiltDegrees = 2.4f,
+                    HeadOffsetY = 0.2f
+                },
+
+            LynxActivityState.Warning =>
+                expression with
+                {
+                    EyeOpenness = 0.88f,
+                    PupilScale = 0.94f,
+                    BrowLift = 0.8f,
+                    BrowInnerDrop = 2.8f,
+                    MouthCurve = -3.0f,
+                    HeadTiltDegrees = -2.0f,
+                    HeadOffsetY = 0.8f
+                },
+
+            LynxActivityState.Failure =>
+                expression with
+                {
+                    EyeOpenness = 0.56f,
+                    PupilScale = 0.72f,
+                    BrowLift = 3.0f,
+                    BrowInnerDrop = 6.2f,
+                    MouthCurve = -5.2f,
+                    HeadTiltDegrees = 0f,
+                    HeadOffsetY = 1.6f
+                },
+
+            LynxActivityState.Resting =>
+                expression with
+                {
+                    EyeOpenness = 0.22f,
+                    PupilScale = 0.80f,
+                    BrowLift = -2.0f,
+                    BrowInnerDrop = -4.0f,
+                    MouthCurve = 1.8f,
+                    HeadTiltDegrees = -5.0f,
+                    HeadOffsetY = 2.2f
+                },
+
+            _ => expression
+        };
+    }
+
+    private LynxPalette ResolveArmorPalette(
+        LynxPalette identity,
+        double seconds)
+    {
+        var blue =
+            LynxPalette.All.First(palette =>
+                string.Equals(
+                    palette.Name,
+                    "Midnight Blue",
+                    StringComparison.Ordinal));
+        var emerald =
+            LynxPalette.All.First(palette =>
+                string.Equals(
+                    palette.Name,
+                    "Forest Emerald",
+                    StringComparison.Ordinal));
+
+        var amount =
+            0.5f +
+            0.5f *
+            (float)Math.Sin(
+                seconds * Math.PI * 2d / 4.8d);
+
+        Color BlendArmor(
+            Color blueColor,
+            Color greenColor,
+            Color identityColor)
+        {
+            var mood =
+                Mix(
+                    blueColor,
+                    greenColor,
+                    amount);
+
+            return Mix(
+                mood,
+                identityColor,
+                0.18f);
+        }
+
+        return new LynxPalette(
+            "Armor Blue ↔ Forest Emerald",
+            BlendArmor(
+                blue.Fur,
+                emerald.Fur,
+                identity.Fur),
+            BlendArmor(
+                blue.Ear,
+                emerald.Ear,
+                identity.Ear),
+            BlendArmor(
+                blue.Edge,
+                emerald.Edge,
+                identity.Edge),
+            BlendArmor(
+                blue.Eye,
+                emerald.Eye,
+                identity.Eye),
+            BlendArmor(
+                blue.Accent,
+                emerald.Accent,
+                identity.Accent),
+            BlendArmor(
+                blue.Muzzle,
+                emerald.Muzzle,
+                identity.Muzzle),
+            BlendArmor(
+                blue.Detail,
+                emerald.Detail,
+                identity.Detail));
+    }
+
+    private static Color ResolveStateAccent(
+        LynxVisualState state,
+        LynxActivityState activity,
+        LynxPalette palette)
+    {
+        if (activity != LynxActivityState.None)
+        {
+            var activityColor = activity switch
+            {
+                LynxActivityState.Thinking or
+                LynxActivityState.Preparing =>
+                    Color.FromArgb(114, 200, 255),
+
+                LynxActivityState.Sorting or
+                LynxActivityState.Packing =>
+                    Color.FromArgb(170, 150, 255),
+
+                LynxActivityState.Incoming =>
+                    Color.FromArgb(120, 216, 223),
+
+                LynxActivityState.Outgoing =>
+                    Color.FromArgb(170, 150, 255),
+
+                LynxActivityState.Reconciling =>
+                    Color.FromArgb(240, 189, 97),
+
+                LynxActivityState.Success =>
+                    Color.FromArgb(87, 215, 160),
+
+                LynxActivityState.Warning =>
+                    Color.FromArgb(240, 189, 97),
+
+                LynxActivityState.Failure =>
+                    Color.FromArgb(242, 117, 134),
+
+                LynxActivityState.Resting =>
+                    Color.FromArgb(140, 115, 232),
+
+                _ => palette.Accent
+            };
+
+            return Mix(
+                activityColor,
+                palette.Accent,
+                0.34f);
+        }
+
+        var semantic = state switch
+        {
+            LynxVisualState.Clean =>
+                Color.FromArgb(117, 226, 189),
+            LynxVisualState.Changes =>
+                Color.FromArgb(239, 137, 158),
+            LynxVisualState.Attention =>
+                Color.FromArgb(255, 110, 127),
+            LynxVisualState.Save =>
+                Color.FromArgb(117, 226, 189),
+            LynxVisualState.Get =>
+                Color.FromArgb(114, 200, 255),
+            LynxVisualState.Send =>
+                Color.FromArgb(170, 150, 255),
+            LynxVisualState.Conflict =>
+                Color.FromArgb(228, 164, 108),
+            _ => palette.Accent
+        };
+
+        return state == LynxVisualState.Idle
+            ? semantic
+            : Mix(
+                semantic,
+                palette.Accent,
+                0.34f);
     }
 
     private CoreColors ResolveCoreColors()
@@ -1815,6 +2183,15 @@ internal sealed class Direct2DTestControl : Control
 
     private const int D2DERR_RECREATE_TARGET =
         unchecked((int)0x8899000C);
+
+    private readonly record struct DirectExpression(
+        float EyeOpenness,
+        float PupilScale,
+        float BrowLift,
+        float BrowInnerDrop,
+        float MouthCurve,
+        float HeadTiltDegrees,
+        float HeadOffsetY);
 
     private readonly record struct CoreColors(
         Color Tail,
