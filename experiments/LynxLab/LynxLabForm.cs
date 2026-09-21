@@ -13,6 +13,12 @@ internal sealed class LynxLabForm : Form
     private readonly Label _paletteValue;
     private readonly Label _motionValue;
     private readonly Label _expressionValue;
+    private readonly Label _dxSummaryValue;
+    private readonly Label _direct2DValue;
+    private readonly Label _directCompositionValue;
+    private readonly Label _d3d11Value;
+    private readonly Label _featureLevelValue;
+    private readonly Label _dxgiValue;
     private readonly CheckBox _desktopPreviewToggle;
     private readonly CheckBox _debugToggle;
     private readonly CheckBox _topMostToggle;
@@ -63,6 +69,12 @@ internal sealed class LynxLabForm : Form
         _paletteValue = ValueLabel(LynxPalette.Default.Name);
         _motionValue = ValueLabel("state loop");
         _expressionValue = ValueLabel("serious neutral");
+        _dxSummaryValue = ValueLabel("probing...");
+        _direct2DValue = ValueLabel("probing...");
+        _directCompositionValue = ValueLabel("probing...");
+        _d3d11Value = ValueLabel("probing...");
+        _featureLevelValue = ValueLabel("probing...");
+        _dxgiValue = ValueLabel("probing...");
         _desktopPreviewToggle = LabCheckBox("Desktop preview", true);
         _debugToggle = LabCheckBox("Debug geometry", false);
         _topMostToggle = LabCheckBox("Preview always on top", true);
@@ -77,6 +89,7 @@ internal sealed class LynxLabForm : Form
 
         Shown += (_, _) =>
         {
+            RefreshGraphicsDiagnostics();
             _desktopPreview.Show(this);
             _animationTimer.Start();
         };
@@ -311,6 +324,19 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(palette);
 
         stack.Controls.Add(Spacer());
+        stack.Controls.Add(SectionLabel("GRAPHICS DIAGNOSTICS"));
+        stack.Controls.Add(KeyValueRow("DirectX", _dxSummaryValue));
+        stack.Controls.Add(KeyValueRow("Direct2D", _direct2DValue));
+        stack.Controls.Add(KeyValueRow("DirectComposition", _directCompositionValue));
+        stack.Controls.Add(KeyValueRow("D3D11", _d3d11Value));
+        stack.Controls.Add(KeyValueRow("Feature level", _featureLevelValue));
+        stack.Controls.Add(KeyValueRow("DXGI", _dxgiValue));
+
+        var probeGraphics = LabButton("Probe graphics again");
+        probeGraphics.Click += (_, _) => RefreshGraphicsDiagnostics();
+        stack.Controls.Add(probeGraphics);
+
+        stack.Controls.Add(Spacer());
         stack.Controls.Add(SectionLabel("VIEW"));
 
         _desktopPreviewToggle.CheckedChanged += (_, _) =>
@@ -345,7 +371,7 @@ internal sealed class LynxLabForm : Form
         stack.Controls.Add(Spacer());
         stack.Controls.Add(SectionLabel("TELEMETRY"));
         stack.Controls.Add(KeyValueRow("Renderer", _rendererValue));
-        stack.Controls.Add(KeyValueRow("Canvas", "vector / GDI+"));
+        stack.Controls.Add(KeyValueRow("Canvas", "GDI+ V9 · DirectX probe enabled"));
         stack.Controls.Add(KeyValueRow("Pet size", "160 × 160"));
         stack.Controls.Add(KeyValueRow("Desktop host", "240 × 246"));
         stack.Controls.Add(KeyValueRow("State", _stateValue));
@@ -359,7 +385,7 @@ internal sealed class LynxLabForm : Form
             AutoSize = true,
             MaximumSize = new Size(420, 0),
             Margin = new Padding(0, 16, 0, 10),
-            Text = "Guardian V9 traffic flow: Incoming perimeter waves contract toward the mascot while independent arrows arrive at different speeds and fade at contact; Outgoing reverses the same traffic outward. V8 warning, failure, resting, tail and armor behaviors remain intact.",
+            Text = "DX Foundation Phase: V9 remains the safe GDI+ renderer while Lynx Lab now probes native Direct2D, DirectComposition, DXGI and D3D11 hardware/WARP capability. The first Direct2D render target comes next after this machine passes the probe.",
             ForeColor = Color.FromArgb(0x78, 0x88, 0x9A)
         };
         stack.Controls.Add(note);
@@ -385,6 +411,62 @@ internal sealed class LynxLabForm : Form
 
         shell.HandleCreated += (_, _) => BeginInvoke(ResizeInspectorRows);
         return shell;
+    }
+
+    private void RefreshGraphicsDiagnostics()
+    {
+        _dxSummaryValue.Text = "probing...";
+        _direct2DValue.Text = "probing...";
+        _directCompositionValue.Text = "probing...";
+        _d3d11Value.Text = "probing...";
+        _featureLevelValue.Text = "probing...";
+        _dxgiValue.Text = "probing...";
+
+        try
+        {
+            var result = DirectXDiagnosticsResult.Probe();
+
+            _dxSummaryValue.Text = result.Summary;
+            _direct2DValue.Text = result.Direct2DFactory
+                ? "AVAILABLE ✓ · factory created"
+                : result.Direct2DDll
+                    ? "DLL found · factory failed"
+                    : "UNAVAILABLE";
+
+            _directCompositionValue.Text =
+                result.DirectCompositionDll &&
+                result.DirectCompositionExport
+                    ? "AVAILABLE ✓"
+                    : result.DirectCompositionDll
+                        ? "DLL found · export unavailable"
+                        : "UNAVAILABLE";
+
+            _d3d11Value.Text = result.D3D11Hardware
+                ? "HARDWARE ✓"
+                : result.D3D11Warp
+                    ? "WARP / SOFTWARE ✓"
+                    : result.D3D11Dll
+                        ? "DLL found · device creation failed"
+                        : "UNAVAILABLE";
+
+            _featureLevelValue.Text = result.FeatureLevel;
+            _dxgiValue.Text = result.DxgiDll
+                ? "AVAILABLE ✓"
+                : "UNAVAILABLE";
+
+            if (!string.IsNullOrWhiteSpace(result.Error))
+                _dxSummaryValue.Text += " · " + result.Error;
+        }
+        catch (Exception ex)
+        {
+            LabCrashLog.Write("DirectX diagnostics", ex);
+            _dxSummaryValue.Text = "probe failed · GDI+ remains active";
+            _direct2DValue.Text = "probe failed";
+            _directCompositionValue.Text = "probe failed";
+            _d3d11Value.Text = "probe failed";
+            _featureLevelValue.Text = "n/a";
+            _dxgiValue.Text = "probe failed";
+        }
     }
 
     private void AdvanceAnimation()
