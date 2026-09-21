@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace ZomniverseGitPet;
 
@@ -690,6 +691,7 @@ public sealed class GuardianForm : Form
         _output.BorderStyle = BorderStyle.None;
         _output.Padding = new Padding(12);
         _output.Text = "Guardian ready. Click a changed file to open the side-by-side File Review.";
+        _output.HandleCreated += (_, _) => ApplyDarkScrollbarTheme(_output);
         _activityConsole = new GuardianActivityConsole(_output, _activityElapsed, _activityState);
 
         _toolTips.SetToolTip(_output,
@@ -699,6 +701,24 @@ public sealed class GuardianForm : Form
         panel.Controls.Add(_output);
         panel.Controls.Add(header);
         return panel;
+    }
+
+    [DllImport(
+        "uxtheme.dll",
+        CharSet = CharSet.Unicode)]
+    private static extern int SetWindowTheme(
+        IntPtr windowHandle,
+        string? subApplicationName,
+        string? subIdentifierList);
+
+    private static void ApplyDarkScrollbarTheme(Control control)
+    {
+        if (!OperatingSystem.IsWindows() || !control.IsHandleCreated) return;
+
+        _ = SetWindowTheme(
+            control.Handle,
+            "DarkMode_Explorer",
+            null);
     }
 
     private Control BuildOptionsPanel()
