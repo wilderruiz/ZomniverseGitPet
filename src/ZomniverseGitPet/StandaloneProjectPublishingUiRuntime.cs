@@ -215,9 +215,14 @@ internal static class StandaloneProjectPublishingUiRuntime
                                !operationRunning;
         branchButton.Cursor = branchButton.Enabled ? Cursors.Hand : Cursors.Default;
 
-        standaloneGet.Text = "Get ↓";
-        standaloneGet.Width = 92;
-        standaloneGet.Enabled = ShouldEnableGet(
+        var reconcile = ShouldOfferReconcile(
+            snapshot,
+            onlineMode,
+            linked,
+            operationRunning);
+        standaloneGet.Text = reconcile ? "Reconcile ↕" : "Get ↓";
+        standaloneGet.Width = reconcile ? 120 : 92;
+        standaloneGet.Enabled = reconcile || ShouldEnableGet(
             snapshot,
             onlineMode,
             linked,
@@ -238,6 +243,21 @@ internal static class StandaloneProjectPublishingUiRuntime
                                  !operationRunning;
         standaloneSend.Cursor = standaloneSend.Enabled ? Cursors.Hand : Cursors.Default;
     }
+
+    internal static bool ShouldOfferReconcile(
+        GuardianSyncSnapshot snapshot,
+        bool onlineMode,
+        bool linked,
+        bool operationRunning) =>
+        onlineMode &&
+        linked &&
+        snapshot.HasRepository &&
+        snapshot.OnlineReachable &&
+        snapshot.Unsaved == 0 &&
+        snapshot.Ahead > 0 &&
+        snapshot.Behind > 0 &&
+        !snapshot.ReconciliationPending &&
+        !operationRunning;
 
     internal static bool ShouldEnableGet(
         GuardianSyncSnapshot snapshot,
@@ -416,6 +436,20 @@ internal static class StandaloneProjectPublishingUiRuntime
                 "OK",
                 showCancel: false);
             saveFirst.ShowDialog(guardian);
+            return;
+        }
+
+        if (ShouldOfferReconcile(
+                snapshot,
+                onlineMode: true,
+                linked: true,
+                operationRunning: OperationInProgress(guardian)))
+        {
+            await GuardianReconciliation.BeginAsync(guardian);
+            try { await GuardianSyncState.RefreshAsync(true); } catch { }
+            try { await guardian.RefreshAsync(); } catch { }
+            try { await GuardianWorkboardRuntime.RefreshNowAsync(); } catch { }
+            UpdateButton(guardian);
             return;
         }
 

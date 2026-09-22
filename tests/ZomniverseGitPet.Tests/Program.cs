@@ -16,6 +16,25 @@ Check("standalone Get enables for incoming project changes", () =>
         incoming, onlineMode: true, linked: true, noLocalBaseline: false, operationRunning: false);
 });
 
+Check("standalone divergence offers Reconcile instead of leaving Get and Send disabled", () =>
+{
+    var diverged = new GuardianSyncSnapshot(true, "main", 0, 1, 1, true, true, true, false);
+    return StandaloneProjectPublishingUiRuntime.ShouldOfferReconcile(
+               diverged, onlineMode: true, linked: true, operationRunning: false) &&
+           !StandaloneProjectPublishingUiRuntime.ShouldEnableGet(
+               diverged, onlineMode: true, linked: true, noLocalBaseline: false, operationRunning: false);
+});
+
+Check("standalone Reconcile stays blocked with unsaved work or another active operation", () =>
+{
+    var unsaved = new GuardianSyncSnapshot(true, "main", 1, 1, 1, true, true, true, false);
+    var clean = new GuardianSyncSnapshot(true, "main", 0, 1, 1, true, true, true, false);
+    return !StandaloneProjectPublishingUiRuntime.ShouldOfferReconcile(
+               unsaved, onlineMode: true, linked: true, operationRunning: false) &&
+           !StandaloneProjectPublishingUiRuntime.ShouldOfferReconcile(
+               clean, onlineMode: true, linked: true, operationRunning: true);
+});
+
 Check("standalone Get enables to establish an existing remote baseline", () =>
 {
     var unbased = new GuardianSyncSnapshot(true, "main", 0, 0, 0, true, true, true, false);
