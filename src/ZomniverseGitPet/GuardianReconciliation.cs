@@ -407,12 +407,14 @@ internal static class GuardianReconciliation
             return;
         }
 
-        var answer = MessageBox.Show(owner,
+        using var saveConfirmation = new GuardianConfirmDialog(
+            "Save reconciliation",
+            "SAVE RECONCILIATION",
             "Save the reconciled local + online version on this PC?\r\n\r\n" +
             "This creates the reconciliation commit locally. Nothing will be sent online until you use Send ↑.",
-            "Save reconciliation",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
+            confirmText: "Save",
+            cancelText: "Not now");
+        var answer = saveConfirmation.ShowDialog(owner);
         if (answer != DialogResult.Yes)
         {
             SetState(owner, SaveOperationPhase.Cancelled);
@@ -428,13 +430,16 @@ internal static class GuardianReconciliation
         SetState(owner, SaveOperationPhase.CreatingCheckpoint, "Saving reconciliation locally...");
         var message = $"reconcile local and online: {DateTime.Now:yyyy-MM-dd HH:mm}";
         var result = await git.CreateCheckpointAsync(repositoryPath, message);
-        MessageBox.Show(owner,
+        using var saveResult = new GuardianConfirmDialog(
+            "Save reconciliation",
+            result.Success ? "RECONCILIATION SAVED ✓" : "SAVE NEEDS ATTENTION",
             result.Success
                 ? "Reconciliation saved locally ✓\r\n\r\nNothing was sent online."
                 : result.Message,
-            "Save reconciliation",
-            MessageBoxButtons.OK,
-            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            confirmText: "OK",
+            cancelText: "",
+            showCancel: false);
+        saveResult.ShowDialog(owner);
 
         if (result.Success) RestoreAutomaticSaving(owner);
         SetState(owner, result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
