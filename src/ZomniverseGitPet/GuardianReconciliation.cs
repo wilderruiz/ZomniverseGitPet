@@ -116,12 +116,22 @@ internal static class GuardianReconciliation
         {
             RestoreAutomaticSaving(owner);
             await GuardianSyncState.RefreshAsync(false);
-            MessageBox.Show(owner,
-                "GitPet could not prepare the reconciliation. Nothing was sent online.\r\n\r\n" + merge.Output,
-                "Reconciliation stopped",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            SetState(owner, SaveOperationPhase.Failed, "Git could not prepare the reconciliation.");
+            var blockedPaths = ExtractPermissionDeniedPaths(merge.Output);
+            if (blockedPaths.Count > 0)
+            {
+                await ShowBlockedFilesAsync(owner, repositoryPath, blockedPaths);
+                SetState(owner, SaveOperationPhase.Failed,
+                    $"Reconciliation blocked by {FriendlyGitState.Count(blockedPaths.Count, "file in use")}.");
+            }
+            else
+            {
+                MessageBox.Show(owner,
+                    "GitPet could not prepare the reconciliation. Nothing was sent online.\r\n\r\n" + merge.Output,
+                    "Reconciliation stopped",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                SetState(owner, SaveOperationPhase.Failed, "Git could not prepare the reconciliation.");
+            }
             return;
         }
 
@@ -581,6 +591,85 @@ internal static class GuardianReconciliation
     {
         if (owner is GuardianForm guardian)
             guardian.SetReconcileOperationState(phase, message);
+    }
+
+    internal static IReadOnlyList<string> ExtractPermissionDeniedPaths(string? output)
+    {
+        const string prefix = "error: unable to create file ";
+        const string suffix = ": Permission denied";
+        if (string.IsNullOrWhiteSpace(output)) return [];
+
+        return output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                           line.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            .Select(line => line[prefix.Length..^suffix.Length].Trim())
+            .Where(path => path.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static async Task ShowBlockedFilesAsync(
+        Form? owner,
+        string repositoryPath,
+        IReadOnlyList<string> blockedPaths)
+    {
+        var lockingProcesses = WindowsFileLockService.FindLockingProcesses(repositoryPath, blockedPaths);
+        if (lockingProcesses.Count == 0)
+            lockingProcesses = WindowsFileLockService.FindRepositoryBackgroundProcesses(repositoryPath);
+        var processText = lockingProcesses.Count == 0
+            ? "Windows did not identify the owning process. Close the dashboard, launcher, editor, or terminal manually."
+            : "GitPet identified these repository background processes:\r\n" +
+              string.Join("\r\n", lockingProcesses.Select(process =>
+                  $"• {process.Name} (PID {process.ProcessId})"));
+
+        using var blocked = new GuardianConfirmDialog(
+            "Reconciliation blocked by files in use",
+            lockingProcesses.Count == 0
+                ? "CLOSE THE APP USING THESE FILES"
+                : "CLOSE THE BLOCKING APPS?",
+            "Windows is preventing Git from recreating these files:\r\n\r\n" +
+            string.Join("\r\n", blockedPaths.Select(path => $"• {path}")) +
+            "\r\n\r\n" + processText +
+            "\r\n\r\nNothing was sent online and GitPet did not leave a merge in progress.",
+            confirmText: lockingProcesses.Count == 0 ? "OK" : "Close blocking apps",
+            cancelText: "Not now",
+            showCancel: lockingProcesses.Count > 0,
+            dialogSize: new Size(760, 520),
+            resizable: true,
+            scrollable: true,
+            confirmWidth: lockingProcesses.Count == 0 ? 120 : 190);
+
+        var answer = blocked.ShowDialog(owner);
+        if (answer != DialogResult.Yes || lockingProcesses.Count == 0) return;
+
+        var result = WindowsFileLockService.Terminate(lockingProcesses);
+        await Task.Delay(500);
+        await GuardianSyncState.RefreshAsync(true);
+        if (owner is GuardianForm guardian) await guardian.RefreshAsync();
+
+        var resultMessage = result.Closed.Count == 0
+            ? "GitPet could not close any blocking process."
+            : "Closed:\r\n" + string.Join("\r\n", result.Closed.Select(process =>
+                $"• {process.Name} (PID {process.ProcessId})"));
+        if (result.Failed.Count > 0)
+        {
+            resultMessage += "\r\n\r\nCould not close:\r\n" +
+                string.Join("\r\n", result.Failed.Select(failure =>
+                    $"• {failure.Process.Name} (PID {failure.Process.ProcessId}): {failure.Error}"));
+        }
+
+        resultMessage += "\r\n\r\nPress Refresh, then try Reconcile again. GitPet did not retry automatically.";
+        using var resultDialog = new GuardianConfirmDialog(
+            "Blocking apps",
+            result.Failed.Count == 0 ? "BLOCKING APPS CLOSED" : "REVIEW CLOSURE RESULTS",
+            resultMessage,
+            confirmText: "OK",
+            cancelText: "",
+            showCancel: false,
+            dialogSize: new Size(720, 460),
+            scrollable: true);
+        resultDialog.ShowDialog(owner);
     }
 
     private static async Task<bool> EnsureGitIdentityAsync(Form? owner, string repositoryPath)

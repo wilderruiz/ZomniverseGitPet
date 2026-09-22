@@ -129,6 +129,34 @@ Check("suspicious path detection", () =>
     return hits.Count == 1 && hits[0] == ".env";
 });
 
+Check("reconciliation identifies Windows file-in-use failures", () =>
+{
+    var output = string.Join('\n',
+        "error: unable to create file START_DASHBOARD.bat: Permission denied",
+        "error: unable to create file START_DASHBOARD.vbs: Permission denied",
+        "error: unable to create file dashboard_launcher.ps1: Permission denied",
+        "Merge with strategy ort failed.");
+    var paths = GuardianReconciliation.ExtractPermissionDeniedPaths(output);
+    return paths.SequenceEqual([
+        "START_DASHBOARD.bat",
+        "START_DASHBOARD.vbs",
+        "dashboard_launcher.ps1"]);
+});
+
+Check("reconciliation ignores unrelated merge failures", () =>
+{
+    return GuardianReconciliation.ExtractPermissionDeniedPaths(
+        "merge: origin/main - not something we can merge").Count == 0;
+});
+
+Check("background process discovery parses safe process identities", () =>
+{
+    var processes = WindowsFileLockService.ParseProcessList("37628\tnode.exe\r\ninvalid\r\n54520\tpowershell.exe\r\n");
+    return processes.Count == 2 &&
+           processes.Any(process => process.ProcessId == 37628 && process.Name == "node") &&
+           processes.Any(process => process.ProcessId == 54520 && process.Name == "powershell");
+});
+
 Check("embedded pet asset pack", () =>
 {
     var resources = typeof(GitService).Assembly.GetManifestResourceNames();
@@ -680,6 +708,7 @@ await CheckAsync("Git-native preflight reports all ignore sources before staging
 await SavePreflightBatchRegression.RunAsync();
 await FileReviewRegression.RunAsync();
 await LongPathRegression.RunAsync();
+await WindowsFileLockRegression.RunAsync();
 
 if (failures.Count > 0)
 {
