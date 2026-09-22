@@ -129,7 +129,7 @@ Check("suspicious path detection", () =>
     return hits.Count == 1 && hits[0] == ".env";
 });
 
-Check("reconciliation identifies Windows file-in-use failures", () =>
+Check("reconciliation extracts Windows path-creation failures", () =>
 {
     var output = string.Join('\n',
         "error: unable to create file START_DASHBOARD.bat: Permission denied",
@@ -141,6 +141,38 @@ Check("reconciliation identifies Windows file-in-use failures", () =>
         "START_DASHBOARD.bat",
         "START_DASHBOARD.vbs",
         "dashboard_launcher.ps1"]);
+});
+
+Check("reconciliation distinguishes confirmed locks from ownerless Windows path blocks", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "ZomniverseGitPet.PathBlock", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        var ownerless = GuardianReconciliation.ClassifyPermissionDeniedPaths(
+            root,
+            ["missing.txt"],
+            []);
+        var confirmed = GuardianReconciliation.ClassifyPermissionDeniedPaths(
+            root,
+            ["missing.txt"],
+            [new LockingProcessInfo(1234, "holder")]);
+
+        var existingPath = Path.Combine(root, "existing.txt");
+        File.WriteAllText(existingPath, "test");
+        var generic = GuardianReconciliation.ClassifyPermissionDeniedPaths(
+            root,
+            ["existing.txt"],
+            []);
+
+        return ownerless == ReconciliationPathBlockKind.OwnerlessMissingPath &&
+               confirmed == ReconciliationPathBlockKind.ConfirmedProcessLock &&
+               generic == ReconciliationPathBlockKind.AccessDenied;
+    }
+    finally
+    {
+        try { Directory.Delete(root, true); } catch { }
+    }
 });
 
 Check("reconciliation ignores unrelated merge failures", () =>

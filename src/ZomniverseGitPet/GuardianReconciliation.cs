@@ -1,5 +1,12 @@
 namespace ZomniverseGitPet;
 
+internal enum ReconciliationPathBlockKind
+{
+    ConfirmedProcessLock,
+    OwnerlessMissingPath,
+    AccessDenied
+}
+
 internal static class GuardianReconciliation
 {
     private static bool _restoreAutomaticSaving;
@@ -121,7 +128,7 @@ internal static class GuardianReconciliation
             {
                 await ShowBlockedFilesAsync(owner, repositoryPath, blockedPaths);
                 SetState(owner, SaveOperationPhase.Failed,
-                    $"Reconciliation blocked by {FriendlyGitState.Count(blockedPaths.Count, "file in use")}.");
+                    $"Reconciliation stopped because Windows denied access to {FriendlyGitState.Count(blockedPaths.Count, "file path")}.");
             }
             else
             {
@@ -609,46 +616,110 @@ internal static class GuardianReconciliation
             .ToArray();
     }
 
+    internal static ReconciliationPathBlockKind ClassifyPermissionDeniedPaths(
+        string repositoryPath,
+        IReadOnlyList<string> blockedPaths,
+        IReadOnlyList<LockingProcessInfo> lockingProcesses)
+    {
+        if (lockingProcesses.Count > 0)
+            return ReconciliationPathBlockKind.ConfirmedProcessLock;
+        if (blockedPaths.Count == 0)
+            return ReconciliationPathBlockKind.AccessDenied;
+
+        string repositoryRoot;
+        try
+        {
+            repositoryRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath)) +
+                             Path.DirectorySeparatorChar;
+        }
+        catch
+        {
+            return ReconciliationPathBlockKind.AccessDenied;
+        }
+
+        foreach (var relativePath in blockedPaths)
+        {
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(Path.Combine(
+                    repositoryPath,
+                    relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            }
+            catch
+            {
+                return ReconciliationPathBlockKind.AccessDenied;
+            }
+
+            if (!fullPath.StartsWith(repositoryRoot, StringComparison.OrdinalIgnoreCase) ||
+                File.Exists(fullPath) ||
+                Directory.Exists(fullPath))
+            {
+                return ReconciliationPathBlockKind.AccessDenied;
+            }
+        }
+
+        return ReconciliationPathBlockKind.OwnerlessMissingPath;
+    }
+
     private static async Task ShowBlockedFilesAsync(
         Form? owner,
         string repositoryPath,
         IReadOnlyList<string> blockedPaths)
     {
+        // Restart Manager is the authoritative branch for a confirmed process lock.
+        // A process merely mentioning the repository in its command line is not proof
+        // that it owns the affected paths, so do not offer to terminate such processes.
         var lockingProcesses = WindowsFileLockService.FindLockingProcesses(repositoryPath, blockedPaths);
-        if (lockingProcesses.Count == 0)
-            lockingProcesses = WindowsFileLockService.FindRepositoryBackgroundProcesses(repositoryPath);
-        var repositoryRoot = Path.GetPathRoot(Path.GetFullPath(repositoryPath));
-        var drive = string.IsNullOrWhiteSpace(repositoryRoot)
-            ? "the repository drive"
-            : repositoryRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var processText = lockingProcesses.Count == 0
-            ? "GitPet found no application or background process to close. Windows is retaining these file names " +
-              "even though the files are absent.\r\n\r\n" +
-              "Restart Windows, then press Refresh and try Reconcile again. If the names remain blocked after " +
-              $"a restart, open PowerShell as Administrator and run: chkdsk {drive} /scan"
-            : "GitPet identified these repository background processes:\r\n" +
-              string.Join("\r\n", lockingProcesses.Select(process =>
-                  $"• {process.Name} (PID {process.ProcessId})"));
+        var blockKind = ClassifyPermissionDeniedPaths(repositoryPath, blockedPaths, lockingProcesses);
+        var confirmedLock = blockKind == ReconciliationPathBlockKind.ConfirmedProcessLock;
+
+        var explanation = blockKind switch
+        {
+            ReconciliationPathBlockKind.ConfirmedProcessLock =>
+                "GitPet confirmed these processes are holding one or more affected file paths:\r\n" +
+                string.Join("\r\n", lockingProcesses.Select(process =>
+                    $"• {process.Name} (PID {process.ProcessId})")) +
+                "\r\n\r\nGitPet can close only the processes listed above, and only with your permission.",
+
+            ReconciliationPathBlockKind.OwnerlessMissingPath =>
+                "Sorry — Windows is still refusing these file paths even though the files are no longer present, " +
+                "and GitPet could not identify an application holding them.\r\n\r\n" +
+                "This can happen when Windows keeps a recently deleted path unavailable until the PC restarts.\r\n\r\n" +
+                "Save your work in other applications and restart Windows. After restarting, reopen GitPet, " +
+                "press Refresh, then try Reconcile again.",
+
+            _ =>
+                "Windows denied access to these file paths, but GitPet could not identify a process holding them.\r\n\r\n" +
+                "Close applications or security tools that may be using the repository, then press Refresh and try " +
+                "Reconcile again. If the affected files are absent and the same paths remain blocked, save your work " +
+                "and restart Windows."
+        };
+
+        var heading = blockKind switch
+        {
+            ReconciliationPathBlockKind.ConfirmedProcessLock => "CLOSE THE BLOCKING APPS?",
+            ReconciliationPathBlockKind.OwnerlessMissingPath => "WINDOWS IS STILL HOLDING THESE FILE PATHS",
+            _ => "WINDOWS DENIED ACCESS TO THESE FILE PATHS"
+        };
 
         using var blocked = new GuardianConfirmDialog(
-            "Reconciliation blocked by files in use",
-            lockingProcesses.Count == 0
-                ? "WINDOWS IS RETAINING THESE FILE NAMES"
-                : "CLOSE THE BLOCKING APPS?",
-            "Windows is preventing Git from recreating these files:\r\n\r\n" +
+            confirmedLock ? "Reconciliation blocked by files in use" : "Reconciliation blocked by Windows",
+            heading,
+            "GitPet could not restore these files:\r\n\r\n" +
             string.Join("\r\n", blockedPaths.Select(path => $"• {path}")) +
-            "\r\n\r\n" + processText +
-            "\r\n\r\nNothing was sent online and GitPet did not leave a merge in progress.",
-            confirmText: lockingProcesses.Count == 0 ? "OK" : "Close blocking apps",
+            "\r\n\r\n" + explanation +
+            "\r\n\r\nNothing was sent online and GitPet did not leave a reconciliation in progress.",
+            confirmText: confirmedLock ? "Close blocking apps" : "OK",
             cancelText: "Not now",
-            showCancel: lockingProcesses.Count > 0,
-            dialogSize: new Size(760, 520),
+            showCancel: confirmedLock,
+            dialogSize: new Size(780, 560),
             resizable: true,
             scrollable: true,
-            confirmWidth: lockingProcesses.Count == 0 ? 120 : 190);
+            confirmWidth: confirmedLock ? 190 : 120);
 
         var answer = blocked.ShowDialog(owner);
-        if (answer != DialogResult.Yes || lockingProcesses.Count == 0) return;
+        if (answer != DialogResult.Yes || !confirmedLock) return;
 
         var result = WindowsFileLockService.Terminate(lockingProcesses);
         await Task.Delay(500);
@@ -656,7 +727,7 @@ internal static class GuardianReconciliation
         if (owner is GuardianForm guardian) await guardian.RefreshAsync();
 
         var resultMessage = result.Closed.Count == 0
-            ? "GitPet could not close any blocking process."
+            ? "GitPet could not close any confirmed blocking process."
             : "Closed:\r\n" + string.Join("\r\n", result.Closed.Select(process =>
                 $"• {process.Name} (PID {process.ProcessId})"));
         if (result.Failed.Count > 0)
