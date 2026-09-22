@@ -617,8 +617,15 @@ internal static class GuardianReconciliation
         var lockingProcesses = WindowsFileLockService.FindLockingProcesses(repositoryPath, blockedPaths);
         if (lockingProcesses.Count == 0)
             lockingProcesses = WindowsFileLockService.FindRepositoryBackgroundProcesses(repositoryPath);
+        var repositoryRoot = Path.GetPathRoot(Path.GetFullPath(repositoryPath));
+        var drive = string.IsNullOrWhiteSpace(repositoryRoot)
+            ? "the repository drive"
+            : repositoryRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var processText = lockingProcesses.Count == 0
-            ? "Windows did not identify the owning process. Close the dashboard, launcher, editor, or terminal manually."
+            ? "GitPet found no application or background process to close. Windows is retaining these file names " +
+              "even though the files are absent.\r\n\r\n" +
+              "Restart Windows, then press Refresh and try Reconcile again. If the names remain blocked after " +
+              $"a restart, open PowerShell as Administrator and run: chkdsk {drive} /scan"
             : "GitPet identified these repository background processes:\r\n" +
               string.Join("\r\n", lockingProcesses.Select(process =>
                   $"• {process.Name} (PID {process.ProcessId})"));
@@ -626,7 +633,7 @@ internal static class GuardianReconciliation
         using var blocked = new GuardianConfirmDialog(
             "Reconciliation blocked by files in use",
             lockingProcesses.Count == 0
-                ? "CLOSE THE APP USING THESE FILES"
+                ? "WINDOWS IS RETAINING THESE FILE NAMES"
                 : "CLOSE THE BLOCKING APPS?",
             "Windows is preventing Git from recreating these files:\r\n\r\n" +
             string.Join("\r\n", blockedPaths.Select(path => $"• {path}")) +
