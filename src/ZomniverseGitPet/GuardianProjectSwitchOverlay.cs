@@ -143,11 +143,24 @@ internal static class GuardianProjectSwitchOverlayHost
                 {
                     if (!pair.Key.IsDisposed) pair.Key.Enabled = pair.Value;
                 }
-
-                _guardian.RefreshSyncActionButtons();
             }
 
             _overlay.Dispose();
+
+            if (!_guardian.IsDisposed && _guardian.IsHandleCreated)
+            {
+                try
+                {
+                    _guardian.BeginInvoke((Action)(() =>
+                    {
+                        if (!_guardian.IsDisposed)
+                            _guardian.RefreshSyncActionButtons();
+                    }));
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            }
         }
     }
 

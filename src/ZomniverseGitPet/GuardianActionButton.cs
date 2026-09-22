@@ -134,6 +134,8 @@ internal sealed class GuardianActionButton : Button
             {
                 // The periodic workboard refresh will retry; keep the main Refresh action responsive.
             }
+            if (owner is GuardianForm guardian)
+                guardian.RefreshSyncActionButtons();
             base.OnClick(e);
             return;
         }
