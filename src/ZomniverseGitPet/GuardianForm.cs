@@ -2163,6 +2163,12 @@ public sealed class GuardianForm : Form
             SetActivityState("● SWITCHING", GuardianTheme.Changes);
     }
 
+    internal void RefreshSyncActionButtons()
+    {
+        foreach (var button in _operationButtons.OfType<GuardianActionButton>())
+            button.RefreshSyncPresentation();
+    }
+
     private void HandleSaveProgress(GuardianActivityEvent activity)
     {
         var phase = MapActivityToSavePhase(activity.Kind);

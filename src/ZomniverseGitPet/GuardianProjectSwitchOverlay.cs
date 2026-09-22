@@ -143,6 +143,8 @@ internal static class GuardianProjectSwitchOverlayHost
                 {
                     if (!pair.Key.IsDisposed) pair.Key.Enabled = pair.Value;
                 }
+
+                _guardian.RefreshSyncActionButtons();
             }
 
             _overlay.Dispose();

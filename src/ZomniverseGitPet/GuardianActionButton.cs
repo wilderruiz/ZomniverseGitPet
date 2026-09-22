@@ -74,6 +74,11 @@ internal sealed class GuardianActionButton : Button
         }
     }
 
+    internal void RefreshSyncPresentation()
+    {
+        ApplySyncState();
+    }
+
     public GuardianActionButton()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint |
