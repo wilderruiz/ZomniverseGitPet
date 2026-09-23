@@ -169,8 +169,8 @@ public sealed class GuardianForm : Form
         _operationButtons = [projects, refresh, diff, tests, checkpoint, pull, push, recent, health];
 
         _toolTips.SetToolTip(projects,
-            "Projects\n\nSwitch between recent projects, open another folder, prepare a normal folder for Git,\n" +
-            "or review what Git should ignore. GitPet remembers up to 20 recent projects.");
+            "Projects\n\nSwitch between recent projects, create or clone a GitHub repository, open another folder,\n" +
+            "prepare a normal folder for Git, or review what Git should ignore. GitPet remembers up to 20 recent projects.");
         _toolTips.SetToolTip(refresh,
             "Refresh\n\nRe-read the current branch and working-tree status.\n" +
             "Background monitoring also refreshes quietly without taking over the mouse cursor.");
