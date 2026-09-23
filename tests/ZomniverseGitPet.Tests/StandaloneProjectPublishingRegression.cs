@@ -346,7 +346,41 @@ internal static class StandaloneProjectPublishingRegression
             if (StandaloneProjectPublishing.IsPathInsideProjectScope(config, root, "unrelated/never-send.txt"))
                 throw new InvalidOperationException("Standalone Get allowed an unrelated parent-repository path.");
 
-            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get + branch isolation + read-only cache cleanup + workspace serialization).");
+            /* ==========================================================================
+               PATCH: RETIRED STANDALONE FILE REGRESSION
+               DATE.TIME: 2026-09-23
+               Previously-published files intentionally removed from the current project
+               scope must stop reappearing in reconciliation. New out-of-scope files
+               must still remain visible so the boundary guard can block them.
+               ========================================================================== */
+            var retiredChanges = StandaloneProjectPublishing.ParseRemoteChanges(
+                "M\tretired/video.mp4\n" +
+                "D\tretired/old.bin\n" +
+                "A\tunrelated/new-remote.txt\n" +
+                "R100\tretired/old-name.bin\tretired/new-name.bin\n");
+            var filteredRetired = StandaloneProjectPublishing.FilterRetiredBaselineChanges(
+                config,
+                root,
+                retiredChanges,
+                new[] { "retired/video.mp4", "retired/old.bin", "retired/old-name.bin" });
+
+            if (filteredRetired.Any(change =>
+                    change.Path.Equals("retired/video.mp4", StringComparison.OrdinalIgnoreCase) ||
+                    change.Path.Equals("retired/old.bin", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException(
+                    "Retired standalone modify/delete paths still appeared as incoming reconciliation changes.");
+
+            if (!filteredRetired.Any(change =>
+                    change.Path.Equals("unrelated/new-remote.txt", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException(
+                    "A new out-of-scope standalone path was incorrectly hidden from the boundary guard.");
+
+            if (!filteredRetired.Any(change =>
+                    change.Path.Equals("retired/new-name.bin", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException(
+                    "An out-of-scope rename was incorrectly treated as harmless retired residue.");
+
+            Console.WriteLine("Standalone project publishing regression passed (scope boundary + content fingerprint + scoped Get + branch isolation + read-only cache cleanup + workspace serialization + retired-file filtering).");
         }
         finally
         {
