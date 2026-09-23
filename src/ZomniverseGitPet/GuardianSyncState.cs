@@ -271,7 +271,7 @@ internal static class GuardianSyncState
        DATE.TIME: 2026-09-11 18:15 +03:00
        Separate GitHub identity from the repository's online home.
        ========================================================================== */
-    public static async Task ConnectOriginAsync(Form? owner, bool startOnCreate = false)
+    public static async Task ConnectOriginAsync(IWin32Window? owner, bool startOnCreate = false)
     {
         var config = _config;
         var git = _git;
