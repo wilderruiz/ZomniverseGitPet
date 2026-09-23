@@ -266,7 +266,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         if (recents.Length > 0)
         {
             menu.Items.Add(new ToolStripSeparator());
-            var manage = new ToolStripMenuItem("Manage recent projects");
+            var manage = new ToolStripMenuItem("Manage projects");
             foreach (var recent in recents)
             {
                 var projectId = recent.Id;
@@ -278,6 +278,13 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 };
                 rename.Click += async (_, _) => await RenameProjectAsync(projectId);
                 projectMenu.DropDownItems.Add(rename);
+
+                var reassign = new ToolStripMenuItem("Reassign folder…")
+                {
+                    ToolTipText = "Point this GitPet project at a different existing folder. GitPet does not move, rename, copy, delete, commit, pull, or push files."
+                };
+                reassign.Click += async (_, _) => await ReassignProjectFolderAsync(projectId);
+                projectMenu.DropDownItems.Add(reassign);
 
                 var active = string.Equals(recent.Id, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase);
                 var remove = new ToolStripMenuItem(active ? "Forget current project…" : "Forget project…")
@@ -901,6 +908,164 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             MessageBox.Show(DialogOwner, "The .gitignore file could not be updated.\r\n\r\n" + ex.Message,
                 "Repository hygiene", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    private async Task ReassignProjectFolderAsync(string projectId)
+    {
+        if (ProjectSwitchRuntime.IsSwitching) return;
+
+        if (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian))
+        {
+            using var busy = new GuardianConfirmDialog(
+                "Reassign project folder",
+                "FINISH THE CURRENT OPERATION FIRST",
+                "GitPet is already working on another Guardian operation. Finish or cancel it before changing a project's folder assignment.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            busy.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var project = _config.FindProject(projectId);
+        if (project is null) return;
+
+        using var folder = new FolderBrowserDialog
+        {
+            Description = $"Choose the existing folder that should belong to '{project.DisplayName}'. GitPet will only update its registration; it will not move files.",
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = false,
+            InitialDirectory = Directory.Exists(project.Path)
+                ? project.Path
+                : Directory.Exists(project.RepositoryRoot)
+                    ? project.RepositoryRoot
+                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+        };
+        if (folder.ShowDialog(DialogOwner) != DialogResult.OK) return;
+
+        var inspection = await _projectInspector.InspectAsync(folder.SelectedPath, _lifetimeToken);
+        if (inspection.Suitability is not ProjectSuitability.Ready and not ProjectSuitability.NestedRepository ||
+            string.IsNullOrWhiteSpace(inspection.RepositoryRoot))
+        {
+            using var invalid = new GuardianConfirmDialog(
+                "Reassign project folder",
+                "CHOOSE AN EXISTING GIT FOLDER",
+                inspection.Message + "\r\n\r\n" +
+                "Reassign folder changes only GitPet's project registration. It does not initialize Git or move files. " +
+                "Use Prepare / reconfigure folder if the destination still needs Git setup.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false,
+                dialogSize: new Size(760, 500),
+                scrollable: true);
+            invalid.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var newProjectPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(inspection.SelectedPath));
+        var newRepositoryRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(inspection.RepositoryRoot));
+        if (PathEquals(project.Path, newProjectPath) &&
+            PathEquals(project.RepositoryRoot, newRepositoryRoot))
+        {
+            using var unchanged = new GuardianConfirmDialog(
+                "Reassign project folder",
+                "PROJECT FOLDER UNCHANGED",
+                $"'{project.DisplayName}' is already assigned to:\r\n{newProjectPath}",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            unchanged.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var duplicate = _config.FindProjectByPath(newProjectPath);
+        if (duplicate is not null &&
+            !string.Equals(duplicate.Id, project.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            using var duplicateDialog = new GuardianConfirmDialog(
+                "Reassign project folder",
+                "THAT FOLDER IS ALREADY A GITPET PROJECT",
+                $"The selected folder is already assigned to:\r\n{duplicate.DisplayName}\r\n\r\n" +
+                "GitPet will not silently make two project registrations point at the same folder.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            duplicateDialog.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var wholeRepository = PathEquals(newProjectPath, newRepositoryRoot);
+        var newScope = wholeRepository
+            ? Array.Empty<ProjectScopeEntry>()
+            : BuildDefaultNestedScope(newRepositoryRoot, newProjectPath);
+
+        using var confirm = new GuardianConfirmDialog(
+            "Reassign project folder",
+            "REASSIGN PROJECT FOLDER",
+            $"Project: {project.DisplayName}\r\n\r\n" +
+            $"Current folder:\r\n{project.Path}\r\n\r\n" +
+            $"New folder:\r\n{newProjectPath}\r\n\r\n" +
+            (wholeRepository
+                ? "The selected folder is the repository root, so this GitPet project will use the whole repository."
+                : "The selected folder is inside a larger repository, so GitPet will scope this project to that folder.") +
+            "\r\n\r\nNo files will be moved, renamed, deleted, committed, pulled, or pushed.",
+            confirmText: "Reassign",
+            cancelText: "Cancel",
+            confirmWidth: 140,
+            dialogSize: new Size(800, 580),
+            scrollable: true);
+
+        if (confirm.ShowDialog(DialogOwner) != DialogResult.Yes) return;
+
+        var wasActive = string.Equals(project.Id, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase);
+        var oldProjectPath = project.Path;
+        var oldRepositoryRoot = project.RepositoryRoot;
+        if (!_config.ReassignProjectFolder(
+                project.Id,
+                newProjectPath,
+                newRepositoryRoot,
+                trackEverything: wholeRepository,
+                scopeEntries: newScope))
+        {
+            using var failed = new GuardianConfirmDialog(
+                "Reassign project folder",
+                "PROJECT FOLDER WAS NOT CHANGED",
+                "GitPet could not update this project registration. Nothing on disk was changed.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            failed.ShowDialog(DialogOwner);
+            return;
+        }
+
+        _configStore.Save(_config);
+        ResetProjectState();
+
+        await _audit.WriteAsync("logical_project_folder_reassigned", new
+        {
+            projectId = project.Id,
+            project = project.DisplayName,
+            oldProjectPath,
+            oldRepositoryRoot,
+            newProjectPath,
+            newRepositoryRoot,
+            wholeRepository
+        });
+
+        if (wasActive)
+            await RefreshAsync(true);
+
+        using var ready = new GuardianConfirmDialog(
+            "Reassign project folder",
+            "PROJECT FOLDER UPDATED  ✓",
+            $"GitPet now points '{project.DisplayName}' to:\r\n{newProjectPath}\r\n\r\n" +
+            $"Repository root:\r\n{newRepositoryRoot}\r\n\r\n" +
+            "The project identity, saved test commands, and GitPet registration were preserved. No files were moved.",
+            confirmText: "OK",
+            cancelText: "",
+            showCancel: false,
+            dialogSize: new Size(760, 500));
+        ready.ShowDialog(DialogOwner);
     }
 
     private async Task RenameProjectAsync(string projectId)
