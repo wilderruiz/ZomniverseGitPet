@@ -1178,6 +1178,7 @@ public sealed class GuardianForm : Form
         _changesChip.Tone = GuardianChipTone.Warning;
         _commitLabel.Text = "LATEST  Repository refresh problem";
         _watchingLabel.Text = "Repository needs attention";
+        SetRepositoryWebAddress(null);
         ShowActivityPanel();
 
         var friendlyError = GitService.DescribeRepositoryReadFailure(message);
