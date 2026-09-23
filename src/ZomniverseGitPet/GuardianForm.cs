@@ -27,6 +27,9 @@ public sealed class GuardianForm : Form
     private readonly Label _onlineLabel = new();
     private readonly Label _commitLabel = new();
     private readonly Label _watchingLabel = new();
+    private readonly Button _copyRepositoryUrlButton = new();
+    private readonly LinkLabel _repositoryWebLink = new();
+    private string? _repositoryWebUrl;
     private readonly GuardianStatusChip _healthChip = new();
     private readonly GuardianStatusChip _branchChip = new();
     private readonly GuardianStatusChip _changesChip = new();
@@ -390,16 +393,60 @@ public sealed class GuardianForm : Form
         _commitLabel.AutoEllipsis = true;
         commitArea.Controls.Add(_commitLabel);
 
-        _watchingLabel.Dock = DockStyle.Fill;
+        var repositoryLinkRow = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = GuardianTheme.Surface
+        };
+        repositoryLinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        repositoryLinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
+        repositoryLinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        _watchingLabel.AutoSize = true;
         _watchingLabel.Text = "Watching this repository";
         _watchingLabel.ForeColor = GuardianTheme.Violet;
         _watchingLabel.Font = new Font("Cascadia Mono", 7.75f);
         _watchingLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _watchingLabel.Margin = new Padding(0, 4, 8, 0);
+
+        _copyRepositoryUrlButton.Text = "⧉";
+        _copyRepositoryUrlButton.Dock = DockStyle.Fill;
+        _copyRepositoryUrlButton.Margin = new Padding(0, 1, 4, 1);
+        _copyRepositoryUrlButton.FlatStyle = FlatStyle.Flat;
+        _copyRepositoryUrlButton.FlatAppearance.BorderSize = 0;
+        _copyRepositoryUrlButton.BackColor = GuardianTheme.Surface;
+        _copyRepositoryUrlButton.ForeColor = GuardianTheme.Healthy;
+        _copyRepositoryUrlButton.Font = new Font("Segoe UI Symbol", 9f, FontStyle.Bold);
+        _copyRepositoryUrlButton.Cursor = Cursors.Hand;
+        _copyRepositoryUrlButton.TabStop = false;
+        _copyRepositoryUrlButton.Visible = false;
+        _copyRepositoryUrlButton.AccessibleName = "Copy repository web address";
+        _copyRepositoryUrlButton.Click += (_, _) => CopyRepositoryWebAddress();
+
+        _repositoryWebLink.Dock = DockStyle.Fill;
+        _repositoryWebLink.Margin = new Padding(0, 3, 0, 0);
+        _repositoryWebLink.AutoEllipsis = false;
+        _repositoryWebLink.LinkColor = GuardianTheme.Healthy;
+        _repositoryWebLink.ActiveLinkColor = Color.White;
+        _repositoryWebLink.VisitedLinkColor = GuardianTheme.Healthy;
+        _repositoryWebLink.Font = new Font("Cascadia Mono", 7.5f, FontStyle.Bold);
+        _repositoryWebLink.TextAlign = ContentAlignment.MiddleLeft;
+        _repositoryWebLink.Cursor = Cursors.Hand;
+        _repositoryWebLink.Visible = false;
+        _repositoryWebLink.LinkClicked += (_, _) => OpenRepositoryWebAddress();
+
+        repositoryLinkRow.Controls.Add(_watchingLabel, 0, 0);
+        repositoryLinkRow.Controls.Add(_copyRepositoryUrlButton, 1, 0);
+        repositoryLinkRow.Controls.Add(_repositoryWebLink, 2, 0);
 
         summary.Controls.Add(projectHeading, 0, 0);
         summary.Controls.Add(overview, 0, 1);
         summary.Controls.Add(commitArea, 0, 2);
-        summary.Controls.Add(_watchingLabel, 0, 3);
+        summary.Controls.Add(repositoryLinkRow, 0, 3);
 
         /* ==========================================================================
            PATCH: SUBTLE STATUS CARD STRUCTURE
@@ -895,12 +942,19 @@ public sealed class GuardianForm : Form
     {
         if (string.IsNullOrWhiteSpace(_config.RepositoryPath)) return;
 
-        var statusTask = _git.GetStatusAsync(_config.RepositoryPath!, token);
-        var commitTask = _git.GetLastCommitAsync(_config.RepositoryPath!, token);
+        var repositoryPath = _config.RepositoryPath!;
+        var statusTask = _git.GetStatusAsync(repositoryPath, token);
+        var commitTask = _git.GetLastCommitAsync(repositoryPath, token);
+        var originTask = _git.RunGitAsync(
+            repositoryPath,
+            ["remote", "get-url", "origin"],
+            TimeSpan.FromSeconds(8),
+            token);
         _status = await statusTask;
         var commit = await commitTask;
+        var origin = await originTask;
 
-        UpdateRepositoryHeader(_status, commit);
+        UpdateRepositoryHeader(_status, commit, origin);
         _files.Rows.Clear();
 
         foreach (var file in _status.Files)
@@ -946,7 +1000,7 @@ public sealed class GuardianForm : Form
         }
     }
 
-    private void UpdateRepositoryHeader(RepositoryStatus status, CommandResult commit)
+    private void UpdateRepositoryHeader(RepositoryStatus status, CommandResult commit, CommandResult origin)
     {
         /* ==========================================================================
            PATCH: DISPLAY SAVED PROJECT NAME IN HEADER
@@ -986,6 +1040,7 @@ public sealed class GuardianForm : Form
             _changesChip.Tone = GuardianChipTone.Warning;
             _commitLabel.Text = "LATEST  unavailable";
             _watchingLabel.Text = "Repository needs attention";
+            SetRepositoryWebAddress(null);
             return;
         }
 
@@ -1012,6 +1067,85 @@ public sealed class GuardianForm : Form
             $"LATEST  {FormatCommitPreview(commit)}\r\n" +
             FriendlyGitState.FormatSyncSummary(status);
         _watchingLabel.Text = "Watching this repository";
+        SetRepositoryWebAddress(
+            origin.Success && !string.IsNullOrWhiteSpace(origin.Output)
+                ? TryGetRepositoryWebAddress(origin.Output.Trim())
+                : null);
+    }
+
+    private void SetRepositoryWebAddress(string? webUrl)
+    {
+        _repositoryWebUrl = string.IsNullOrWhiteSpace(webUrl) ? null : webUrl.Trim();
+        var visible = _repositoryWebUrl is not null;
+        _copyRepositoryUrlButton.Visible = visible;
+        _repositoryWebLink.Visible = visible;
+        _repositoryWebLink.Text = visible ? _repositoryWebUrl! : string.Empty;
+        _repositoryWebLink.Links.Clear();
+        if (visible)
+            _repositoryWebLink.Links.Add(0, _repositoryWebLink.Text.Length, _repositoryWebUrl);
+        _toolTips.SetToolTip(
+            _copyRepositoryUrlButton,
+            visible ? $"Copy repository web address\n{_repositoryWebUrl}" : string.Empty);
+        _toolTips.SetToolTip(
+            _repositoryWebLink,
+            visible ? $"Open repository in your browser\n{_repositoryWebUrl}" : string.Empty);
+    }
+
+    private static string? TryGetRepositoryWebAddress(string? remoteUrl)
+    {
+        if (string.IsNullOrWhiteSpace(remoteUrl)) return null;
+
+        var github = MajorUpdateCoordinator.TryGetGitHubWebUrl(remoteUrl);
+        if (!string.IsNullOrWhiteSpace(github)) return github;
+
+        var value = remoteUrl.Trim();
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return null;
+
+        return value.EndsWith(".git", StringComparison.OrdinalIgnoreCase)
+            ? value[..^4]
+            : value;
+    }
+
+    private void CopyRepositoryWebAddress()
+    {
+        if (string.IsNullOrWhiteSpace(_repositoryWebUrl)) return;
+        try
+        {
+            Clipboard.SetText(_repositoryWebUrl);
+            var original = _copyRepositoryUrlButton.Text;
+            _copyRepositoryUrlButton.Text = "✓";
+            var timer = new System.Windows.Forms.Timer { Interval = 1100 };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                timer.Dispose();
+                if (!_copyRepositoryUrlButton.IsDisposed)
+                    _copyRepositoryUrlButton.Text = original;
+            };
+            timer.Start();
+        }
+        catch
+        {
+            // Clipboard can be temporarily locked by another Windows process.
+        }
+    }
+
+    private void OpenRepositoryWebAddress()
+    {
+        if (string.IsNullOrWhiteSpace(_repositoryWebUrl)) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo(_repositoryWebUrl)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Keep the dashboard usable if Windows cannot launch the default browser.
+        }
     }
 
     private void SetNoProjectHeader()
@@ -1027,6 +1161,7 @@ public sealed class GuardianForm : Form
         _changesChip.Tone = GuardianChipTone.Neutral;
         _commitLabel.Text = "LATEST  Choose or prepare a project to begin.";
         _watchingLabel.Text = "Choose a project to begin";
+        SetRepositoryWebAddress(null);
         _emptyState.Visible = true;
         _emptyState.Text =
             "READY WHEN YOU ARE\n\nOpen Projects to choose an existing repository\nor safely prepare a normal folder for Git.";
