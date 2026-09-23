@@ -155,11 +155,15 @@ internal sealed class ReconcileConflictsForm : Form
             var selected = Convert.ToString(row.Cells["Choice"].Value) ?? "";
             if (string.IsNullOrWhiteSpace(selected))
             {
-                MessageBox.Show(this,
-                    $"Choose which version to keep for:\r\n\r\n{path}",
+                using var choiceRequired = new GuardianConfirmDialog(
                     "Choice required",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    "CHOOSE A VERSION TO KEEP",
+                    $"Select either your local version or the online version for:\r\n\r\n{path}",
+                    confirmText: "OK",
+                    cancelText: "",
+                    showCancel: false,
+                    dialogSize: new Size(640, 340));
+                choiceRequired.ShowDialog(this);
                 return;
             }
 
