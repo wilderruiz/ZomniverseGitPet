@@ -170,6 +170,37 @@ public sealed class AppConfig
         return true;
     }
 
+    internal bool ReassignProjectFolder(
+        string id,
+        string projectPath,
+        string repositoryRoot,
+        bool trackEverything,
+        IEnumerable<ProjectScopeEntry>? scopeEntries)
+    {
+        var entry = FindProject(id);
+        if (entry is null ||
+            string.IsNullOrWhiteSpace(projectPath) ||
+            string.IsNullOrWhiteSpace(repositoryRoot))
+            return false;
+
+        var normalizedProject = NormalizePath(projectPath);
+        var normalizedRepository = NormalizePath(repositoryRoot);
+        var duplicate = RecentRepositories.Any(item =>
+            !string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(NormalizePath(item.Path), normalizedProject, StringComparison.OrdinalIgnoreCase));
+        if (duplicate) return false;
+
+        entry.Path = normalizedProject;
+        entry.RepositoryRoot = normalizedRepository;
+        entry.TrackEverything = trackEverything;
+        entry.ScopeEntries = NormalizeScopeEntries(scopeEntries);
+
+        if (string.Equals(ActiveProjectId, id, StringComparison.OrdinalIgnoreCase))
+            RepositoryPath = normalizedRepository;
+
+        return true;
+    }
+
     public bool ForgetProject(string id)
     {
         var entry = FindProject(id);
