@@ -80,8 +80,17 @@ I:\Dropbox\WORK_LAPTOP\Programming\ZomniverseGitPet_Releases\current\ZomniverseG
 
 5. Reproduce the exact screen/action changed and verify it visually.
 
+6. when Codex messes up do this
 
+Get-Process | Where-Object { $_.ProcessName -in @('DEV-ZomniverseGitPet','ZomniverseGitPet') } | Select-Object Id,ProcessName,Path
 
+- That will show the GitPet processes. Then kill both GitPet variants:
+
+Stop-Process -Name 'DEV-ZomniverseGitPet','ZomniverseGitPet' -Force -ErrorAction SilentlyContinue
+
+- Then run your normal command again:
+
+powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
 # For a public release, use:
 
 dotnet build ZomniverseGitPet.sln -c Release
