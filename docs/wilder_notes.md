@@ -80,9 +80,7 @@ I:\Dropbox\WORK_LAPTOP\Programming\ZomniverseGitPet_Releases\current\ZomniverseG
 
 5. Reproduce the exact screen/action changed and verify it visually.
 
-# Small updates
 
-powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
 
 # For a public release, use:
 
@@ -91,3 +89,7 @@ dotnet run --project tests\ZomniverseGitPet.Tests\ZomniverseGitPet.Tests.csproj 
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 * Then run the newly generated installer to update the installed release.
+
+# Small updates
+
+powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
