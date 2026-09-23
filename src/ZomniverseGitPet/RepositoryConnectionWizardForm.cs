@@ -41,7 +41,7 @@ internal sealed class RepositoryConnectionWizardForm : Form
         _github = github;
         _startOnCreate = startOnCreate;
 
-        Text = "Connect project online";
+        Text = _startOnCreate ? "Create GitHub repository" : "Connect project online";
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
@@ -106,7 +106,7 @@ internal sealed class RepositoryConnectionWizardForm : Form
         {
             Dock = DockStyle.Top,
             Height = 44,
-            Text = "◇  CONNECT THIS PROJECT ONLINE",
+            Text = _startOnCreate ? "◇  CREATE A GITHUB REPOSITORY" : "◇  CONNECT THIS PROJECT ONLINE",
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 16, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
@@ -114,7 +114,9 @@ internal sealed class RepositoryConnectionWizardForm : Form
         var subtitle = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "GitPet knows your GitHub account. Now choose where this project lives online.",
+            Text = _startOnCreate
+                ? "GitPet will check your authenticated GitHub account first, then create the repository only if it does not already exist."
+                : "GitPet knows your GitHub account. Now choose where this project lives online.",
             ForeColor = GuardianTheme.MutedInk,
             Font = new Font("Segoe UI", 10),
             TextAlign = ContentAlignment.TopLeft
