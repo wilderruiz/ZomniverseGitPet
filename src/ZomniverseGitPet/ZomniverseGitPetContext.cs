@@ -932,7 +932,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
         using var folder = new FolderBrowserDialog
         {
-            Description = $"Choose the existing folder that should belong to '{project.DisplayName}'. GitPet will only update its registration; it will not move files.",
+            Description = $"Choose the folder for '{project.DisplayName}'. Select an existing Git folder to reassign only, or an empty normal folder to move the whole local repository there.",
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true,
             InitialDirectory = Directory.Exists(project.Path)
