@@ -437,14 +437,15 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             try
             {
                 Directory.CreateDirectory(dialog.ParentFolder);
-                Directory.CreateDirectory(destination);
+                if (!dialog.AddReadme)
+                    Directory.CreateDirectory(destination);
             }
             catch (Exception ex)
             {
                 using var folderProblem = new GuardianConfirmDialog(
                     "Create new GitHub repository",
                     "LOCAL FOLDER COULD NOT BE CREATED",
-                    $"GitPet could not create:\r\n{destination}\r\n\r\n{ex.Message}\r\n\r\nNothing was created on GitHub.",
+                    $"GitPet could not prepare:\r\n{destination}\r\n\r\n{ex.Message}\r\n\r\nNothing was created on GitHub.",
                     confirmText: "OK",
                     cancelText: "",
                     showCancel: false);
@@ -452,19 +453,22 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 return;
             }
 
-            var initialize = await _git.InitializeRepositoryAsync(destination, _lifetimeToken);
-            if (!initialize.Success)
+            if (!dialog.AddReadme)
             {
-                using var initProblem = new GuardianConfirmDialog(
-                    "Create new GitHub repository",
-                    "LOCAL GIT SETUP NEEDS ATTENTION",
-                    "GitPet created the local folder but Git could not initialize it. Nothing was created on GitHub.\r\n\r\n" +
-                    initialize.Output,
-                    confirmText: "OK",
-                    cancelText: "",
-                    showCancel: false);
-                initProblem.ShowDialog(DialogOwner);
-                return;
+                var initialize = await _git.InitializeRepositoryAsync(destination, _lifetimeToken);
+                if (!initialize.Success)
+                {
+                    using var initProblem = new GuardianConfirmDialog(
+                        "Create new GitHub repository",
+                        "LOCAL GIT SETUP NEEDS ATTENTION",
+                        "GitPet created the local folder but Git could not initialize it. Nothing was created on GitHub.\r\n\r\n" +
+                        initialize.Output,
+                        confirmText: "OK",
+                        cancelText: "",
+                        showCancel: false);
+                    initProblem.ShowDialog(DialogOwner);
+                    return;
+                }
             }
 
             _pet.ShowGuidance("☁ CREATING REPOSITORY\nUsing your GitHub account");
@@ -473,14 +477,17 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 repositoryName,
                 dialog.IsPrivate,
                 dialog.DescriptionText,
+                dialog.AddReadme,
                 _lifetimeToken);
             if (!created.Success)
             {
                 using var createProblem = new GuardianConfirmDialog(
                     "Create new GitHub repository",
                     "GITHUB CREATION NEEDS ATTENTION",
-                    "The local repository was initialized, but GitHub did not create the online repository. " +
-                    "Nothing was pushed.\r\n\r\n" + created.Message,
+                    (dialog.AddReadme
+                        ? "GitHub did not create the online repository. "
+                        : "The local repository was initialized, but GitHub did not create the online repository. ") +
+                    "Nothing was pushed by GitPet.\r\n\r\n" + created.Message,
                     confirmText: "OK",
                     cancelText: "",
                     showCancel: false,
@@ -490,30 +497,60 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 return;
             }
 
-            var origin = await _git.AddOriginRemoteAsync(
-                destination,
-                created.RepositoryUrl,
-                _lifetimeToken);
-            if (!origin.Success)
+            var projectRoot = destination;
+            if (dialog.AddReadme)
             {
-                using var originProblem = new GuardianConfirmDialog(
-                    "Create new GitHub repository",
-                    "REPOSITORY CREATED — CONNECTION NEEDS ATTENTION",
-                    $"GitHub repository created:\r\n{expectedName}\r\n\r\n" +
-                    "GitPet could not add it as the local origin. Nothing was pushed.\r\n\r\n" +
-                    origin.Output,
-                    confirmText: "OK",
-                    cancelText: "",
-                    showCancel: false,
-                    dialogSize: new Size(760, 490),
-                    scrollable: true);
-                originProblem.ShowDialog(DialogOwner);
-                return;
+                _pet.ShowGuidance("📥 COPYING INITIAL README\nmain now exists on GitHub");
+                var clone = await _git.CloneRepositoryAsync(
+                    created.RepositoryUrl,
+                    destination,
+                    _lifetimeToken);
+                if (!clone.Success)
+                {
+                    using var cloneProblem = new GuardianConfirmDialog(
+                        "Create new GitHub repository",
+                        "REPOSITORY CREATED — LOCAL COPY NEEDS ATTENTION",
+                        $"GitHub repository created with README:\r\n{expectedName}\r\n\r\n" +
+                        "GitPet could not clone that new repository to the selected local folder. " +
+                        "The GitHub repository was left intact.\r\n\r\n" + clone.Output,
+                        confirmText: "OK",
+                        cancelText: "",
+                        showCancel: false,
+                        dialogSize: new Size(780, 500),
+                        scrollable: true);
+                    cloneProblem.ShowDialog(DialogOwner);
+                    return;
+                }
+
+                projectRoot = clone.Output.Trim();
+            }
+            else
+            {
+                var origin = await _git.AddOriginRemoteAsync(
+                    destination,
+                    created.RepositoryUrl,
+                    _lifetimeToken);
+                if (!origin.Success)
+                {
+                    using var originProblem = new GuardianConfirmDialog(
+                        "Create new GitHub repository",
+                        "REPOSITORY CREATED — CONNECTION NEEDS ATTENTION",
+                        $"GitHub repository created:\r\n{expectedName}\r\n\r\n" +
+                        "GitPet could not add it as the local origin. Nothing was pushed.\r\n\r\n" +
+                        origin.Output,
+                        confirmText: "OK",
+                        cancelText: "",
+                        showCancel: false,
+                        dialogSize: new Size(760, 490),
+                        scrollable: true);
+                    originProblem.ShowDialog(DialogOwner);
+                    return;
+                }
             }
 
             var entry = _config.RememberProject(
-                destination,
-                destination,
+                projectRoot,
+                projectRoot,
                 repositoryName,
                 trackEverything: true,
                 scopeEntries: []);
@@ -526,6 +563,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 repository = expectedName,
                 localFolder = destination,
                 visibility = dialog.IsPrivate ? "private" : "public",
+                addReadme = dialog.AddReadme,
                 projectId = entry.Id
             });
 
@@ -535,9 +573,10 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 "Create new GitHub repository",
                 "NEW REPOSITORY READY  ✓",
                 $"GitHub repository:\r\n{expectedName}\r\n\r\n" +
-                $"Local folder:\r\n{destination}\r\n\r\n" +
-                "GitPet added the new repository as a project and connected origin. " +
-                "No files were committed and nothing was sent online.",
+                $"Local folder:\r\n{projectRoot}\r\n\r\n" +
+                (dialog.AddReadme
+                    ? "GitHub created an initial README so main exists, and GitPet cloned that repository locally. No additional files were committed or sent by GitPet."
+                    : "GitPet added the new repository as a project and connected origin. No files were committed and nothing was sent online."),
                 confirmText: "OK",
                 cancelText: "",
                 showCancel: false,
