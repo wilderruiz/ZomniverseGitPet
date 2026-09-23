@@ -44,7 +44,7 @@ internal static class LogicalProjectRegression
         if (config.GetActiveProject()?.DisplayName != "Wildverse Site")
             throw new InvalidOperationException("Logical project rename did not persist independently.");
 
-        config.SetTestCommandsForRepository(root, ["dotnet test"]);
+        wildverseProject.TestCommands.Add("dotnet test");
         config.ActivateProject(rootProject.Id);
         var reassignedPath = Path.Combine(root, "wildverse-moved");
         var reassigned = config.ReassignProjectFolder(
@@ -52,7 +52,7 @@ internal static class LogicalProjectRegression
             reassignedPath,
             root,
             trackEverything: false,
-            [new ProjectScopeEntry("wildverse-moved", true)]);
+            scopeEntries: [new ProjectScopeEntry("wildverse-moved", true)]);
         var movedProject = config.FindProject(wildverseProject.Id);
         if (!reassigned ||
             movedProject is null ||
