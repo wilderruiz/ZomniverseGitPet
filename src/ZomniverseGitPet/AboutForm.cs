@@ -20,6 +20,7 @@ internal sealed class AboutForm : Form
     private const string ZomniverseUrl = "https://zomniverse.codbiohub.com/";
     private const string WildVerseUrl = "https://wildverse.codbiohub.com/";
     private const string CodBioHubUrl = "https://home.codbiohub.com/";
+    private const string ZacProjectUrl = "https://github.com/wilderruiz/zac_project";
 
     public AboutForm()
     {
@@ -29,8 +30,8 @@ internal sealed class AboutForm : Form
         MaximizeBox = true;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        Size = new Size(920, 790);
-        MinimumSize = new Size(800, 700);
+        Size = new Size(920, 700);
+        MinimumSize = new Size(800, 640);
         BackColor = Surface;
         ForeColor = Ink;
         Font = new Font("Segoe UI", 9);
@@ -46,11 +47,11 @@ internal sealed class AboutForm : Form
             Padding = Padding.Empty,
             BackColor = Surface
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 128));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 224));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 152));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
 
         root.Controls.Add(BuildHeader(), 0, 0);
         root.Controls.Add(BuildProfile(), 0, 1);
@@ -86,7 +87,8 @@ internal sealed class AboutForm : Form
             Font = new Font("Segoe UI", 10.2f),
             ForeColor = GuardianTheme.SoftInk,
             TextAlign = ContentAlignment.TopLeft,
-            Padding = new Padding(2, 2, 0, 0)
+            Padding = new Padding(2, 6, 0, 0),
+            AutoEllipsis = false
         };
 
         panel.Controls.Add(subtitle);
@@ -179,7 +181,7 @@ internal sealed class AboutForm : Form
             "Windows Git guardian for safer review, local checkpoints, explicit Get/Send, repository health, and project management.");
         AddProject(card, 2, "Zomniverse", ZomniverseUrl,
             "Scientific data and AI research platform for reproducible computational-biology workflows and analysis tooling.");
-        AddProject(card, 3, "ZAC", null,
+        AddProject(card, 3, "ZAC", ZacProjectUrl,
             "Local-first controlled AI review/apply tooling designed around explicit human approval and auditable changes.");
         AddProject(card, 4, "WildVerse", WildVerseUrl,
             "Creator-audio platform combining original music, browser tools, searchable media, and experimental creative software.");
