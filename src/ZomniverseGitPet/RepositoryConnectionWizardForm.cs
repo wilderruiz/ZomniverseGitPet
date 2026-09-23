@@ -451,6 +451,7 @@ internal sealed class RepositoryConnectionWizardForm : Form
                 name,
                 _privateVisibility?.Checked != false,
                 _description?.Text.Trim() ?? string.Empty,
+                addReadme: false,
                 _lifetime.Token);
             if (!result.Success)
             {
