@@ -158,6 +158,7 @@ internal sealed class GitHubAccountService
         string repositoryName,
         bool isPrivate,
         string description,
+        bool addReadme,
         CancellationToken token = default)
     {
         var executable = FindGitHubCliExecutable();
@@ -178,6 +179,8 @@ internal sealed class GitHubAccountService
             arguments.Add("--description");
             arguments.Add(description.Trim());
         }
+        if (addReadme)
+            arguments.Add("--add-readme");
 
         var result = await RunProcessAsync(
             executable,
@@ -192,11 +195,14 @@ internal sealed class GitHubAccountService
             owner,
             repository = name,
             visibility = isPrivate ? "private" : "public",
+            addReadme,
             success = result.Success
         });
 
         return result.Success
-            ? new(true, url, "Repository created. Nothing has been pushed.")
+            ? new(true, url, addReadme
+                ? "Repository created with an initial README so main exists."
+                : "Repository created. Nothing has been pushed.")
             : new(false, string.Empty,
                 string.IsNullOrWhiteSpace(result.Output)
                     ? "GitHub could not create the repository."
