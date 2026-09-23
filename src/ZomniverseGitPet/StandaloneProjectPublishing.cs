@@ -642,7 +642,10 @@ internal static class StandaloneProjectPublishing
         if (!diff.Success)
             return new(false, true, [], diff.Output);
 
-        return new(true, true, ParseRemoteChanges(diff.Output));
+        var changes = ParseRemoteChanges(diff.Output);
+        var baselineFiles = await ReadWorkspaceHeadFilesAsync(git, workspace, token);
+        changes = FilterRetiredBaselineChanges(config, repositoryRoot, changes, baselineFiles);
+        return new(true, true, changes);
     }
 
     /* ==========================================================================
@@ -825,6 +828,8 @@ internal static class StandaloneProjectPublishing
                 return ReceiveFailure("GitPet could not compare the local project package with its online copy.", diff, workspace, link.RemoteUrl);
 
             var changes = ParseRemoteChanges(diff.Output);
+            var baselineFiles = await ReadWorkspaceHeadFilesAsync(git, workspace, token);
+            changes = FilterRetiredBaselineChanges(config, repositoryRoot, changes, baselineFiles);
             if (changes.Count == 0)
             {
                 return new(true,
@@ -1052,6 +1057,8 @@ internal static class StandaloneProjectPublishing
                     WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
 
             var changes = ParseRemoteChanges(diff.Output);
+            var baselineFiles = await ReadWorkspaceHeadFilesAsync(git, workspace, token);
+            changes = FilterRetiredBaselineChanges(config, repositoryRoot, changes, baselineFiles);
             if (changes.Count == 0)
                 return new(true, "The project-only online repository no longer has incoming file changes.",
                     WorkspacePath: workspace, RemoteUrl: link.RemoteUrl);
@@ -1262,6 +1269,77 @@ internal static class StandaloneProjectPublishing
                 }
             }
         }
+    }
+
+    /*
+     * When a file used to belong to a standalone project but is later removed
+     * from that project's configured scope, its old online copy can still
+     * differ from the isolated workspace baseline. That is not an incoming
+     * file the user should reconcile back into the project. Treat simple
+     * modify/delete changes for such previously-published paths as retired
+     * residue. New out-of-scope paths and renames/copies remain hard boundary
+     * violations and continue through the normal safety checks.
+     */
+    internal static IReadOnlyList<StandaloneProjectRemoteChange> FilterRetiredBaselineChanges(
+        AppConfig config,
+        string repositoryRoot,
+        IReadOnlyList<StandaloneProjectRemoteChange> changes,
+        IReadOnlyCollection<string> baselineFiles)
+    {
+        if (changes.Count == 0 || baselineFiles.Count == 0) return changes;
+
+        var baseline = new HashSet<string>(
+            baselineFiles.Select(NormalizeRelative),
+            StringComparer.OrdinalIgnoreCase);
+
+        return changes
+            .Where(change => !IsRetiredBaselineChange(
+                config,
+                repositoryRoot,
+                change,
+                baseline))
+            .ToArray();
+    }
+
+    private static bool IsRetiredBaselineChange(
+        AppConfig config,
+        string repositoryRoot,
+        StandaloneProjectRemoteChange change,
+        IReadOnlySet<string> baselineFiles)
+    {
+        if (!string.IsNullOrWhiteSpace(change.PreviousPath)) return false;
+
+        var path = NormalizeRelative(change.Path);
+        if (path.Length == 0 || IsPathInsideProjectScope(config, repositoryRoot, path))
+            return false;
+
+        var status = (change.Status ?? "").Trim();
+        var isSimpleModifyOrDelete =
+            status.StartsWith("M", StringComparison.OrdinalIgnoreCase) ||
+            status.StartsWith("D", StringComparison.OrdinalIgnoreCase);
+
+        return isSimpleModifyOrDelete && baselineFiles.Contains(path);
+    }
+
+    private static async Task<IReadOnlyCollection<string>> ReadWorkspaceHeadFilesAsync(
+        GitService git,
+        string workspace,
+        CancellationToken token)
+    {
+        var tracked = await git.RunGitAsync(
+            workspace,
+            ["ls-tree", "-r", "--name-only", "HEAD"],
+            TimeSpan.FromSeconds(20),
+            token);
+
+        if (!tracked.Success) return Array.Empty<string>();
+
+        return tracked.Output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeRelative)
+            .Where(path => path.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     internal static IReadOnlyList<StandaloneProjectRemoteChange> ParseRemoteChanges(string output)
