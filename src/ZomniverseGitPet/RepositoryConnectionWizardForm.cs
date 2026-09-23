@@ -452,7 +452,7 @@ internal sealed class RepositoryConnectionWizardForm : Form
                 _privateVisibility?.Checked != false,
                 _description?.Text.Trim() ?? string.Empty,
                 addReadme: false,
-                _lifetime.Token);
+                token: _lifetime.Token);
             if (!result.Success)
             {
                 SetStatus(result.Message, GuardianTheme.Warning);
