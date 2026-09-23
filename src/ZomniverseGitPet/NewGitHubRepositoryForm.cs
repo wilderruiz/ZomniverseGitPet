@@ -18,6 +18,7 @@ internal sealed class NewGitHubRepositoryForm : Form
     private readonly TextBox _parent = new();
     private readonly TextBox _description = new();
     private readonly RadioButton _private = new();
+    private readonly CheckBox _addReadme = new();
     private readonly Label _destination = new();
     private readonly Label _validation = new();
 
@@ -71,6 +72,7 @@ internal sealed class NewGitHubRepositoryForm : Form
     public string ParentFolder => _parent.Text.Trim();
     public string DestinationPath => Path.Combine(ParentFolder, RepositoryName);
     public bool IsPrivate => _private.Checked;
+    public bool AddReadme => _addReadme.Checked;
     public string DescriptionText => _description.Text.Trim();
 
     private Control BuildHeader()
@@ -154,7 +156,7 @@ internal sealed class NewGitHubRepositoryForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 6,
+            RowCount = 7,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
             BackColor = GuardianTheme.SurfaceSoft
@@ -166,6 +168,7 @@ internal sealed class NewGitHubRepositoryForm : Form
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 
@@ -219,18 +222,28 @@ internal sealed class NewGitHubRepositoryForm : Form
         grid.Controls.Add(visibility, 1, 3);
         grid.SetColumnSpan(visibility, 2);
 
-        grid.Controls.Add(Caption("DESCRIPTION"), 0, 4);
+        grid.Controls.Add(Caption("INITIAL FILE"), 0, 4);
+        _addReadme.Text = "Add a README file  —  creates the first commit so main exists on GitHub";
+        _addReadme.Checked = true;
+        _addReadme.AutoSize = true;
+        _addReadme.ForeColor = GuardianTheme.Ink;
+        _addReadme.Font = new Font("Segoe UI", 9.2f);
+        _addReadme.Margin = new Padding(0, 13, 0, 0);
+        grid.Controls.Add(_addReadme, 1, 4);
+        grid.SetColumnSpan(_addReadme, 2);
+
+        grid.Controls.Add(Caption("DESCRIPTION"), 0, 5);
         ConfigureInput(_description, "Optional");
         _description.Multiline = true;
         _description.Dock = DockStyle.Fill;
-        grid.Controls.Add(_description, 1, 4);
+        grid.Controls.Add(_description, 1, 5);
         grid.SetColumnSpan(_description, 2);
 
         _validation.Dock = DockStyle.Fill;
         _validation.ForeColor = GuardianTheme.MutedInk;
         _validation.Font = new Font("Segoe UI", 8.8f);
         _validation.TextAlign = ContentAlignment.MiddleLeft;
-        grid.Controls.Add(_validation, 0, 5);
+        grid.Controls.Add(_validation, 0, 6);
         grid.SetColumnSpan(_validation, 3);
 
         card.Controls.Add(grid);
