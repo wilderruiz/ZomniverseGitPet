@@ -223,14 +223,31 @@ internal sealed class NewGitHubRepositoryForm : Form
         grid.SetColumnSpan(visibility, 2);
 
         grid.Controls.Add(Caption("INITIAL FILE"), 0, 4);
-        _addReadme.Text = "Add a README file  —  creates the first commit so main exists on GitHub";
+        var readmeChoice = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = GuardianTheme.SurfaceSoft,
+            Padding = new Padding(0, 9, 0, 0)
+        };
+        _addReadme.Text = "Add a README file";
         _addReadme.Checked = true;
         _addReadme.AutoSize = true;
         _addReadme.ForeColor = GuardianTheme.Ink;
         _addReadme.Font = new Font("Segoe UI", 9.2f);
-        _addReadme.Margin = new Padding(0, 13, 0, 0);
-        grid.Controls.Add(_addReadme, 1, 4);
-        grid.SetColumnSpan(_addReadme, 2);
+        _addReadme.Margin = new Padding(0, 4, 12, 0);
+        readmeChoice.Controls.Add(_addReadme);
+        readmeChoice.Controls.Add(new Label
+        {
+            AutoSize = true,
+            Text = "recommended — creates the first commit so the remote default branch exists",
+            ForeColor = GuardianTheme.MutedInk,
+            Font = new Font("Segoe UI", 8.8f),
+            Margin = new Padding(0, 6, 0, 0)
+        });
+        grid.Controls.Add(readmeChoice, 1, 4);
+        grid.SetColumnSpan(readmeChoice, 2);
 
         grid.Controls.Add(Caption("DESCRIPTION"), 0, 5);
         ConfigureInput(_description, "Optional");
