@@ -262,7 +262,7 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 178,
+            Height = 188,
             Padding = new Padding(10, 10, 10, 10),
             BackColor = GuardianTheme.Window
         };
@@ -310,7 +310,7 @@ public sealed class GuardianForm : Form
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
 
         /* ==========================================================================
            PATCH: BUILD CURRENT PROJECT PILL HEADER
@@ -403,7 +403,7 @@ public sealed class GuardianForm : Form
             BackColor = GuardianTheme.Surface
         };
         repositoryLinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        repositoryLinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
+        repositoryLinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         repositoryLinkRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         _watchingLabel.AutoSize = true;
@@ -411,11 +411,11 @@ public sealed class GuardianForm : Form
         _watchingLabel.ForeColor = GuardianTheme.Violet;
         _watchingLabel.Font = new Font("Cascadia Mono", 7.75f);
         _watchingLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _watchingLabel.Margin = new Padding(0, 4, 8, 0);
+        _watchingLabel.Margin = new Padding(0, 7, 8, 0);
 
         _copyRepositoryUrlButton.Text = "⧉";
         _copyRepositoryUrlButton.Dock = DockStyle.Fill;
-        _copyRepositoryUrlButton.Margin = new Padding(0, 1, 4, 1);
+        _copyRepositoryUrlButton.Margin = new Padding(0, 3, 4, 3);
         _copyRepositoryUrlButton.FlatStyle = FlatStyle.Flat;
         _copyRepositoryUrlButton.FlatAppearance.BorderSize = 0;
         _copyRepositoryUrlButton.BackColor = GuardianTheme.Surface;
@@ -428,7 +428,7 @@ public sealed class GuardianForm : Form
         _copyRepositoryUrlButton.Click += (_, _) => CopyRepositoryWebAddress();
 
         _repositoryWebLink.Dock = DockStyle.Fill;
-        _repositoryWebLink.Margin = new Padding(0, 3, 0, 0);
+        _repositoryWebLink.Margin = new Padding(0, 6, 0, 0);
         _repositoryWebLink.AutoEllipsis = false;
         _repositoryWebLink.LinkColor = GuardianTheme.Healthy;
         _repositoryWebLink.ActiveLinkColor = Color.White;
