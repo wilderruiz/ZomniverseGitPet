@@ -279,9 +279,9 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
                 rename.Click += async (_, _) => await RenameProjectAsync(projectId);
                 projectMenu.DropDownItems.Add(rename);
 
-                var reassign = new ToolStripMenuItem("Reassign folder…")
+                var reassign = new ToolStripMenuItem("Reassign / move folder…")
                 {
-                    ToolTipText = "Point this GitPet project at a different existing folder. GitPet does not move, rename, copy, delete, commit, pull, or push files."
+                    ToolTipText = "Point this GitPet project at another existing Git folder, or move its whole local Git repository into an empty destination. Nothing is committed, pulled, pushed, or deleted online."
                 };
                 reassign.Click += async (_, _) => await ReassignProjectFolderAsync(projectId);
                 projectMenu.DropDownItems.Add(reassign);
@@ -934,7 +934,7 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         {
             Description = $"Choose the existing folder that should belong to '{project.DisplayName}'. GitPet will only update its registration; it will not move files.",
             UseDescriptionForTitle = true,
-            ShowNewFolderButton = false,
+            ShowNewFolderButton = true,
             InitialDirectory = Directory.Exists(project.Path)
                 ? project.Path
                 : Directory.Exists(project.RepositoryRoot)
@@ -944,19 +944,26 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         if (folder.ShowDialog(DialogOwner) != DialogResult.OK) return;
 
         var inspection = await _projectInspector.InspectAsync(folder.SelectedPath, _lifetimeToken);
+        if (inspection.Suitability == ProjectSuitability.CanPrepare)
+        {
+            await MoveRepositoryForReassignmentAsync(project, inspection.SelectedPath);
+            return;
+        }
+
         if (inspection.Suitability is not ProjectSuitability.Ready and not ProjectSuitability.NestedRepository ||
             string.IsNullOrWhiteSpace(inspection.RepositoryRoot))
         {
             using var invalid = new GuardianConfirmDialog(
                 "Reassign project folder",
-                "CHOOSE AN EXISTING GIT FOLDER",
+                "THAT FOLDER CANNOT BE USED YET",
                 inspection.Message + "\r\n\r\n" +
-                "Reassign folder changes only GitPet's project registration. It does not initialize Git or move files. " +
-                "Use Prepare / reconfigure folder if the destination still needs Git setup.",
+                "For an existing Git folder, GitPet can reassign the registration only. " +
+                "For a normal empty folder, GitPet can move the whole local repository there. " +
+                "Folders with broken Git metadata still need to be fixed manually first.",
                 confirmText: "OK",
                 cancelText: "",
                 showCancel: false,
-                dialogSize: new Size(760, 500),
+                dialogSize: new Size(780, 520),
                 scrollable: true);
             invalid.ShowDialog(DialogOwner);
             return;
@@ -1066,6 +1073,253 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             showCancel: false,
             dialogSize: new Size(760, 500));
         ready.ShowDialog(DialogOwner);
+    }
+
+    private async Task MoveRepositoryForReassignmentAsync(
+        RecentRepositoryEntry selectedProject,
+        string selectedDestination)
+    {
+        var oldRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(selectedProject.RepositoryRoot));
+        var destination = Path.TrimEndingDirectorySeparator(Path.GetFullPath(selectedDestination));
+
+        if (!Directory.Exists(oldRoot) || !Directory.Exists(destination))
+        {
+            using var unavailable = new GuardianConfirmDialog(
+                "Move project repository",
+                "FOLDER IS NOT AVAILABLE",
+                "The current repository or selected destination is no longer available. Nothing was changed.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            unavailable.ShowDialog(DialogOwner);
+            return;
+        }
+
+        if (PathEquals(oldRoot, destination))
+        {
+            using var unchanged = new GuardianConfirmDialog(
+                "Move project repository",
+                "REPOSITORY LOCATION UNCHANGED",
+                $"The repository is already located at:\r\n{oldRoot}",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            unchanged.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var oldPrefix = oldRoot + Path.DirectorySeparatorChar;
+        if (destination.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            using var insideSource = new GuardianConfirmDialog(
+                "Move project repository",
+                "DESTINATION IS INSIDE THE CURRENT REPOSITORY",
+                $"Current repository:\r\n{oldRoot}\r\n\r\nSelected destination:\r\n{destination}\r\n\r\n" +
+                "Choose a folder outside the current repository so GitPet cannot create a repository inside itself.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false,
+                dialogSize: new Size(780, 500));
+            insideSource.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var oldDrive = Path.GetPathRoot(oldRoot) ?? string.Empty;
+        var newDrive = Path.GetPathRoot(destination) ?? string.Empty;
+        if (!string.Equals(oldDrive, newDrive, StringComparison.OrdinalIgnoreCase))
+        {
+            using var crossDrive = new GuardianConfirmDialog(
+                "Move project repository",
+                "CROSS-DRIVE MOVE IS NOT ENABLED",
+                $"Current drive: {oldDrive}\r\nDestination drive: {newDrive}\r\n\r\n" +
+                "GitPet currently uses an atomic local folder move for repository relocation. " +
+                "Choose a destination on the same drive, or move/copy the repository yourself and then use Reassign folder.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false,
+                dialogSize: new Size(780, 500));
+            crossDrive.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var affected = _config.RecentRepositories
+            .Where(item => PathEquals(item.RepositoryRoot, oldRoot))
+            .ToArray();
+
+        var rebased = new List<(RecentRepositoryEntry Project, string NewPath)>();
+        foreach (var item in affected)
+        {
+            string relative;
+            if (PathEquals(item.Path, oldRoot))
+            {
+                relative = ".";
+            }
+            else
+            {
+                relative = Path.GetRelativePath(oldRoot, item.Path);
+                if (relative.Equals("..", StringComparison.Ordinal) ||
+                    relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                {
+                    using var outside = new GuardianConfirmDialog(
+                        "Move project repository",
+                        "PROJECT REGISTRATION NEEDS ATTENTION",
+                        $"GitPet project '{item.DisplayName}' points outside the repository root:\r\n{item.Path}\r\n\r\n" +
+                        "The repository was not moved because GitPet could not safely rebase every project registration.",
+                        confirmText: "OK",
+                        cancelText: "",
+                        showCancel: false,
+                        dialogSize: new Size(780, 500));
+                    outside.ShowDialog(DialogOwner);
+                    return;
+                }
+            }
+
+            var newPath = relative == "."
+                ? destination
+                : Path.GetFullPath(Path.Combine(destination, relative));
+            rebased.Add((item, newPath));
+        }
+
+        var directParent = PathEquals(Directory.GetParent(oldRoot)?.FullName, destination);
+        if (directParent)
+        {
+            var extras = Directory.EnumerateFileSystemEntries(destination)
+                .Where(path => !PathEquals(path, oldRoot))
+                .Take(2)
+                .ToArray();
+            if (extras.Length > 0)
+            {
+                using var notEmptyParent = new GuardianConfirmDialog(
+                    "Move project repository",
+                    "PARENT FOLDER IS NOT EMPTY",
+                    $"To flatten:\r\n{oldRoot}\r\n\r\ninto:\r\n{destination}\r\n\r\n" +
+                    "GitPet requires the parent to contain only the current repository folder. " +
+                    "This avoids silently turning unrelated parent files into repository contents.",
+                    confirmText: "OK",
+                    cancelText: "",
+                    showCancel: false,
+                    dialogSize: new Size(800, 540));
+                notEmptyParent.ShowDialog(DialogOwner);
+                return;
+            }
+        }
+        else if (Directory.EnumerateFileSystemEntries(destination).Any())
+        {
+            using var notEmpty = new GuardianConfirmDialog(
+                "Move project repository",
+                "DESTINATION MUST BE EMPTY",
+                $"Selected destination:\r\n{destination}\r\n\r\n" +
+                "The folder is not a Git repository and it already contains files or folders. " +
+                "GitPet will not merge a repository into existing content.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false,
+                dialogSize: new Size(760, 500));
+            notEmpty.ShowDialog(DialogOwner);
+            return;
+        }
+
+        using var confirm = new GuardianConfirmDialog(
+            "Move project repository",
+            "MOVE THE LOCAL GIT REPOSITORY",
+            $"Repository:\r\n{oldRoot}\r\n\r\n" +
+            $"Move to:\r\n{destination}\r\n\r\n" +
+            $"GitPet projects that will be updated: {affected.Length}\r\n\r\n" +
+            "This moves the entire local repository, including .git, working files, local commits, uncommitted changes, branches and remotes. " +
+            "Nothing is committed, pulled, pushed, or deleted from GitHub.",
+            confirmText: "Move repository",
+            cancelText: "Cancel",
+            confirmWidth: 170,
+            dialogSize: new Size(820, 590),
+            scrollable: true);
+
+        if (confirm.ShowDialog(DialogOwner) != DialogResult.Yes) return;
+
+        var activeAffected = affected.Any(item =>
+            string.Equals(item.Id, _config.ActiveProjectId, StringComparison.OrdinalIgnoreCase));
+
+        try
+        {
+            if (directParent)
+            {
+                var children = Directory.EnumerateFileSystemEntries(oldRoot).ToArray();
+                foreach (var child in children)
+                {
+                    var target = Path.Combine(destination, Path.GetFileName(child));
+                    if (Directory.Exists(child))
+                        Directory.Move(child, target);
+                    else
+                        File.Move(child, target);
+                }
+                Directory.Delete(oldRoot, false);
+            }
+            else
+            {
+                Directory.Delete(destination, false);
+                Directory.Move(oldRoot, destination);
+            }
+
+            var verify = await _git.GetRepositoryRootAsync(destination, _lifetimeToken);
+            if (!verify.Success ||
+                string.IsNullOrWhiteSpace(verify.Output) ||
+                !PathEquals(verify.Output.Trim(), destination))
+            {
+                throw new InvalidOperationException(
+                    "The folder move completed, but GitPet could not verify the Git repository at the new location.\r\n\r\n" +
+                    verify.Output);
+            }
+
+            foreach (var item in rebased)
+            {
+                _config.ReassignProjectFolder(
+                    item.Project.Id,
+                    item.NewPath,
+                    destination,
+                    item.Project.TrackEverything,
+                    item.Project.ScopeEntries.Select(scope =>
+                        new ProjectScopeEntry(scope.RelativePath, scope.IsDirectory)));
+            }
+
+            _configStore.Save(_config);
+            ResetProjectState();
+
+            await _audit.WriteAsync("git_repository_moved", new
+            {
+                oldRoot,
+                newRoot = destination,
+                projectsUpdated = affected.Select(item => new { item.Id, item.DisplayName }).ToArray()
+            });
+
+            if (activeAffected)
+                await RefreshAsync(true);
+
+            using var ready = new GuardianConfirmDialog(
+                "Move project repository",
+                "REPOSITORY MOVED  ✓",
+                $"Old location:\r\n{oldRoot}\r\n\r\n" +
+                $"New location:\r\n{destination}\r\n\r\n" +
+                $"GitPet updated {affected.Length} project registration{(affected.Length == 1 ? "" : "s")}. " +
+                "Git history and the configured remote were preserved.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false,
+                dialogSize: new Size(780, 520));
+            ready.ShowDialog(DialogOwner);
+        }
+        catch (Exception ex)
+        {
+            using var failed = new GuardianConfirmDialog(
+                "Move project repository",
+                "REPOSITORY MOVE NEEDS ATTENTION",
+                "GitPet could not complete the repository relocation. No Git commit, pull, or push was attempted.\r\n\r\n" +
+                ex.Message,
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false,
+                dialogSize: new Size(820, 560),
+                scrollable: true);
+            failed.ShowDialog(DialogOwner);
+        }
     }
 
     private async Task RenameProjectAsync(string projectId)
