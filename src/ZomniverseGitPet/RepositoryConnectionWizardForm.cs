@@ -11,6 +11,7 @@ internal sealed class RepositoryConnectionWizardForm : Form
     private readonly string _projectPath;
     private readonly GitHubAccountStatus _account;
     private readonly GitHubAccountService _github;
+    private readonly bool _startOnCreate;
     private readonly CancellationTokenSource _lifetime = new();
 
     private readonly Panel _body = new();
@@ -31,14 +32,16 @@ internal sealed class RepositoryConnectionWizardForm : Form
         string projectName,
         string projectPath,
         GitHubAccountStatus account,
-        GitHubAccountService github)
+        GitHubAccountService github,
+        bool startOnCreate = false)
     {
         _projectName = string.IsNullOrWhiteSpace(projectName) ? "Project" : projectName.Trim();
         _projectPath = projectPath;
         _account = account;
         _github = github;
+        _startOnCreate = startOnCreate;
 
-        Text = "Connect project online";
+        Text = _startOnCreate ? "Create GitHub repository" : "Connect project online";
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
@@ -76,7 +79,11 @@ internal sealed class RepositoryConnectionWizardForm : Form
         root.Controls.Add(BuildFooter(), 0, 3);
         Controls.Add(root);
 
-        Shown += (_, _) => ShowQuestion();
+        Shown += (_, _) =>
+        {
+            if (_startOnCreate) ShowCreateRepository();
+            else ShowQuestion();
+        };
         FormClosed += (_, _) =>
         {
             _lifetime.Cancel();
@@ -99,7 +106,7 @@ internal sealed class RepositoryConnectionWizardForm : Form
         {
             Dock = DockStyle.Top,
             Height = 44,
-            Text = "◇  CONNECT THIS PROJECT ONLINE",
+            Text = _startOnCreate ? "◇  CREATE A GITHUB REPOSITORY" : "◇  CONNECT THIS PROJECT ONLINE",
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 16, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
@@ -107,7 +114,9 @@ internal sealed class RepositoryConnectionWizardForm : Form
         var subtitle = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "GitPet knows your GitHub account. Now choose where this project lives online.",
+            Text = _startOnCreate
+                ? "GitPet will check your authenticated GitHub account first, then create the repository only if it does not already exist."
+                : "GitPet knows your GitHub account. Now choose where this project lives online.",
             ForeColor = GuardianTheme.MutedInk,
             Font = new Font("Segoe UI", 10),
             TextAlign = ContentAlignment.TopLeft
@@ -399,9 +408,44 @@ internal sealed class RepositoryConnectionWizardForm : Form
             _repositoryName!.Text = name;
 
         SetBusy(true);
-        SetStatus("Creating the GitHub repository…", GuardianTheme.Changes);
+        SetStatus("Checking your GitHub account first…", GuardianTheme.Changes);
         try
         {
+            var expectedName = $"{_account.Login}/{name}";
+            var existing = (await _github.FindRepositoriesAsync(
+                    _account.Login,
+                    [name],
+                    _lifetime.Token))
+                .FirstOrDefault(item =>
+                    item.NameWithOwner.Equals(expectedName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing is not null)
+            {
+                using var exists = new GuardianConfirmDialog(
+                    "Repository already exists",
+                    "REPOSITORY ALREADY EXISTS",
+                    $"GitPet found {existing.NameWithOwner} in your authenticated GitHub account.\r\n\r\n" +
+                    "Use that existing repository for this project instead of creating a duplicate?\r\n\r\n" +
+                    "Nothing will be downloaded or sent automatically.",
+                    confirmText: "Use existing",
+                    cancelText: "Back",
+                    confirmWidth: 150);
+
+                if (exists.ShowDialog(this) == DialogResult.Yes)
+                {
+                    RemoteUrl = existing.Url;
+                    DialogResult = DialogResult.OK;
+                    Close();
+                }
+                else
+                {
+                    SetStatus("Choose another repository name, or use the existing repository.", GuardianTheme.MutedInk);
+                    _repositoryName?.Focus();
+                }
+                return;
+            }
+
+            SetStatus("Creating the GitHub repository…", GuardianTheme.Changes);
             var result = await _github.CreateRepositoryAsync(
                 _account.Login,
                 name,

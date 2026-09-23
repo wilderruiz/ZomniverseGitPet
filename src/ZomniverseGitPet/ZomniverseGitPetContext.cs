@@ -220,6 +220,13 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
         menu.Items.Add(new ToolStripSeparator());
 
+        var createGitHub = new ToolStripMenuItem("Create GitHub repository…")
+        {
+            ToolTipText = "Create an online repository for the current GitPet project using the authenticated GitHub account. GitPet checks for an existing repository first and never pushes automatically."
+        };
+        createGitHub.Click += async (_, _) => await CreateGitHubRepositoryAsync();
+        menu.Items.Add(createGitHub);
+
         var clone = new ToolStripMenuItem("Clone repository to this computer…")
         {
             ToolTipText = "Copy a Git/GitHub repository and its version history to this PC, then add the local copy to GitPet Projects."
@@ -300,6 +307,84 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         }
 
         menu.Show(Cursor.Position);
+    }
+
+    private async Task CreateGitHubRepositoryAsync()
+    {
+        if (ProjectSwitchRuntime.IsSwitching) return;
+
+        if (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian))
+        {
+            using var busy = new GuardianConfirmDialog(
+                "Create GitHub repository",
+                "FINISH THE CURRENT OPERATION FIRST",
+                "GitPet is already working on another Guardian operation. Finish or cancel it before creating an online repository.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            busy.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var active = _config.GetActiveProject();
+        if (active is null || !Directory.Exists(active.RepositoryRoot))
+        {
+            using var noProject = new GuardianConfirmDialog(
+                "Create GitHub repository",
+                "OPEN A LOCAL PROJECT FIRST",
+                "GitPet creates the GitHub repository for a local project so it can connect that project safely as origin.\r\n\r\n" +
+                "Use Projects → Add / open project folder… or Prepare / reconfigure folder… first.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            noProject.ShowDialog(DialogOwner);
+            return;
+        }
+
+        await GuardianSyncState.RefreshAsync(false, _lifetimeToken);
+        if (GuardianSyncState.Current.HasRemote)
+        {
+            using var connected = new GuardianConfirmDialog(
+                "Create GitHub repository",
+                "THIS PROJECT IS ALREADY CONNECTED",
+                "The current GitPet project already has an online repository. GitPet will not create another repository or replace its existing connection automatically.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            connected.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var github = new GitHubAccountService(_audit);
+        var account = await github.GetStatusAsync(_lifetimeToken);
+        if (!account.Authenticated || string.IsNullOrWhiteSpace(account.Login))
+        {
+            using var signIn = new GuardianConfirmDialog(
+                "Create GitHub repository",
+                "GITHUB CONNECTION REQUIRED",
+                "Creating a repository uses the GitHub account authenticated in GitPet.\r\n\r\n" +
+                "Open Connection settings now to sign in or choose your GitHub account?",
+                confirmText: "Open connection",
+                cancelText: "Cancel",
+                confirmWidth: 160);
+
+            if (signIn.ShowDialog(DialogOwner) != DialogResult.Yes) return;
+            await ShowConnectionSetupAsync();
+
+            account = await github.GetStatusAsync(_lifetimeToken);
+            if (!account.Authenticated || string.IsNullOrWhiteSpace(account.Login)) return;
+        }
+
+        _pet.BeginGuidanceHold("✨ NEW GITHUB REPOSITORY\nI'll check your account first");
+        try
+        {
+            await GuardianSyncState.ConnectOriginAsync(DialogOwner, startOnCreate: true);
+            await RefreshAsync(true);
+        }
+        finally
+        {
+            _pet.EndGuidanceHold();
+        }
     }
 
     private async Task CloneRepositoryAsync()
