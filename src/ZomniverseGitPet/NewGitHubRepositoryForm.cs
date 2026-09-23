@@ -28,11 +28,12 @@ internal sealed class NewGitHubRepositoryForm : Form
         Text = "Create new GitHub repository";
         Icon = AppIconProvider.Icon;
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        FormBorderStyle = FormBorderStyle.Sizable;
         MinimizeBox = false;
-        MaximizeBox = false;
+        MaximizeBox = true;
         ShowInTaskbar = false;
-        ClientSize = new Size(820, 600);
+        Size = new Size(920, 760);
+        MinimumSize = new Size(860, 700);
         BackColor = GuardianTheme.Window;
         ForeColor = GuardianTheme.Ink;
         Font = new Font("Segoe UI", 9.5f);
@@ -47,10 +48,10 @@ internal sealed class NewGitHubRepositoryForm : Form
             Padding = Padding.Empty,
             Margin = Padding.Empty
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
 
         root.Controls.Add(BuildHeader(), 0, 0);
         root.Controls.Add(BuildAccountCard(), 0, 1);
@@ -251,7 +252,7 @@ internal sealed class NewGitHubRepositoryForm : Form
         var cancel = MakeButton("Cancel", GuardianActionKind.Standard, 110);
         cancel.DialogResult = DialogResult.Cancel;
 
-        var create = MakeButton("Create repository", GuardianActionKind.Primary, 170);
+        var create = MakeButton("Create repository", GuardianActionKind.Primary, 210);
         create.Click += (_, _) => Finish();
 
         footer.Controls.Add(cancel);
