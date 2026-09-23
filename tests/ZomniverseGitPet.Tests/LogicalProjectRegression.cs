@@ -44,6 +44,24 @@ internal static class LogicalProjectRegression
         if (config.GetActiveProject()?.DisplayName != "Wildverse Site")
             throw new InvalidOperationException("Logical project rename did not persist independently.");
 
+        config.SetTestCommandsForRepository(root, ["dotnet test"]);
+        config.ActivateProject(rootProject.Id);
+        var reassignedPath = Path.Combine(root, "wildverse-moved");
+        var reassigned = config.ReassignProjectFolder(
+            wildverseProject.Id,
+            reassignedPath,
+            root,
+            trackEverything: false,
+            [new ProjectScopeEntry("wildverse-moved", true)]);
+        var movedProject = config.FindProject(wildverseProject.Id);
+        if (!reassigned ||
+            movedProject is null ||
+            !string.Equals(movedProject.Path, reassignedPath, StringComparison.OrdinalIgnoreCase) ||
+            movedProject.ScopeEntries.Count != 1 ||
+            movedProject.TestCommands.Count != 1 ||
+            config.GetActiveProject()?.Id != rootProject.Id)
+            throw new InvalidOperationException("Project folder reassignment did not preserve project identity/settings without changing the active project.");
+
         var legacy = new AppConfig();
         var legacyRoot = legacy.RememberProject(root, root, "Legacy root", true, []);
         LogicalProjectScopeRuntime.Initialize(legacy);
