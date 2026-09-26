@@ -1836,7 +1836,17 @@ public sealed class GuardianForm : Form
             return;
         }
 
-        if (largeFilePreflight.BlockingFiles.Count > 0)
+        var saveOrigin = await _git.RunGitAsync(
+            _config.RepositoryPath!,
+            ["remote", "get-url", "origin"],
+            TimeSpan.FromSeconds(8),
+            token);
+        var saveTargetsGitHub =
+            saveOrigin.Success &&
+            !string.IsNullOrWhiteSpace(saveOrigin.Output) &&
+            !string.IsNullOrWhiteSpace(MajorUpdateCoordinator.TryGetGitHubWebUrl(saveOrigin.Output.Trim()));
+
+        if (saveTargetsGitHub && largeFilePreflight.BlockingFiles.Count > 0)
         {
             var fileLines = string.Join("\r\n", largeFilePreflight.BlockingFiles.Take(10).Select(file =>
                 $"• {file.Path} — {file.SizeMiB:0.00} MiB"));
@@ -1879,7 +1889,8 @@ public sealed class GuardianForm : Form
         }
 
         var largeWarnings = largeFilePreflight.LargeFiles
-            .Where(file => !file.UsesLfs && file.SizeBytes <= GitService.GitHubHardBlobLimitBytes)
+            .Where(file => !file.UsesLfs &&
+                           (!saveTargetsGitHub || file.SizeBytes <= GitService.GitHubHardBlobLimitBytes))
             .ToArray();
         if (largeWarnings.Length > 0)
         {
