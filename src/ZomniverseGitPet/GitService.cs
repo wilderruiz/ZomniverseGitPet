@@ -505,6 +505,55 @@ public sealed class GitService(AuditLog audit)
         return new(0, "Git identity saved.");
     }
 
+    public async Task<WorkingLargeFilePreflightResult> GetWorkingLargeFilePreflightAsync(
+        string path,
+        IEnumerable<string> changedFiles,
+        CancellationToken token = default)
+    {
+        var large = new List<WorkingLargeFile>();
+        foreach (var relative in changedFiles
+                     .Select(NormalizeGitRelativePath)
+                     .Where(value => value.Length > 0)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            token.ThrowIfCancellationRequested();
+
+            var fullPath = Path.GetFullPath(Path.Combine(
+                path,
+                relative.Replace('/', Path.DirectorySeparatorChar)));
+            var root = Path.GetFullPath(path);
+            var prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
+            if (!fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(fullPath, Path.TrimEndingDirectorySeparator(root), StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!File.Exists(fullPath)) continue;
+
+            var size = new FileInfo(fullPath).Length;
+            if (size <= GitHubWarningBlobBytes) continue;
+
+            var attr = await RunGitAsync(
+                path,
+                ["check-attr", "filter", "--", relative],
+                TimeSpan.FromSeconds(10),
+                token);
+            var usesLfs = attr.Success &&
+                          attr.Output.Contains(": filter: lfs", StringComparison.OrdinalIgnoreCase);
+            large.Add(new WorkingLargeFile(relative, size, usesLfs));
+        }
+
+        await audit.WriteAsync("save_large_file_preflight", new
+        {
+            largeFileCount = large.Count,
+            blockingFileCount = large.Count(file =>
+                !file.UsesLfs && file.SizeBytes > GitHubHardBlobLimitBytes)
+        });
+
+        return new(true,
+            large.OrderByDescending(file => file.SizeBytes)
+                 .ThenBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+                 .ToArray());
+    }
+
     public async Task<OutgoingLargeBlobPreflightResult> GetOutgoingLargeBlobPreflightAsync(
         string path,
         string branch,
