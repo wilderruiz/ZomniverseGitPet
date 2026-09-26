@@ -37,6 +37,23 @@ public sealed record OutgoingLargeBlobPreflightResult(
         LargeBlobs.Where(blob => blob.SizeBytes > GitService.GitHubHardBlobLimitBytes).ToArray();
 }
 
+public sealed record WorkingLargeFile(
+    string Path,
+    long SizeBytes,
+    bool UsesLfs)
+{
+    public double SizeMiB => SizeBytes / 1024d / 1024d;
+}
+
+public sealed record WorkingLargeFilePreflightResult(
+    bool Success,
+    IReadOnlyList<WorkingLargeFile> LargeFiles,
+    string Error = "")
+{
+    public IReadOnlyList<WorkingLargeFile> BlockingFiles =>
+        LargeFiles.Where(file => !file.UsesLfs && file.SizeBytes > GitService.GitHubHardBlobLimitBytes).ToArray();
+}
+
 public sealed record RepositoryBranchOption(
     string Name,
     bool IsLocal,
