@@ -1854,7 +1854,7 @@ public sealed class GuardianForm : Form
                 ? $"\r\n• …and {largeFilePreflight.BlockingFiles.Count - 10} more"
                 : "";
 
-            var message =
+            var largeFileMessage =
                 "GitPet found files that are too large to save as ordinary Git blobs when this project is connected to GitHub.\r\n\r\n" +
                 fileLines + more + "\r\n\r\n" +
                 "Files larger than 100 MiB should be stored through Git LFS instead of normal Git history.\r\n\r\n" +
@@ -1878,7 +1878,7 @@ public sealed class GuardianForm : Form
             using var blocked = new GuardianConfirmDialog(
                 "Save changes",
                 "SAVE BLOCKED — LARGE FILES NEED GIT LFS",
-                message,
+                largeFileMessage,
                 "OK",
                 "",
                 showCancel: false,
@@ -2044,92 +2044,6 @@ public sealed class GuardianForm : Form
             return;
         }
 
-        string largeBlobNote = "";
-        var githubWeb = MajorUpdateCoordinator.TryGetGitHubWebUrl(originResult.Output.Trim());
-        if (!string.IsNullOrWhiteSpace(githubWeb))
-        {
-            ReportActivity("Checking saved files against GitHub's large-file limits...");
-            var largeBlobPreflight = await _git.GetOutgoingLargeBlobPreflightAsync(repositoryPath, branch, token);
-            if (!largeBlobPreflight.Success)
-            {
-                ReportActivity(largeBlobPreflight.Error, GuardianActivityKind.Error);
-                _sendOperation.Transition(
-                    SaveOperationPhase.Warning,
-                    "GitPet could not verify GitHub large-file safety.");
-
-                using var scanFailed = new GuardianConfirmDialog(
-                    "Send saved updates",
-                    "SEND PREFLIGHT NEEDS ATTENTION",
-                    largeBlobPreflight.Error + "\r\n\r\n" +
-                    "GitPet stopped before attempting the push because it could not verify whether the outgoing commits contain files that GitHub will reject.",
-                    "OK",
-                    "",
-                    showCancel: false,
-                    dialogSize: new Size(820, 560),
-                    scrollable: true);
-                scanFailed.ShowDialog(this);
-                return;
-            }
-
-            var blocking = largeBlobPreflight.BlockingBlobs;
-            if (blocking.Count > 0)
-            {
-                var fileLines = string.Join("\r\n", blocking.Take(10).Select(blob =>
-                    $"• {blob.Path} — {blob.SizeMiB:0.00} MiB"));
-                var more = blocking.Count > 10
-                    ? $"\r\n• …and {blocking.Count - 10} more"
-                    : "";
-                var lfsStatus = largeBlobPreflight.LfsAvailable
-                    ? "Git LFS is installed on this PC, but these outgoing objects are stored as ordinary Git blobs."
-                    : "Git LFS was not detected on this PC.";
-
-                var message =
-                    "GitPet found saved files that GitHub will reject before Send was attempted.\r\n\r\n" +
-                    fileLines + more + "\r\n\r\n" +
-                    lfsStatus + "\r\n\r\n" +
-                    "GitHub blocks normal Git blobs larger than 100 MiB. These files are already inside local commit history, so adding them to .gitignore now would not repair the outgoing commit.\r\n\r\n" +
-                    "Nothing was pushed. The local repository was not changed.";
-
-                ReportActivity(
-                    "Send blocked before push: oversized normal Git blobs were found.\n\n" +
-                    string.Join("\n", blocking.Select(blob => $"{blob.Path} — {blob.SizeMiB:0.00} MiB")),
-                    GuardianActivityKind.Warning);
-                await _audit.WriteAsync("send_blocked_large_git_blobs", new
-                {
-                    branch,
-                    files = blocking.Select(blob => new { blob.Path, blob.SizeBytes }).ToArray(),
-                    largeBlobPreflight.LfsAvailable
-                });
-                _sendOperation.Transition(
-                    SaveOperationPhase.Warning,
-                    "Large files must be repaired before they can be sent to GitHub.");
-
-                using var blocked = new GuardianConfirmDialog(
-                    "Send saved updates",
-                    "SEND BLOCKED — LARGE FILES NEED GIT LFS",
-                    message,
-                    "OK",
-                    "",
-                    showCancel: false,
-                    dialogSize: new Size(860, 620),
-                    scrollable: true);
-                blocked.ShowDialog(this);
-                return;
-            }
-
-            var warningOnly = largeBlobPreflight.LargeBlobs
-                .Where(blob => blob.SizeBytes <= GitService.GitHubHardBlobLimitBytes)
-                .ToArray();
-            if (warningOnly.Length > 0)
-            {
-                largeBlobNote =
-                    "\r\n\r\nLARGE FILE NOTICE\r\n" +
-                    string.Join("\r\n", warningOnly.Take(5).Select(blob =>
-                        $"• {blob.Path} — {blob.SizeMiB:0.00} MiB")) +
-                    "\r\nGitHub accepts these sizes, but recommends Git LFS for large binary files.";
-            }
-        }
-
         var commit = await _git.GetLastCommitAsync(repositoryPath, token);
         var commitPreview = FormatCommitPreview(commit);
         var answer = MessageBox.Show(
@@ -2240,6 +2154,92 @@ public sealed class GuardianForm : Form
                 : originResult.Output, GuardianActivityKind.Error);
             _sendOperation.Transition(SaveOperationPhase.Failed, "No readable origin remote is configured.");
             return;
+        }
+
+        string largeBlobNote = "";
+        var githubWeb = MajorUpdateCoordinator.TryGetGitHubWebUrl(originResult.Output.Trim());
+        if (!string.IsNullOrWhiteSpace(githubWeb))
+        {
+            ReportActivity("Checking saved files against GitHub's large-file limits...");
+            var largeBlobPreflight = await _git.GetOutgoingLargeBlobPreflightAsync(repositoryPath, branch, token);
+            if (!largeBlobPreflight.Success)
+            {
+                ReportActivity(largeBlobPreflight.Error, GuardianActivityKind.Error);
+                _sendOperation.Transition(
+                    SaveOperationPhase.Warning,
+                    "GitPet could not verify GitHub large-file safety.");
+
+                using var scanFailed = new GuardianConfirmDialog(
+                    "Send saved updates",
+                    "SEND PREFLIGHT NEEDS ATTENTION",
+                    largeBlobPreflight.Error + "\r\n\r\n" +
+                    "GitPet stopped before attempting the push because it could not verify whether the outgoing commits contain files that GitHub will reject.",
+                    "OK",
+                    "",
+                    showCancel: false,
+                    dialogSize: new Size(820, 560),
+                    scrollable: true);
+                scanFailed.ShowDialog(this);
+                return;
+            }
+
+            var blocking = largeBlobPreflight.BlockingBlobs;
+            if (blocking.Count > 0)
+            {
+                var fileLines = string.Join("\r\n", blocking.Take(10).Select(blob =>
+                    $"• {blob.Path} — {blob.SizeMiB:0.00} MiB"));
+                var more = blocking.Count > 10
+                    ? $"\r\n• …and {blocking.Count - 10} more"
+                    : "";
+                var lfsStatus = largeBlobPreflight.LfsAvailable
+                    ? "Git LFS is installed on this PC, but these outgoing objects are stored as ordinary Git blobs."
+                    : "Git LFS was not detected on this PC.";
+
+                var largeBlobMessage =
+                    "GitPet found saved files that GitHub will reject before Send was attempted.\r\n\r\n" +
+                    fileLines + more + "\r\n\r\n" +
+                    lfsStatus + "\r\n\r\n" +
+                    "GitHub blocks normal Git blobs larger than 100 MiB. These files are already inside local commit history, so adding them to .gitignore now would not repair the outgoing commit.\r\n\r\n" +
+                    "Nothing was pushed. The local repository was not changed.";
+
+                ReportActivity(
+                    "Send blocked before push: oversized normal Git blobs were found.\n\n" +
+                    string.Join("\n", blocking.Select(blob => $"{blob.Path} — {blob.SizeMiB:0.00} MiB")),
+                    GuardianActivityKind.Warning);
+                await _audit.WriteAsync("send_blocked_large_git_blobs", new
+                {
+                    branch,
+                    files = blocking.Select(blob => new { blob.Path, blob.SizeBytes }).ToArray(),
+                    largeBlobPreflight.LfsAvailable
+                });
+                _sendOperation.Transition(
+                    SaveOperationPhase.Warning,
+                    "Large files must be repaired before they can be sent to GitHub.");
+
+                using var blocked = new GuardianConfirmDialog(
+                    "Send saved updates",
+                    "SEND BLOCKED — LARGE FILES NEED GIT LFS",
+                    largeBlobMessage,
+                    "OK",
+                    "",
+                    showCancel: false,
+                    dialogSize: new Size(860, 620),
+                    scrollable: true);
+                blocked.ShowDialog(this);
+                return;
+            }
+
+            var warningOnly = largeBlobPreflight.LargeBlobs
+                .Where(blob => blob.SizeBytes <= GitService.GitHubHardBlobLimitBytes)
+                .ToArray();
+            if (warningOnly.Length > 0)
+            {
+                largeBlobNote =
+                    "\r\n\r\nLARGE FILE NOTICE\r\n" +
+                    string.Join("\r\n", warningOnly.Take(5).Select(blob =>
+                        $"• {blob.Path} — {blob.SizeMiB:0.00} MiB")) +
+                    "\r\nGitHub accepts these sizes, but recommends Git LFS for large binary files.";
+            }
         }
 
         var commit = await _git.GetLastCommitAsync(repositoryPath, token);
