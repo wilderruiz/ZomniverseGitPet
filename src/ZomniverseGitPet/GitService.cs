@@ -6,6 +6,9 @@ namespace ZomniverseGitPet;
 
 public sealed class GitService(AuditLog audit)
 {
+    public const long GitHubWarningBlobBytes = 50L * 1024 * 1024;
+    public const long GitHubHardBlobLimitBytes = 100L * 1024 * 1024;
+
     private readonly SemaphoreSlim _gitGate = new(1, 1);
     private readonly HashSet<string> _longPathReadyRepositories = new(StringComparer.OrdinalIgnoreCase);
     internal int GitProcessLaunchCount { get; private set; }
@@ -500,6 +503,104 @@ public sealed class GitService(AuditLog audit)
             return new(setEmail.ExitCode, "Git saved the author name but could not save the email.\r\n\r\n" + setEmail.Output, setEmail.TimedOut);
 
         return new(0, "Git identity saved.");
+    }
+
+    public async Task<OutgoingLargeBlobPreflightResult> GetOutgoingLargeBlobPreflightAsync(
+        string path,
+        string branch,
+        CancellationToken token = default)
+    {
+        if (string.IsNullOrWhiteSpace(branch))
+            return new(false, [], false, "The current branch could not be determined.");
+
+        var remoteRef = $"refs/remotes/origin/{branch}";
+        var verifyRemote = await RunGitAsync(
+            path,
+            ["rev-parse", "--verify", remoteRef],
+            TimeSpan.FromSeconds(12),
+            token);
+        var revisionRange = verifyRemote.Success ? $"{remoteRef}..HEAD" : "HEAD";
+
+        var objects = await RunGitAsync(
+            path,
+            ["rev-list", "--objects", revisionRange],
+            TimeSpan.FromMinutes(1),
+            token);
+        if (!objects.Success)
+            return new(false, [], false,
+                "GitPet could not inspect the saved objects waiting to be sent.\r\n\r\n" + objects.Output);
+
+        var objectPaths = ParseRevisionObjects(objects.Output);
+        if (objectPaths.Count == 0)
+        {
+            var lfsEmpty = await RunGitAsync(path, ["lfs", "version"], TimeSpan.FromSeconds(10), token);
+            return new(true, [], lfsEmpty.Success);
+        }
+
+        var standardInput = string.Join('\n', objectPaths.Keys) + '\n';
+        var sizes = await RunGitWithInputAsync(
+            path,
+            ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"],
+            standardInput,
+            TimeSpan.FromMinutes(1),
+            token);
+        if (!sizes.Success)
+            return new(false, [], false,
+                "GitPet could not measure the saved Git objects waiting to be sent.\r\n\r\n" + sizes.Output);
+
+        var large = ParseLargeBlobBatch(objectPaths, sizes.Output, GitHubWarningBlobBytes);
+        var lfs = await RunGitAsync(path, ["lfs", "version"], TimeSpan.FromSeconds(10), token);
+
+        await audit.WriteAsync("send_large_blob_preflight", new
+        {
+            branch,
+            range = revisionRange,
+            largeBlobCount = large.Count,
+            blockingBlobCount = large.Count(blob => blob.SizeBytes > GitHubHardBlobLimitBytes),
+            lfsAvailable = lfs.Success
+        });
+
+        return new(true, large, lfs.Success);
+    }
+
+    internal static Dictionary<string, string> ParseRevisionObjects(string output)
+    {
+        var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = line.IndexOf(' ');
+            if (separator <= 0 || separator >= line.Length - 1) continue;
+            var objectId = line[..separator].Trim();
+            var path = line[(separator + 1)..].Trim();
+            if (objectId.Length == 0 || path.Length == 0) continue;
+            paths.TryAdd(objectId, path);
+        }
+        return paths;
+    }
+
+    internal static IReadOnlyList<OutgoingGitBlob> ParseLargeBlobBatch(
+        IReadOnlyDictionary<string, string> objectPaths,
+        string batchOutput,
+        long warningBytes)
+    {
+        var result = new List<OutgoingGitBlob>();
+        foreach (var line in batchOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length != 3 ||
+                !fields[1].Equals("blob", StringComparison.Ordinal) ||
+                !long.TryParse(fields[2], out var size) ||
+                size <= warningBytes ||
+                !objectPaths.TryGetValue(fields[0], out var path))
+                continue;
+
+            result.Add(new OutgoingGitBlob(fields[0], path, size));
+        }
+
+        return result
+            .OrderByDescending(blob => blob.SizeBytes)
+            .ThenBy(blob => blob.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public async Task<CommandResult> PushToOriginAsync(string path, string branch, CancellationToken token = default)
