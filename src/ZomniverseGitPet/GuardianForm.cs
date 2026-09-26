@@ -1822,6 +1822,73 @@ public sealed class GuardianForm : Form
             }
         }
 
+        var filesPlannedForSave = stagePlan is null
+            ? preflight.NormalChangedFiles
+            : stagePlan.NormalFiles.Concat(stagePlan.ApprovedIgnoredFiles).ToArray();
+        var largeFilePreflight = await _git.GetWorkingLargeFilePreflightAsync(
+            _config.RepositoryPath!,
+            filesPlannedForSave,
+            token);
+        if (!largeFilePreflight.Success)
+        {
+            ReportActivity(largeFilePreflight.Error, GuardianActivityKind.Error);
+            _saveOperation.Transition(SaveOperationPhase.Warning, "Large-file safety check could not complete.");
+            return;
+        }
+
+        if (largeFilePreflight.BlockingFiles.Count > 0)
+        {
+            var fileLines = string.Join("\r\n", largeFilePreflight.BlockingFiles.Take(10).Select(file =>
+                $"• {file.Path} — {file.SizeMiB:0.00} MiB"));
+            var more = largeFilePreflight.BlockingFiles.Count > 10
+                ? $"\r\n• …and {largeFilePreflight.BlockingFiles.Count - 10} more"
+                : "";
+
+            var message =
+                "GitPet found files that are too large to save as ordinary Git blobs when this project is connected to GitHub.\r\n\r\n" +
+                fileLines + more + "\r\n\r\n" +
+                "Files larger than 100 MiB should be stored through Git LFS instead of normal Git history.\r\n\r\n" +
+                "Save stopped before staging or creating a local checkpoint. Nothing was committed and nothing was sent online.";
+
+            ReportActivity(
+                "Save blocked before checkpoint: large files are not configured for Git LFS.\n\n" +
+                string.Join("\n", largeFilePreflight.BlockingFiles.Select(file =>
+                    $"{file.Path} — {file.SizeMiB:0.00} MiB")),
+                GuardianActivityKind.Warning);
+            await _audit.WriteAsync("checkpoint_blocked_large_files", new
+            {
+                files = largeFilePreflight.BlockingFiles
+                    .Select(file => new { file.Path, file.SizeBytes, file.UsesLfs })
+                    .ToArray()
+            });
+            _saveOperation.Transition(
+                SaveOperationPhase.Warning,
+                "Large files need Git LFS before they can be saved safely.");
+
+            using var blocked = new GuardianConfirmDialog(
+                "Save changes",
+                "SAVE BLOCKED — LARGE FILES NEED GIT LFS",
+                message,
+                "OK",
+                "",
+                showCancel: false,
+                dialogSize: new Size(860, 610),
+                scrollable: true);
+            blocked.ShowDialog(this);
+            return;
+        }
+
+        var largeWarnings = largeFilePreflight.LargeFiles
+            .Where(file => !file.UsesLfs && file.SizeBytes <= GitService.GitHubHardBlobLimitBytes)
+            .ToArray();
+        if (largeWarnings.Length > 0)
+        {
+            ReportActivity(
+                "Large file notice: these files can be saved, but Git LFS is recommended:\n\n" +
+                string.Join("\n", largeWarnings.Select(file => $"{file.Path} — {file.SizeMiB:0.00} MiB")),
+                GuardianActivityKind.Warning);
+        }
+
         if (!await EnsureGitIdentityAsync(token))
         {
             GetActiveOperationController()?.Transition(SaveOperationPhase.Cancelled);
