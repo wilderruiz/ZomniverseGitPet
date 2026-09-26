@@ -26,6 +26,10 @@ Each logical project is either:
 
 A project's scope does not have to be a single subfolder — it can be an arbitrary, scattered set of files and folders anywhere under the repository root.
 
+Several logical projects may also use the **exact same physical repository root**. This is useful for a shared web root such as `public_html`: one project can select `millenova_config.php` + `millenova/`, while another selects its own config file + subdomain folder. The repository is shared; project identity comes from the GitPet project ID and selected scope, not exclusive ownership of the root folder.
+
+Use **Projects → Add project in current repository…** to create another sibling project without creating another `.git` folder or moving files.
+
 ## What stays independent between projects
 
 - Display name
