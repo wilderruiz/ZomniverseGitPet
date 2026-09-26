@@ -32,6 +32,26 @@ internal static class LogicalProjectRegression
             config.GetActiveProject()?.Id != wildverseProject.Id)
             throw new InvalidOperationException("Logical projects did not remain independent inside one repository.");
 
+        var sameRootProject = config.RememberProject(
+            root,
+            root,
+            "Millenova",
+            trackEverything: false,
+            [new ProjectScopeEntry("millenova", true), new ProjectScopeEntry("millenova_config.php", false)]);
+        var secondSameRootProject = config.RememberProject(
+            root,
+            root,
+            "Another subdomain",
+            trackEverything: false,
+            [new ProjectScopeEntry("another-subdomain", true), new ProjectScopeEntry("another-subdomain_config.php", false)]);
+
+        var samePathProjects = config.FindProjectsByPath(root);
+        if (samePathProjects.Count < 3 ||
+            sameRootProject.Id == secondSameRootProject.Id ||
+            !samePathProjects.Any(item => item.Id == sameRootProject.Id) ||
+            !samePathProjects.Any(item => item.Id == secondSameRootProject.Id))
+            throw new InvalidOperationException("Multiple logical projects could not share the exact same repository root/path.");
+
         var specs = LogicalProjectScopeRuntime.GetPathspecs(root, includeRootGitIgnore: true);
         if (!specs.Contains("wildverse", StringComparer.OrdinalIgnoreCase) ||
             !specs.Contains(".gitignore", StringComparer.OrdinalIgnoreCase) ||
@@ -61,6 +81,16 @@ internal static class LogicalProjectRegression
             movedProject.TestCommands.Count != 1 ||
             config.GetActiveProject()?.Id != rootProject.Id)
             throw new InvalidOperationException("Project folder reassignment did not preserve project identity/settings without changing the active project.");
+
+        var sharedReassign = config.ReassignProjectFolder(
+            secondSameRootProject.Id,
+            root,
+            root,
+            trackEverything: false,
+            scopeEntries: [new ProjectScopeEntry("another-subdomain", true)]);
+        if (!sharedReassign ||
+            config.FindProjectsByPath(root).Count < 3)
+            throw new InvalidOperationException("Same-path logical projects could not be reassigned without false duplicate ownership.");
 
         var legacy = new AppConfig();
         var legacyRoot = legacy.RememberProject(root, root, "Legacy root", true, []);
