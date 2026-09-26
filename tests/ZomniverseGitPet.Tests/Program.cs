@@ -148,6 +148,52 @@ Check("suspicious path detection", () =>
     return hits.Count == 1 && hits[0] == ".env";
 });
 
+Check("outgoing object parser preserves paths with spaces", () =>
+{
+    var parsed = GitService.ParseRevisionObjects(
+        "aaaaaaaa file.bin\n" +
+        "bbbbbbbb image/website banner.mp4\n" +
+        "cccccccc\n");
+    return parsed.Count == 2 &&
+           parsed["aaaaaaaa"] == "file.bin" &&
+           parsed["bbbbbbbb"] == "image/website banner.mp4";
+});
+
+Check("large blob parser keeps only blobs above warning threshold", () =>
+{
+    var objects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["aaaaaaaa"] = "image/website_banner.mp4",
+        ["bbbbbbbb"] = "image/website_banner2.mp4",
+        ["cccccccc"] = "README.md"
+    };
+    var parsed = GitService.ParseLargeBlobBatch(
+        objects,
+        "aaaaaaaa blob 361160000\n" +
+        "bbbbbbbb blob 74910208\n" +
+        "cccccccc blob 1200\n" +
+        "dddddddd tree 900000000\n",
+        GitService.GitHubWarningBlobBytes);
+
+    return parsed.Count == 2 &&
+           parsed[0].Path == "image/website_banner.mp4" &&
+           parsed[0].SizeBytes == 361160000 &&
+           parsed[1].Path == "image/website_banner2.mp4";
+});
+
+Check("GitHub hard limit blocks only blobs above 100 MiB", () =>
+{
+    var result = new OutgoingLargeBlobPreflightResult(
+        true,
+        [
+            new OutgoingGitBlob("a", "large.mp4", GitService.GitHubHardBlobLimitBytes + 1),
+            new OutgoingGitBlob("b", "warning.mp4", GitService.GitHubHardBlobLimitBytes)
+        ],
+        true);
+    return result.BlockingBlobs.Count == 1 &&
+           result.BlockingBlobs[0].Path == "large.mp4";
+});
+
 Check("reconciliation extracts Windows path-creation failures", () =>
 {
     var output = string.Join('\n',
