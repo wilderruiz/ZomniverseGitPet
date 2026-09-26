@@ -79,14 +79,18 @@ public sealed class AppConfig
             : RecentRepositories.FirstOrDefault(item =>
                 string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
 
-    public RecentRepositoryEntry? FindProjectByPath(string path)
+    public RecentRepositoryEntry? FindProjectByPath(string path) =>
+        FindProjectsByPath(path).FirstOrDefault();
+
+    public IReadOnlyList<RecentRepositoryEntry> FindProjectsByPath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path)) return null;
+        if (string.IsNullOrWhiteSpace(path)) return Array.Empty<RecentRepositoryEntry>();
         var normalized = NormalizePath(path);
         return RecentRepositories
+            .Where(item =>
+                string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(item => item.LastOpenedUtc)
-            .FirstOrDefault(item =>
-                string.Equals(NormalizePath(item.Path), normalized, StringComparison.OrdinalIgnoreCase));
+            .ToArray();
     }
 
     public void RememberRepository(string path, DateTimeOffset? openedAt = null)
@@ -185,11 +189,10 @@ public sealed class AppConfig
 
         var normalizedProject = NormalizePath(projectPath);
         var normalizedRepository = NormalizePath(repositoryRoot);
-        var duplicate = RecentRepositories.Any(item =>
-            !string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(NormalizePath(item.Path), normalizedProject, StringComparison.OrdinalIgnoreCase));
-        if (duplicate) return false;
 
+        // Logical projects are identified by Id, not by physical folder path.
+        // Several projects may intentionally share the exact same repository
+        // root/path while keeping independent names, scopes and test profiles.
         entry.Path = normalizedProject;
         entry.RepositoryRoot = normalizedRepository;
         entry.TrackEverything = trackEverything;
