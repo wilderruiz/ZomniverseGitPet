@@ -251,6 +251,13 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         var activeProject = _config.GetActiveProject();
         if (activeProject is not null && Directory.Exists(activeProject.RepositoryRoot))
         {
+            var addSibling = new ToolStripMenuItem("Add project in current repository…")
+            {
+                ToolTipText = "Create another named GitPet project that shares this repository root but keeps its own selected scope, tests, and project identity."
+            };
+            addSibling.Click += async (_, _) => await AddProjectInCurrentRepositoryAsync();
+            menu.Items.Add(addSibling);
+
             var reconfigure = new ToolStripMenuItem("Reconfigure current project scope…")
             {
                 ToolTipText = "Change only this GitPet project's local scope. Sibling projects in the same repository are not hidden or rewritten."
@@ -776,6 +783,38 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
             "Project prepared", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
+    private async Task AddProjectInCurrentRepositoryAsync()
+    {
+        if (ProjectSwitchRuntime.IsSwitching) return;
+        if (_guardian is { IsDisposed: false } && GuardianOperationInProgress(_guardian))
+        {
+            using var busy = new GuardianConfirmDialog(
+                "Add project in current repository",
+                "FINISH THE CURRENT OPERATION FIRST",
+                "GitPet is already working on another Guardian operation. Finish or cancel it before adding another logical project.",
+                confirmText: "OK",
+                cancelText: "",
+                showCancel: false);
+            busy.ShowDialog(DialogOwner);
+            return;
+        }
+
+        var active = _config.GetActiveProject();
+        if (active is null || !Directory.Exists(active.RepositoryRoot)) return;
+
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(active.RepositoryRoot));
+        var siblingCount = _config.RecentRepositories.Count(item => PathEquals(item.RepositoryRoot, root));
+        var suggestedName = siblingCount == 0 ? "New project" : $"New project {siblingCount + 1}";
+
+        await ConfigureProjectAsync(
+            root,
+            root,
+            suggestedName,
+            projectId: null,
+            initialScope: null,
+            restoreRepositoryScope: false);
+    }
+
     private async Task ReconfigureRepositoryAsync(string repositoryPath)
     {
         var active = _config.GetActiveProject();
@@ -799,7 +838,8 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
         string projectPath,
         string displayName,
         string? projectId,
-        IReadOnlyList<ProjectScopeEntry>? initialScope)
+        IReadOnlyList<ProjectScopeEntry>? initialScope,
+        bool restoreRepositoryScope = true)
     {
         if (!Directory.Exists(repositoryPath) || !Directory.Exists(projectPath)) return;
         var rootResult = await _git.GetRepositoryRootAsync(repositoryPath, _lifetimeToken);
@@ -813,7 +853,8 @@ public sealed class ZomniverseGitPetContext : ApplicationContext
 
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootResult.Output.Trim()));
         var normalizedProject = Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectPath));
-        var restored = initialScope ?? ProjectGitIgnoreComposer.ReadManagedScope(root);
+        var restored = initialScope ??
+                       (restoreRepositoryScope ? ProjectGitIgnoreComposer.ReadManagedScope(root) : null);
         if (restored is null && !PathEquals(root, normalizedProject))
             restored = BuildDefaultNestedScope(root, normalizedProject);
 
