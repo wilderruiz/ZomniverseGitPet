@@ -36,7 +36,7 @@ internal static class FirstRunOnboardingRegression
         };
         local.Normalize();
         Require(
-            local.SchemaVersion == 5 &&
+            local.SchemaVersion == AppConfig.CurrentSchemaVersion &&
             local.OnboardingCompleted &&
             local.ConnectionMode == GitPetConnectionModes.LocalGitOnly,
             "Local Git Only mode should survive config normalization.");
