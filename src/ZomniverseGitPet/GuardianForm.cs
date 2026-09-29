@@ -1699,14 +1699,34 @@ public sealed class GuardianForm : Form
             return;
         }
 
-        var suspicious = GitService.FindSuspiciousPaths(_status.Files, _config.SuspiciousPathPatterns);
-        if (suspicious.Count > 0)
+        var suspiciousMatches = GitService.FindSuspiciousPathMatches(
+            _status.Files, _config.SuspiciousPathPatterns);
+        if (suspiciousMatches.Count > 0)
         {
-            ReportActivity("Save blocked because suspicious paths are present:\n\n" +
+            var suspicious = suspiciousMatches
+                .Select(match => match.Path)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            ReportActivity("Potential sensitive paths require review:\n\n" +
                 string.Join("\n", suspicious), GuardianActivityKind.Warning);
-            await _audit.WriteAsync("checkpoint_blocked_suspicious_paths", new { files = suspicious });
-            _saveOperation.Transition(SaveOperationPhase.Warning, "Suspicious paths require attention.");
-            return;
+            await _audit.WriteAsync("checkpoint_suspicious_paths_detected",
+                new { files = suspicious, matches = suspiciousMatches });
+            _saveOperation.Transition(SaveOperationPhase.Warning, "Potential sensitive paths require review.");
+
+            if (!SuspiciousPathReview.Confirm(this, suspiciousMatches, "Normal Save"))
+            {
+                await _audit.WriteAsync("checkpoint_suspicious_paths_cancelled",
+                    new { files = suspicious, matches = suspiciousMatches });
+                _saveOperation.Transition(SaveOperationPhase.Cancelled,
+                    "Save cancelled after sensitive-path review.");
+                return;
+            }
+
+            await _audit.WriteAsync("checkpoint_suspicious_paths_approved",
+                new { files = suspicious, matches = suspiciousMatches });
+            _saveOperation.Transition(SaveOperationPhase.Preparing,
+                "Sensitive-path warning reviewed. Continuing Save...");
         }
 
         SaveStagePlan? stagePlan = null;
