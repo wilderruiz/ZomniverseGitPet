@@ -26,7 +26,9 @@ public sealed class AppConfig
 {
     public const int RecentRepositoryLimit = 20;
 
-    public int SchemaVersion { get; set; } = 5;
+    public const int CurrentSchemaVersion = 6;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
     // RepositoryPath remains the authoritative Git working root for compatibility with
     // existing Git operations. ActiveProjectId identifies the logical GitPet project.
@@ -52,8 +54,14 @@ public sealed class AppConfig
 
     public List<string> SuspiciousPathPatterns { get; set; } =
     [
-        @"(^|/)\.env($|\.)", @"\.pem$", @"\.key$", "id_rsa",
-        "credentials", @"secrets?\.", "password", "token"
+        @"(^|/)\.env($|\.)",
+        @"\.pem$",
+        @"\.key$",
+        @"(^|/)id_rsa($|\.)",
+        @"(^|/)credentials?(\.(json|ya?ml|txt|ini|conf|config|env)|$)",
+        @"(^|/)secrets?(\.(json|ya?ml|txt|ini|conf|config|env)|$)",
+        @"(^|/)passwords?(\.(json|ya?ml|txt|ini|conf|config|env)|$)",
+        @"(^|/)(access[-_.]?token|auth[-_.]?token|api[-_.]?token|refresh[-_.]?token|secret[-_.]?token|tokens?)(\.(json|ya?ml|txt|ini|conf|config|env)|$)"
     ];
 
     public RecentRepositoryEntry? GetActiveProject()
@@ -281,13 +289,18 @@ public sealed class AppConfig
 
     internal void Normalize()
     {
-        SchemaVersion = 5;
+        var previousSchemaVersion = SchemaVersion;
         ConnectionMode = GitPetConnectionModes.Normalize(ConnectionMode);
         if (!OnboardingCompleted) ConnectionMode = GitPetConnectionModes.Unconfigured;
 
         RecentRepositories ??= [];
         TestCommands ??= [];
         SuspiciousPathPatterns ??= [];
+
+        if (previousSchemaVersion < 6)
+            SuspiciousPathPatterns = MigrateLegacySuspiciousPathPatterns(SuspiciousPathPatterns);
+
+        SchemaVersion = CurrentSchemaVersion;
 
         var normalized = new List<RecentRepositoryEntry>();
         foreach (var item in RecentRepositories
@@ -404,6 +417,24 @@ public sealed class AppConfig
             .Where(command => command.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private static List<string> MigrateLegacySuspiciousPathPatterns(IEnumerable<string> patterns)
+    {
+        var replacements = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["id_rsa"] = @"(^|/)id_rsa($|\.)",
+            ["credentials"] = @"(^|/)credentials?(\.(json|ya?ml|txt|ini|conf|config|env)|$)",
+            [@"secrets?\."] = @"(^|/)secrets?(\.(json|ya?ml|txt|ini|conf|config|env)|$)",
+            ["password"] = @"(^|/)passwords?(\.(json|ya?ml|txt|ini|conf|config|env)|$)",
+            ["token"] = @"(^|/)(access[-_.]?token|auth[-_.]?token|api[-_.]?token|refresh[-_.]?token|secret[-_.]?token|tokens?)(\.(json|ya?ml|txt|ini|conf|config|env)|$)"
+        };
+
+        return patterns
+            .Where(pattern => !string.IsNullOrWhiteSpace(pattern))
+            .Select(pattern => replacements.TryGetValue(pattern, out var replacement) ? replacement : pattern)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
 
     private static string NormalizeDisplayName(string? value, string path) =>
         string.IsNullOrWhiteSpace(value) ? GetDisplayName(path) : value.Trim();
