@@ -25,7 +25,7 @@ flowchart TD
 
 1. **Ignored-file check** — `git check-ignore -v` is run against every changed path; anything covered by a `.gitignore` rule (root, nested, or `.git/info/exclude`) is shown to the user with its exact rule and source file/line, and is force-tracked only if explicitly ticked. This step never stages anything itself — it only computes what *would* be staged for the dialog to show.
 2. **Author identity** — Save refuses to create a commit without a configured `user.name`/`user.email`; GitPet prompts for one (project-scoped or global) rather than letting Git fail with an opaque error.
-3. **Suspicious-path check** — changed paths are checked against a configurable list of secret-like patterns (`.env`, `.pem`, `.key`, `id_rsa`, `credentials`, `secrets`, `password`, `token`, and similar) and flagged before staging, though this is a warning, not a hard block.
+3. **Suspicious-path check** — changed paths are checked against a configurable list of secret-like patterns. A manual Save shows the matching path **and the rule that matched it**, then requires an explicit **Save anyway** confirmation; cancelling leaves the working tree untouched. Automatic Save remains blocked on any match because no human is present to review it. Broad legacy substring rules such as bare `token` are migrated to filename-aware rules so ordinary files such as `Styles/tokens.css` do not trigger the warning.
 
 ## Send preflight
 
