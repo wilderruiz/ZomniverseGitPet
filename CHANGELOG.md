@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
+
 ## 0.5.0 - 2026-09-22
 
 - Rebuilt the main Guardian into a dark graphite **Command Center** with the four-quadrant **SAVE / GET / SEND / RECONCILE** workboard, clearer repository/branch status, improved operation controls, and the current project selector.
