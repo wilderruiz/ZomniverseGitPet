@@ -4,7 +4,7 @@
 
 | Field | Purpose |
 | --- | --- |
-| `SchemaVersion` | Current normalized value: 5. Used to run one-time migrations on load. |
+| `SchemaVersion` | Current normalized value: 6. Used to run one-time migrations on load. Schema 6 narrows legacy broad secret-name regexes that caused false positives such as `Styles/tokens.css`. |
 | `RepositoryPath` | Active repository root, kept for backward compatibility. |
 | `ActiveProjectId` | Which logical project (see [Project Model](../developer/PROJECT_MODEL.md)) is currently active. |
 | `RecentRepositories` | Up to 20 `RecentRepositoryEntry` records (most recent first) — see below. |
@@ -15,7 +15,7 @@
 | `OnboardingCompleted` | Whether first-run setup has been finished. |
 | `ConnectionMode` | `unconfigured` / `github` / `local-git-only` — a UI label only, see [GitHub Integration](../developer/GITHUB_INTEGRATION.md). |
 | `TestCommands` | Legacy (v1/v2) root-level test-command list; migrated onto the active project's own `TestCommands` on load, then cleared. |
-| `SuspiciousPathPatterns` | Default regex list flagged before Save: `.env`, `.pem`, `.key`, `id_rsa`, `credentials`, `secrets?.`, `password`, `token`. |
+| `SuspiciousPathPatterns` | Regex list used for sensitive-path warnings. Defaults target `.env`, key/certificate files, exact credential/secret/password filenames, and credential-like token files. Manual Save requires explicit review; automatic Save still refuses to checkpoint a match without a human present. |
 
 ## `RecentRepositoryEntry` (one per logical project)
 
