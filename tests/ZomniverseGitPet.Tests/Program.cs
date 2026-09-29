@@ -148,6 +148,52 @@ Check("suspicious path detection", () =>
     return hits.Count == 1 && hits[0] == ".env";
 });
 
+Check("design-token filenames do not trigger default secret rules", () =>
+{
+    var patterns = new AppConfig().SuspiciousPathPatterns;
+    var hits = GitService.FindSuspiciousPaths(
+        [
+            new ChangedFile("M", "Styles/tokens.css"),
+            new ChangedFile("M", "src/Tokenizer.cs"),
+            new ChangedFile("M", "docs/tokenization.md")
+        ],
+        patterns);
+    return hits.Count == 0;
+});
+
+Check("credential-like token files still trigger default secret rules", () =>
+{
+    var patterns = new AppConfig().SuspiciousPathPatterns;
+    var matches = GitService.FindSuspiciousPathMatches(
+        [new ChangedFile("??", "config/auth-token.json")],
+        patterns);
+    return matches.Count > 0 &&
+           matches.All(match => match.Path == "config/auth-token.json") &&
+           matches.Any(match => match.Pattern.Contains("token", StringComparison.OrdinalIgnoreCase));
+});
+
+Check("legacy token substring rule migrates without flagging tokens css", () =>
+{
+    var config = new AppConfig
+    {
+        SchemaVersion = 5,
+        SuspiciousPathPatterns = ["token"]
+    };
+    config.Normalize();
+
+    var benign = GitService.FindSuspiciousPaths(
+        [new ChangedFile("M", "Styles/tokens.css")],
+        config.SuspiciousPathPatterns);
+    var risky = GitService.FindSuspiciousPaths(
+        [new ChangedFile("??", "config/token.json")],
+        config.SuspiciousPathPatterns);
+
+    return config.SchemaVersion == AppConfig.CurrentSchemaVersion &&
+           !config.SuspiciousPathPatterns.Contains("token", StringComparer.Ordinal) &&
+           benign.Count == 0 &&
+           risky.Count == 1;
+});
+
 Check("outgoing object parser preserves paths with spaces", () =>
 {
     var parsed = GitService.ParseRevisionObjects(
