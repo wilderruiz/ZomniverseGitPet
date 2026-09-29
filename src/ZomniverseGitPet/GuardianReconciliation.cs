@@ -396,14 +396,13 @@ internal static class GuardianReconciliation
         }
 
         var status = await git.GetStatusAsync(repositoryPath);
-        var suspicious = GitService.FindSuspiciousPaths(status.Files, config.SuspiciousPathPatterns);
-        if (suspicious.Count > 0)
+        var suspiciousMatches = GitService.FindSuspiciousPathMatches(
+            status.Files, config.SuspiciousPathPatterns);
+        if (suspiciousMatches.Count > 0 &&
+            !SuspiciousPathReview.Confirm(owner, suspiciousMatches, "Reconciliation Save"))
         {
-            MessageBox.Show(owner,
-                "Save is blocked because suspicious paths are present:\r\n\r\n" + string.Join("\r\n", suspicious),
-                "Review before saving",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            SetState(owner, SaveOperationPhase.Cancelled,
+                "Reconciliation Save cancelled after sensitive-path review.");
             return;
         }
 
