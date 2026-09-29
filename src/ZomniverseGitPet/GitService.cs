@@ -4,6 +4,8 @@ using System.Text.RegularExpressions;
 
 namespace ZomniverseGitPet;
 
+public sealed record SuspiciousPathMatch(string Path, string Pattern);
+
 public sealed class GitService(AuditLog audit)
 {
     public const long GitHubWarningBlobBytes = 50L * 1024 * 1024;
@@ -1031,10 +1033,48 @@ public sealed class GitService(AuditLog audit)
             HasTrackingInformation: hasTrackingInformation);
     }
 
-    public static IReadOnlyList<string> FindSuspiciousPaths(IEnumerable<ChangedFile> files, IEnumerable<string> patterns) =>
-        files.Select(file => file.Path.Replace('\\', '/'))
-            .Where(path => patterns.Any(pattern => Regex.IsMatch(path, pattern, RegexOptions.IgnoreCase)))
-            .Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
+    public static IReadOnlyList<SuspiciousPathMatch> FindSuspiciousPathMatches(
+        IEnumerable<ChangedFile> files,
+        IEnumerable<string> patterns)
+    {
+        var normalizedPatterns = patterns
+            .Where(pattern => !string.IsNullOrWhiteSpace(pattern))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return files
+            .Select(file => file.Path.Replace('\\', '/'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(path => normalizedPatterns
+                .Where(pattern => IsSuspiciousPathMatch(path, pattern))
+                .Select(pattern => new SuspiciousPathMatch(path, pattern)))
+            .Distinct()
+            .OrderBy(match => match.Path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(match => match.Pattern, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<string> FindSuspiciousPaths(
+        IEnumerable<ChangedFile> files,
+        IEnumerable<string> patterns) =>
+        FindSuspiciousPathMatches(files, patterns)
+            .Select(match => match.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static bool IsSuspiciousPathMatch(string path, string pattern)
+    {
+        try
+        {
+            return Regex.IsMatch(path, pattern, RegexOptions.IgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            // User-editable configuration must not crash Save because one regex is malformed.
+            return false;
+        }
+    }
 
     private static string NormalizeGitRelativePath(string file) =>
         (file ?? "").Replace('\\', '/').TrimStart('/');
