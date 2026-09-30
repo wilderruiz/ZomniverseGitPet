@@ -470,6 +470,96 @@ internal static class SharedCodeReviewRenderer
     private static bool SupportsPrettyLayout(string language) =>
         language is "php" or "csharp" or "js" or "ts" or "java" or "css" or "json" or "powershell";
 
+    private static int CountLeadingClosers(string line)
+    {
+        var count = 0;
+        foreach (var ch in line)
+        {
+            if (ch is '}' or ']')
+            {
+                count++;
+                continue;
+            }
+
+            if (!char.IsWhiteSpace(ch))
+                break;
+        }
+
+        return count;
+    }
+
+    private static int StructuralDelta(
+        string line,
+        string language,
+        ref bool inBlockComment)
+    {
+        var delta = 0;
+        var quote = '\0';
+        var escaped = false;
+
+        for (var i = 0; i < line.Length; i++)
+        {
+            var ch = line[i];
+            var next = i + 1 < line.Length ? line[i + 1] : '\0';
+
+            if (inBlockComment)
+            {
+                if (ch == '*' && next == '/')
+                {
+                    inBlockComment = false;
+                    i++;
+                }
+                continue;
+            }
+
+            if (quote != '\0')
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (ch == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (ch == quote)
+                    quote = '\0';
+
+                continue;
+            }
+
+            if (ch is '\'' or '"')
+            {
+                quote = ch;
+                continue;
+            }
+
+            if (ch == '/' && next == '*')
+            {
+                inBlockComment = true;
+                i++;
+                continue;
+            }
+
+            if (ch == '/' && next == '/')
+                break;
+
+            if (language is "php" or "powershell" && ch == '#')
+                break;
+
+            if (ch is '{' or '[')
+                delta++;
+            else if (ch is '}' or ']')
+                delta--;
+        }
+
+        return delta;
+    }
+
     internal static string NormalizeLineEndings(string value) =>
         (value ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", Environment.NewLine);
 }
