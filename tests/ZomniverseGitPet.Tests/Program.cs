@@ -1,3 +1,4 @@
+using System.Windows.Forms;
 using ZomniverseGitPet;
 
 var failures = new List<string>();
