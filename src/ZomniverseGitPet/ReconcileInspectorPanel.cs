@@ -21,8 +21,10 @@ internal sealed class ReconcileInspectorPanel : Panel
     private readonly SplitContainer _split = new();
     private readonly Dictionary<ReconcileInspectorView, Button> _viewButtons = [];
     private Button? _scrollLinkButton;
+    private Button? _indentButton;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
+    private bool _visualIndent = true;
     private GuardianWorkboardRow? _selection;
     private ReconcileInspectorSourceModel? _sourceModel;
     private ReconcileInspectorView _selectedView;
@@ -87,7 +89,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.ForeColor = GuardianTheme.Healthy;
         _footer.Text =
             $"Pinned read-only snapshots · BASE {model.Base.ShortSha} · LOCAL {model.Local.ShortSha} · " +
-            $"REMOTE {model.Remote.ShortSha} · no repository changes.";
+            $"REMOTE {model.Remote.ShortSha} · display indentation does not modify source.";
         SelectView(_selectedView);
     }
 
@@ -186,6 +188,14 @@ internal sealed class ReconcileInspectorPanel : Panel
             _scrollLinkButton.Text = _scrollLink.Enabled ? "Scroll ✓" : "Scroll off";
         };
 
+        _indentButton = MakeButton("Indent ✓");
+        _indentButton.Click += (_, _) =>
+        {
+            _visualIndent = !_visualIndent;
+            _indentButton.Text = _visualIndent ? "Indent ✓" : "Indent off";
+            SelectView(_selectedView);
+        };
+
         _maximizeButton = MakeButton("Max ⛶");
         _maximizeButton.Click += (_, _) => MaximizeRequested?.Invoke(this, EventArgs.Empty);
 
@@ -193,6 +203,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         activity.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
 
         actions.Controls.Add(_scrollLinkButton);
+        actions.Controls.Add(_indentButton);
         actions.Controls.Add(_maximizeButton);
         actions.Controls.Add(activity);
 
@@ -358,10 +369,10 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         RenderSource(
             _leftTitle, _leftBody, leftSource, _sourceModel.Branch,
-            _sourceModel.RelativePath, leftLines, leftBackground);
+            _sourceModel.RelativePath, leftLines, leftBackground, _visualIndent);
         RenderSource(
             _rightTitle, _rightBody, rightSource, _sourceModel.Branch,
-            _sourceModel.RelativePath, rightLines, rightBackground);
+            _sourceModel.RelativePath, rightLines, rightBackground, _visualIndent);
     }
 
     private void RenderSummary()
@@ -411,7 +422,8 @@ internal sealed class ReconcileInspectorPanel : Panel
         string branch,
         string path,
         IReadOnlySet<int> changedLines,
-        Color changeBackground)
+        Color changeBackground,
+        bool visualIndent)
     {
         var branchText = source.Role switch
         {
@@ -430,7 +442,8 @@ internal sealed class ReconcileInspectorPanel : Panel
             source.Exists ? source.Text : "",
             path,
             changedLines,
-            changeBackground);
+            changeBackground,
+            visualIndent);
     }
 
     private static (string Left, string Right) PaneTitles(ReconcileInspectorView view) => view switch

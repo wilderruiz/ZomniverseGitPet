@@ -389,6 +389,21 @@ Check("shared code renderer recognizes PHP syntax roles", () =>
            spans.Any(span => span.Kind == CodeSyntaxKind.Comment);
 });
 
+Check("visual indentation preserves source line mapping", () =>
+{
+    const string raw = "$required = [\n'one' => [\n'value' => 1,\n],\n];";
+    var pretty = SharedCodeReviewRenderer.ApplyVisualIndentation(raw, "validator.php");
+    var lines = pretty.Replace("\r\n", "\n").Split('\n');
+
+    return lines.Length == 5 &&
+           lines[0] == "$required = [" &&
+           lines[1] == "    'one' => [" &&
+           lines[2] == "        'value' => 1," &&
+           lines[3] == "    ]," &&
+           lines[4] == "];" &&
+           raw == "$required = [\n'one' => [\n'value' => 1,\n],\n];";
+});
+
 Check("zero-context diff maps before and now lines", () =>
 {
     var diff = "@@ -10,2 +10,3 @@\n-old a\n-old b\n+new a\n+new b\n+new c\n";
