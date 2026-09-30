@@ -80,7 +80,7 @@ I:\Dropbox\WORK_LAPTOP\Programming\ZomniverseGitPet_Releases\current\ZomniverseG
 
 5. Reproduce the exact screen/action changed and verify it visually.
 
-6. when Codex messes up do this
+# when Codex messes up do this
 
 Get-Process | Where-Object { $_.ProcessName -in @('DEV-ZomniverseGitPet','ZomniverseGitPet') } | Select-Object Id,ProcessName,Path
 
