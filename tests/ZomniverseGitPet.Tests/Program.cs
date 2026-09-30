@@ -420,17 +420,29 @@ Check("visual indentation preserves source line mapping", () =>
 
 Check("pretty view expands long PHP arrays with source provenance", () =>
 {
-    const string raw = "$contracts = ['one'=>['a','b','c'],'two'=>['d','e','f'],'three'=>['g','h','i'],'four'=>['j','k','l']];";
+    const string raw = "$contracts = ['one'=>['a','b','c'],'two'=>['d','e','f'],'three'=>['g','h','i'],'four'=>['j','k','l'],'five'=>['m','n','o'],'six'=>['p','q','r']];";
     var layout = SharedCodeReviewRenderer.BuildPrettyLayout(raw, "validator.php");
     var lines = layout.Text.Replace("\r\n", "\n").Split('\n');
 
-    return lines.Length > 4 &&
-           lines.Any(line => line.Trim() == "'one'=>[") &&
-           lines.Any(line => line.Trim() == "'a',") &&
-           lines.Any(line => line.Trim() == "];") &&
-           layout.SourceLineByVisualLine.Count == lines.Length &&
-           layout.SourceLineByVisualLine.All(line => line == 1) &&
-           raw == "$contracts = ['one'=>['a','b','c'],'two'=>['d','e','f'],'three'=>['g','h','i'],'four'=>['j','k','l']];";
+    var passed =
+        raw.Length >= 110 &&
+        lines.Length > 8 &&
+        lines.Any(line => line.Trim() == "'one'=>[") &&
+        lines.Any(line => line.Trim() == "'a',") &&
+        lines.Any(line => line.Trim() == "'six'=>[") &&
+        lines.Any(line => line.Trim() == "'r'") &&
+        lines.Any(line => line.Trim() == "];") &&
+        layout.SourceLineByVisualLine.Count == lines.Length &&
+        layout.SourceLineByVisualLine.All(line => line == 1);
+
+    if (!passed)
+    {
+        Console.WriteLine(
+            $"Pretty-view diagnostic: rawLength={raw.Length}, visualLines={lines.Length}, " +
+            $"provenance={layout.SourceLineByVisualLine.Count}, output={layout.Text.Replace(Environment.NewLine, " | ")}");
+    }
+
+    return passed;
 });
 
 Check("zero-context diff maps before and now lines", () =>
