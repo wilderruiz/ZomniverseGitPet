@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–3 COMPLETE / PHASE 4 CORE ANALYSIS + REAL PREVIEW SMOKED / PHASE 4A DECISION-FIRST SUMMARY UX PLANNED NEXT / PHASE 5 AFTER  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–4 COMPLETE / PHASE 4A CODE COMPLETE, BUILD + REAL SUMMARY UI SMOKE PENDING / PHASE 5 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -17,7 +17,7 @@
 - ✅ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **COMPLETE / REAL SOURCE UI SMOKED.** A real Millenova `BOTH SIDES` file loads pinned BASE / LOCAL / REMOTE SHAs and real PHP source side by side without changing repository state.
 - ✅ **Phase 3 — Two-Column Code Comparison Workspace** — **COMPLETE / REAL UI SMOKED.** Syntax coloring, Pretty/Exact view, BASE-derived change highlighting, linked scrolling, persistent splitter, and maximized review have been exercised on the real Millenova PHP comparison.
 - ✅ **Phase 4 — Change-Shape Analysis + Merged Preview** — **CORE COMPLETE / REAL SUMMARY + CLEAN MERGED PREVIEW SMOKED.** A real Millenova `BOTH SIDES` file reports `INDEPENDENT CHANGES`, `Overlap: NO`, and `CLEAN THREE-WAY MERGE` while preserving pinned BASE / LOCAL / REMOTE identities and leaving repository state untouched.
-- 🟡 **Phase 4A — Decision-First Reconcile Summary UX** — **PLANNED NEXT.** Promote the decisive reconciliation signals to a padded, highly legible summary surface so users can understand overlap, change relationship, and merged-preview cleanliness before reading secondary technical detail.
+- 🟡 **Phase 4A — Decision-First Reconcile Summary UX** — **CODE COMPLETE / BUILD + REAL UI SMOKE PENDING.** Summary now uses a dedicated native decision surface with assessment status, three primary evidence cards, interpretation, LOCAL/REMOTE detail, and secondary pinned provenance.
 - ❌ **Phase 5 — Copy Actions + “Copy Everything” Export** — copy selection, changed block, whole file, comparison, code-only bundle, plain text bundle, and ChatGPT-ready Markdown diagnostic bundle.
 - ❌ **Phase 6 — Edit LOCAL Before Reconcile** — allow deliberate local corrections in the inspector, validate them, write to the working tree, and optionally create a new local correction commit without rewriting existing history.
 - ❌ **Phase 7 — Edit REMOTE Before Reconcile** — edit an isolated worktree based on the inspected remote commit, validate and commit there, then permit only an explicit fast-forward remote correction when the remote has not moved.
@@ -724,7 +724,7 @@ Implement:
 
 ### 🟡 Phase 4A — Decision-First Reconcile Summary UX
 
-**Status:** PLANNED NEXT / NEW REQUIREMENT FROM REAL PHASE 4 SMOKE
+**Status:** CODE COMPLETE / BUILD + REAL SUMMARY UI SMOKE PENDING
 
 ### Why this exists
 
@@ -851,6 +851,24 @@ Color must supplement, not replace, text labels.
 The on-screen Summary should **not** simply render raw Markdown as its primary UI. Use structured native controls for the interactive view.
 
 However, its information model should be intentionally compatible with Phase 5 so **Copy summary as Markdown** can export the same hierarchy cleanly.
+
+### Implementation status
+
+Implemented in this slice:
+
+- added a dedicated native `ReconcileSummaryPanel`; Summary no longer renders its report through the left/right code RichTextBoxes;
+- added a deterministic `ReconcileSummaryPresentation` model derived only from existing `ReconcileChangeAnalysis` + `ReconcileMergePreview` evidence;
+- added a padded **RECONCILE ASSESSMENT** header with `REVIEW READY` / `REVIEW REQUIRED` status;
+- added three top evidence cards for **CHANGE RELATIONSHIP**, **OVERLAP**, and **MERGED PREVIEW**;
+- positive / caution / conflict semantic colors reuse existing Guardian theme families while every card retains explicit text;
+- added a deterministic plain-language interpretation directly below the evidence cards;
+- added balanced LOCAL / REMOTE shape + hunk cards;
+- moved full BASE / LOCAL / REMOTE SHAs, locators, path, state, and workboard detail into a visually secondary technical section;
+- Summary hides code-only **Scroll** and **Pretty/Exact** actions while keeping Max/Restore + Activity available;
+- Summary and code views share the same existing Inspector model; no second analysis engine or Git operation was introduced;
+- regression coverage proves the clean independent case becomes `REVIEW READY`, overlap/conflict cases become `REVIEW REQUIRED`, and a textual merge conflict cannot be masked by `Overlap: NO`.
+
+Remaining Phase 4A gate: build/test locally, then smoke the real Millenova independent-change case in embedded and maximized Inspector modes. Confirm the three primary evidence cards are immediately visible, provenance remains available below, and no repository state changes.
 
 ### Implementation requirements
 

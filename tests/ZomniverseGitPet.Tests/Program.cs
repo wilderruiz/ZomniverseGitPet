@@ -378,6 +378,79 @@ Check("project test advisor prefers executable dotnet test runner", () =>
     finally { TryDelete(root); }
 });
 
+Check("reconcile summary promotes independent clean evidence", () =>
+{
+    var analysis = new ReconcileChangeAnalysis(
+        "INDEPENDENT CHANGES",
+        "MODIFIED EXISTING BLOCK — LOCAL",
+        "MODIFIED EXISTING BLOCK — REMOTE",
+        false,
+        3,
+        3,
+        "Both histories changed the same file in non-overlapping BASE locations.");
+    var preview = new ReconcileMergePreview(
+        true,
+        true,
+        false,
+        "merged",
+        "CLEAN THREE-WAY MERGE");
+
+    var summary = ReconcileSummaryPresentation.Create(analysis, preview);
+    return summary.Assessment == "REVIEW READY" &&
+           summary.ChangeRelationship == "INDEPENDENT CHANGES" &&
+           summary.Overlap == "NO OVERLAP DETECTED" &&
+           summary.MergedPreview == "CLEAN THREE-WAY MERGE" &&
+           summary.Interpretation.Contains("different BASE locations", StringComparison.Ordinal);
+});
+
+Check("reconcile summary never calls overlap conflict review ready", () =>
+{
+    var analysis = new ReconcileChangeAnalysis(
+        "BOTH MODIFIED SAME AREA",
+        "MODIFIED EXISTING BLOCK — LOCAL",
+        "MODIFIED EXISTING BLOCK — REMOTE",
+        true,
+        2,
+        2,
+        "Both histories changed overlapping BASE locations.");
+    var preview = new ReconcileMergePreview(
+        true,
+        true,
+        true,
+        "<<<<<<< LOCAL",
+        "OVERLAPPING CHANGE — CONFLICT MARKERS PRESENT");
+
+    var summary = ReconcileSummaryPresentation.Create(analysis, preview);
+    return summary.Assessment == "REVIEW REQUIRED" &&
+           summary.AssessmentTone == ReconcileSummaryTone.Conflict &&
+           summary.Overlap == "OVERLAP DETECTED" &&
+           summary.PreviewTone == ReconcileSummaryTone.Conflict &&
+           summary.Interpretation.Contains("conflicted merged preview", StringComparison.Ordinal);
+});
+
+Check("reconcile summary keeps textual merge conflict as review required", () =>
+{
+    var analysis = new ReconcileChangeAnalysis(
+        "INDEPENDENT CHANGES",
+        "MODIFIED EXISTING BLOCK — LOCAL",
+        "MODIFIED EXISTING BLOCK — REMOTE",
+        false,
+        1,
+        1,
+        "Different BASE locations.");
+    var preview = new ReconcileMergePreview(
+        true,
+        true,
+        true,
+        "<<<<<<< LOCAL",
+        "OVERLAPPING CHANGE — CONFLICT MARKERS PRESENT");
+
+    var summary = ReconcileSummaryPresentation.Create(analysis, preview);
+    return summary.Assessment == "REVIEW REQUIRED" &&
+           summary.Overlap == "NO OVERLAP DETECTED" &&
+           summary.Interpretation.Contains("Git still produced a conflicted textual merge", StringComparison.Ordinal);
+});
+
 Check("reconcile hunk analysis distinguishes independent changes", () =>
 {
     var local = ReconcileDiffHunk.Parse("@@ -3 +3 @@\n-gamma\n+gamma local");

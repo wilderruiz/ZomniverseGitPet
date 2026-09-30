@@ -18,6 +18,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     private readonly RichTextBox _leftBody = new();
     private readonly RichTextBox _rightBody = new();
     private readonly Label _footer = new();
+    private readonly ReconcileSummaryPanel _summaryPanel = new();
     private readonly SplitContainer _split = new();
     private readonly Dictionary<ReconcileInspectorView, Button> _viewButtons = [];
     private Button? _scrollLinkButton;
@@ -47,7 +48,9 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.Font = new Font("Cascadia Mono", 8f);
         _footer.TextAlign = ContentAlignment.MiddleLeft;
 
+        _summaryPanel.Visible = false;
         Controls.Add(_split);
+        Controls.Add(_summaryPanel);
         Controls.Add(_footer);
         Controls.Add(tabs);
         Controls.Add(header);
@@ -79,6 +82,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         ApplySelectionIdentity(row);
         _footer.ForeColor = GuardianTheme.FaintInk;
         _footer.Text = "Loading pinned BASE / LOCAL / REMOTE snapshots… read-only Git inspection only.";
+        _summaryPanel.ShowLoading(row);
         SelectView(DefaultViewForState(row.State));
     }
 
@@ -90,6 +94,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.Text =
             $"Pinned read-only snapshots · BASE {model.Base.ShortSha} · LOCAL {model.Local.ShortSha} · " +
             $"REMOTE {model.Remote.ShortSha} · Pretty view is display-only; Exact preserves source whitespace.";
+        _summaryPanel.ShowModel(model, WorkboardDetail());
         SelectView(_selectedView);
     }
 
@@ -106,6 +111,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.Text = string.IsNullOrWhiteSpace(message)
             ? "GitPet could not load the pinned reconciliation sources."
             : message.Replace("\r", " ").Replace("\n", " ");
+        _summaryPanel.ShowProblem(message);
     }
 
     private void ApplySelectionIdentity(GuardianWorkboardRow row)
@@ -304,9 +310,16 @@ internal sealed class ReconcileInspectorPanel : Panel
             button.FlatAppearance.BorderColor = selected ? GuardianTheme.Violet : GuardianTheme.Border;
         }
 
-        if (view == ReconcileInspectorView.Summary)
+        var summarySelected = view == ReconcileInspectorView.Summary;
+        _summaryPanel.Visible = summarySelected;
+        _split.Visible = !summarySelected;
+        if (_scrollLinkButton is not null) _scrollLinkButton.Visible = !summarySelected;
+        if (_prettyButton is not null) _prettyButton.Visible = !summarySelected;
+
+        if (summarySelected)
         {
             RenderSummary();
+            _summaryPanel.BringToFront();
             return;
         }
 
@@ -404,49 +417,35 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     private void RenderSummary()
     {
-        var path = _selection?.Path ?? "Select a reconciliation row.";
-        var detail = string.IsNullOrWhiteSpace(_selection?.Detail)
-            ? "No reconciliation detail is available yet."
-            : _selection!.Detail;
-
-        _leftTitle.Text = "SELECTION";
-        _rightTitle.Text = "PINNED REVISIONS";
-        _leftBody.WordWrap = true;
-        _rightBody.WordWrap = true;
-
         if (_sourceModel is null)
         {
-            SharedCodeReviewRenderer.RenderPlain(
-                _leftBody,
-                $"Path\r\n{path}\r\n\r\nState\r\n{_selection?.State ?? "—"}",
-                wordWrap: true);
-            SharedCodeReviewRenderer.RenderPlain(
-                _rightBody,
-                "Loading immutable Git identities…",
-                wordWrap: true);
+            _summaryPanel.ShowLoading(_selection);
+            _footer.ForeColor = GuardianTheme.FaintInk;
+            _footer.Text = "Summary waits for pinned deterministic reconciliation evidence.";
             return;
         }
 
-        SharedCodeReviewRenderer.RenderPlain(
-            _leftBody,
-            $"Path\r\n{_sourceModel.RelativePath}\r\n\r\n" +
-            $"State\r\n{_sourceModel.State}\r\n\r\n" +
-            $"Analysis\r\n{_sourceModel.Analysis.OverallLabel}\r\n" +
-            $"{_sourceModel.Analysis.LocalLabel} ({_sourceModel.Analysis.LocalHunkCount} hunks)\r\n" +
-            $"{_sourceModel.Analysis.RemoteLabel} ({_sourceModel.Analysis.RemoteHunkCount} hunks)\r\n" +
-            $"Overlap: {(_sourceModel.Analysis.HasOverlap ? "YES" : "NO")}\r\n\r\n" +
-            $"{_sourceModel.Analysis.Detail}\r\n\r\n" +
-            $"Workboard detail\r\n{detail}",
-            wordWrap: true);
+        _summaryPanel.ShowModel(_sourceModel, WorkboardDetail());
 
-        SharedCodeReviewRenderer.RenderPlain(
-            _rightBody,
-            $"BASE\r\n{_sourceModel.Base.CommitSha}\r\n{_sourceModel.Base.Locator}\r\n\r\n" +
-            $"LOCAL\r\n{_sourceModel.Local.CommitSha}\r\n{_sourceModel.Local.Locator}\r\n\r\n" +
-            $"REMOTE\r\n{_sourceModel.Remote.CommitSha}\r\n{_sourceModel.Remote.Locator}\r\n\r\n" +
-            $"MERGED PREVIEW\r\n{_sourceModel.MergePreview.Status}",
-            wordWrap: true);
+        var presentation = ReconcileSummaryPresentation.Create(
+            _sourceModel.Analysis,
+            _sourceModel.MergePreview);
+        _footer.ForeColor = presentation.AssessmentTone switch
+        {
+            ReconcileSummaryTone.Positive => GuardianTheme.Healthy,
+            ReconcileSummaryTone.Conflict => GuardianTheme.Warning,
+            ReconcileSummaryTone.Caution => GuardianTheme.Reconcile,
+            _ => GuardianTheme.FaintInk
+        };
+        _footer.Text =
+            $"{presentation.Assessment} · {presentation.ChangeRelationship} · " +
+            $"{presentation.Overlap} · {presentation.MergedPreview}";
     }
+
+    private string WorkboardDetail() =>
+        string.IsNullOrWhiteSpace(_selection?.Detail)
+            ? "No additional workboard detail."
+            : _selection!.Detail;
 
     private static void RenderSource(
         Label title,
