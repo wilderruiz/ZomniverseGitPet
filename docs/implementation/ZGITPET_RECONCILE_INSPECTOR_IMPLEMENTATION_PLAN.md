@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–3 COMPLETE / PHASE 4 CODE COMPLETE, BUILD + REAL MERGED-PREVIEW SMOKE PENDING / PHASE 5 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–3 COMPLETE / PHASE 4 CORE ANALYSIS + REAL PREVIEW SMOKED / PHASE 4A DECISION-FIRST SUMMARY UX PLANNED NEXT / PHASE 5 AFTER  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -16,7 +16,8 @@
 - ✅ **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **COMPLETE / REAL UI SMOKED.** A real Millenova `BOTH SIDES` row opens the dedicated lower-workspace Reconcile Inspector without starting reconciliation; compact/DPI-safe tab sizing is applied.
 - ✅ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **COMPLETE / REAL SOURCE UI SMOKED.** A real Millenova `BOTH SIDES` file loads pinned BASE / LOCAL / REMOTE SHAs and real PHP source side by side without changing repository state.
 - ✅ **Phase 3 — Two-Column Code Comparison Workspace** — **COMPLETE / REAL UI SMOKED.** Syntax coloring, Pretty/Exact view, BASE-derived change highlighting, linked scrolling, persistent splitter, and maximized review have been exercised on the real Millenova PHP comparison.
-- 🟡 **Phase 4 — Change-Shape Analysis + Merged Preview** — **CODE COMPLETE / BUILD + REAL PREVIEW SMOKE PENDING.** GitPet classifies hunk shape and overlap from BASE coordinates and generates a read-only three-way candidate outside the repository working tree.
+- ✅ **Phase 4 — Change-Shape Analysis + Merged Preview** — **CORE COMPLETE / REAL SUMMARY + CLEAN MERGED PREVIEW SMOKED.** A real Millenova `BOTH SIDES` file reports `INDEPENDENT CHANGES`, `Overlap: NO`, and `CLEAN THREE-WAY MERGE` while preserving pinned BASE / LOCAL / REMOTE identities and leaving repository state untouched.
+- 🟡 **Phase 4A — Decision-First Reconcile Summary UX** — **PLANNED NEXT.** Promote the decisive reconciliation signals to a padded, highly legible summary surface so users can understand overlap, change relationship, and merged-preview cleanliness before reading secondary technical detail.
 - ❌ **Phase 5 — Copy Actions + “Copy Everything” Export** — copy selection, changed block, whole file, comparison, code-only bundle, plain text bundle, and ChatGPT-ready Markdown diagnostic bundle.
 - ❌ **Phase 6 — Edit LOCAL Before Reconcile** — allow deliberate local corrections in the inspector, validate them, write to the working tree, and optionally create a new local correction commit without rewriting existing history.
 - ❌ **Phase 7 — Edit REMOTE Before Reconcile** — edit an isolated worktree based on the inspected remote commit, validate and commit there, then permit only an explicit fast-forward remote correction when the remote has not moved.
@@ -63,6 +64,8 @@ These rules are non-negotiable unless this plan is explicitly revised.
 10. **Existing reconciliation safety remains intact.** Reconcile continues to be explicit and reviewable; the inspector does not become an excuse for silent merges.
 11. **Maximize changes layout only, not state.** Tabs, edits, selections, candidate source, scroll positions, and validation state survive maximize/restore.
 12. **Copy actions copy source, not decoration.** Line numbers, background highlighting, UI labels, and semantic summaries are not part of the copied source unless the user chooses the structured “Copy everything” export.
+13. **Summary is a decision-support surface, not a text dump.** The highest-value deterministic signals — change relationship, overlap, and merged-preview status — must appear first with strong visual hierarchy, spacing, and status semantics. Commit SHAs and lower-level detail remain available but secondary.
+14. **Do not overstate safety.** A clean merge preview and `Overlap: NO` are strong deterministic evidence, but the UI should say things like `REVIEW READY`, `NO OVERLAP DETECTED`, and `CLEAN THREE-WAY MERGE` rather than claiming that reconciliation is guaranteed safe.
 
 ---
 
@@ -683,9 +686,9 @@ Implement:
 
 ---
 
-### 🟡 Phase 4 — Change-Shape Analysis + Merged Preview
+### ✅ Phase 4 — Change-Shape Analysis + Merged Preview
 
-**Status:** CODE COMPLETE / BUILD + REAL PREVIEW SMOKE PENDING
+**Status:** CORE COMPLETE / REAL SUMMARY + MERGED PREVIEW SMOKED
 
 Implemented in this slice:
 
@@ -704,7 +707,7 @@ Implemented in this slice:
 - regression coverage proves independent-hunk classification, same-anchor insertion overlap, clean three-way candidate generation, and unchanged HEAD/remote/working-tree state.
 - clean-merge regression uses non-adjacent independent edits because Git's textual merge engine may legitimately combine adjacent non-overlapping zero-context hunks into one conflict region; analysis and merge-engine outcome remain separate evidence.
 
-Remaining Phase 4 gate: compile/test locally, then use the real Millenova `BOTH SIDES` file to confirm the Summary label and Merged candidate are sensible and that the working tree remains untouched.
+Observed smoke: the real Millenova `tools/validate_community_foundation.php` `BOTH SIDES` case reports **INDEPENDENT CHANGES**, **Overlap: NO**, and **CLEAN THREE-WAY MERGE** with pinned BASE / LOCAL / REMOTE revisions visible. The output is correct, but the smoke exposed that the Summary hierarchy is too flat for the importance of these signals. **Phase 4 core behavior is accepted as complete; Phase 4A captures the new decision-summary UX requirement.**
 
 Implement:
 
@@ -716,6 +719,166 @@ Implement:
 - BEFORE MERGE ↔ MERGED CANDIDATE view.
 
 **Exit gate:** `BOTH SIDES` can distinguish same-path independent edits from overlapping edits before reconciliation begins.
+
+---
+
+### 🟡 Phase 4A — Decision-First Reconcile Summary UX
+
+**Status:** PLANNED NEXT / NEW REQUIREMENT FROM REAL PHASE 4 SMOKE
+
+### Why this exists
+
+The Phase 4 smoke showed that the Summary currently contains the right facts but presents them with nearly equal visual weight. For most reconciliation decisions, users should not need to scan commit SHAs, workboard prose, and hunk details before finding the three signals that matter most:
+
+1. **Change relationship** — e.g. `INDEPENDENT CHANGES` vs. `BOTH MODIFIED SAME AREA`;
+2. **Overlap** — especially `NO` vs. `YES`;
+3. **Merged preview** — e.g. `CLEAN THREE-WAY MERGE` vs. a conflict / unavailable candidate.
+
+These results are expected to be among the most-used parts of Reconcile Inspector and must read like a deliberate decision-support report, not a raw diagnostic text area.
+
+### Summary information hierarchy
+
+The Summary tab should render information in this order:
+
+#### 1. Reconcile Assessment header
+
+A clearly separated, padded top region with a concise heading such as:
+
+```text
+RECONCILE ASSESSMENT
+REVIEW READY
+```
+
+The secondary status must be derived from deterministic evidence only. Do not claim guaranteed safety.
+
+#### 2. Three primary status cards / badges
+
+The first visible row should prioritize:
+
+| Signal | Example clean result | Example caution result |
+| --- | --- | --- |
+| **Change relationship** | `INDEPENDENT CHANGES` | `BOTH MODIFIED SAME AREA` |
+| **Overlap** | `NO OVERLAP DETECTED` | `OVERLAP DETECTED` |
+| **Merged preview** | `CLEAN THREE-WAY MERGE` | `CONFLICT MARKERS PRESENT` |
+
+These must be visually stronger than SHAs, path metadata, hunk counts, or workboard detail.
+
+#### 3. Plain-language interpretation
+
+Immediately below the primary signals, show a short deterministic explanation. Example for the real Millenova smoke:
+
+> Both histories changed this file in different BASE locations. No overlapping edit regions were detected, and Git produced a clean three-way merged preview. Review the candidate before reconciling.
+
+This text must explain the evidence without implying an absolute safety guarantee.
+
+#### 4. LOCAL / REMOTE detail cards
+
+Secondary detail should then show:
+
+```text
+LOCAL
+MODIFIED EXISTING BLOCK
+3 hunks
+
+REMOTE
+MODIFIED EXISTING BLOCK
+3 hunks
+```
+
+Local and Remote should be visually balanced and easy to compare.
+
+#### 5. Technical identity / provenance
+
+Pinned revision identity remains available but visually secondary:
+
+- BASE full SHA + locator;
+- LOCAL full SHA + locator;
+- REMOTE full SHA + locator;
+- selected path;
+- workboard state/detail.
+
+The user should be able to inspect provenance without technical metadata dominating the decision signals.
+
+### Visual design contract
+
+The Summary should use real WinForms layout controls rather than one monolithic RichTextBox pretending to be a report.
+
+Required qualities:
+
+- generous outer padding;
+- clear vertical spacing between sections;
+- strong heading hierarchy;
+- status cards/pills or bordered panels;
+- clean alignment;
+- compact but readable typography;
+- responsive behavior in embedded and maximized Inspector modes;
+- no horizontal clipping at the user's tested Windows DPI;
+- no need to scroll before seeing the three primary reconciliation signals.
+
+Suggested status semantics:
+
+- **positive / clean:** existing healthy/green family;
+- **caution / review:** existing reconcile/amber family;
+- **conflict / overlap:** existing warning/red family;
+- **neutral technical metadata:** muted/faint ink.
+
+Color must supplement, not replace, text labels.
+
+### Example target layout
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│ RECONCILE ASSESSMENT                                  REVIEW READY   │
+│                                                                      │
+│ ┌────────────────────┐ ┌──────────────────┐ ┌──────────────────────┐ │
+│ │ CHANGE RELATIONSHIP│ │ OVERLAP          │ │ MERGED PREVIEW       │ │
+│ │ INDEPENDENT CHANGES│ │ NO OVERLAP       │ │ CLEAN THREE-WAY MERGE│ │
+│ └────────────────────┘ └──────────────────┘ └──────────────────────┘ │
+│                                                                      │
+│ Both histories changed different BASE locations. No overlap was      │
+│ detected, and Git produced a clean candidate. Review before merging. │
+├─────────────────────────────────┬────────────────────────────────────┤
+│ LOCAL                           │ REMOTE                             │
+│ MODIFIED EXISTING BLOCK         │ MODIFIED EXISTING BLOCK            │
+│ 3 hunks                         │ 3 hunks                            │
+├─────────────────────────────────┴────────────────────────────────────┤
+│ Technical identity / pinned revisions / path / workboard detail     │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Markdown relationship
+
+The on-screen Summary should **not** simply render raw Markdown as its primary UI. Use structured native controls for the interactive view.
+
+However, its information model should be intentionally compatible with Phase 5 so **Copy summary as Markdown** can export the same hierarchy cleanly.
+
+### Implementation requirements
+
+- introduce a dedicated Summary view/panel instead of writing all summary content into the current left/right text buffers;
+- keep Summary state derived from the existing deterministic `ReconcileChangeAnalysis` and `ReconcileMergePreview` models;
+- do not add a second analysis engine just for presentation;
+- give `INDEPENDENT CHANGES` / `BOTH MODIFIED SAME AREA`, overlap state, and merged-preview state explicit UI elements;
+- create a short deterministic interpretation sentence from those existing states;
+- retain LOCAL / REMOTE hunk shape/count detail;
+- retain pinned revision provenance in a secondary technical section;
+- preserve embedded/maximized state behavior;
+- preserve all current no-mutation guarantees;
+- prepare the Summary data model for Phase 5 Markdown export without implementing Phase 5 copy actions early.
+
+### Regression / smoke contract
+
+Coverage should prove:
+
+- clean independent case renders the three primary statuses correctly;
+- overlap case promotes the overlap warning;
+- conflicted merged candidate promotes the candidate warning;
+- Summary never labels a conflict/overlap case as `REVIEW READY`;
+- pinned revision metadata remains present;
+- switching Summary ↔ code tabs does not mutate or lose Inspector state;
+- embedded and maximized layouts keep the primary status row visible;
+- real Millenova smoke shows the decisive signals without requiring the user to scan secondary detail first.
+
+**Exit gate:** a user can open Summary and understand the reconciliation state — especially **independent vs. overlapping**, **overlap yes/no**, and **clean vs. conflicted candidate** — within a few seconds, while still being able to inspect all technical provenance below.
 
 ---
 
