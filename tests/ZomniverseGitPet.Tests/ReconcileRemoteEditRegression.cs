@@ -7,6 +7,7 @@ internal static class ReconcileRemoteEditRegression
         var root = Path.Combine(Path.GetTempPath(), "GitPet-remote-edit-" + Guid.NewGuid().ToString("N"));
         var remote = Path.Combine(root, "remote.git");
         var source = Path.Combine(root, "source");
+        var peer = Path.Combine(root, "peer");
         Directory.CreateDirectory(root);
 
         try
@@ -69,7 +70,66 @@ internal static class ReconcileRemoteEditRegression
                 tempBranch.Success)
                 throw new InvalidOperationException("Send/cleanup mutated primary state or left temp state.");
 
-            Console.WriteLine("Reconcile Inspector Phase 7 remote-edit regression passed.");
+            var staleDraft = new ReconcileRemoteEditDraft(
+                "sample.txt",
+                "main",
+                session.CorrectionCommitSha,
+                "alpha\nbeta remote corrected\n",
+                "alpha\nbeta stale prepared correction\n");
+            var stalePrepared = await service.PrepareCommitAsync(
+                source,
+                staleDraft,
+                CancellationToken.None);
+            if (!stalePrepared.Success || stalePrepared.Session is null)
+                throw new InvalidOperationException(
+                    "Moved-remote fixture could not prepare stale correction: " +
+                    stalePrepared.Message);
+
+            var staleSession = stalePrepared.Session;
+
+            await MustGit(git, root, ["clone", "--branch", "main", remote, peer]);
+            await MustGit(git, peer, ["config", "user.name", "Remote Race Test"]);
+            await MustGit(git, peer, ["config", "user.email", "remote-race@example.invalid"]);
+            var peerFile = Path.Combine(peer, "sample.txt");
+            await File.WriteAllTextAsync(
+                peerFile,
+                "alpha\nbeta moved by another writer\n");
+            await MustGit(git, peer, ["add", "--", "sample.txt"]);
+            await MustGit(git, peer, ["commit", "-m", "move remote after prepare"]);
+            await MustGit(git, peer, ["push", "origin", "main"]);
+            var movedRemoteSha = await RemoteTip(git, source);
+
+            var blocked = await service.SendAsync(
+                staleSession,
+                CancellationToken.None);
+            var remoteAfterBlockedSend = await RemoteTip(git, source);
+            var primaryHeadAfterBlockedSend =
+                (await MustGit(git, source, ["rev-parse", "HEAD"])).Trim();
+            var primaryTextAfterBlockedSend = await File.ReadAllTextAsync(file);
+
+            if (blocked.Success ||
+                !blocked.Message.Contains("REMOTE moved", StringComparison.OrdinalIgnoreCase) ||
+                remoteAfterBlockedSend != movedRemoteSha ||
+                remoteAfterBlockedSend == staleSession.CorrectionCommitSha ||
+                primaryHeadAfterBlockedSend != pinned ||
+                primaryTextAfterBlockedSend != primaryText ||
+                !Directory.Exists(staleSession.WorktreePath))
+            {
+                throw new InvalidOperationException(
+                    "Moved REMOTE did not block stale Send without mutating primary state.");
+            }
+
+            await service.CleanupAsync(staleSession, CancellationToken.None);
+            var staleBranch = await git.RunGitAsync(
+                source,
+                ["show-ref", "--verify", $"refs/heads/{staleSession.TemporaryBranch}"]);
+
+            if (Directory.Exists(staleSession.WorktreePath) || staleBranch.Success)
+                throw new InvalidOperationException(
+                    "Moved-remote blocked session did not clean up explicitly.");
+
+            Console.WriteLine(
+                "Reconcile Inspector Phase 7/10 remote-edit + moved-remote regressions passed.");
         }
         finally
         {
