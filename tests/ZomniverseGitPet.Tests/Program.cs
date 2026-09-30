@@ -378,6 +378,19 @@ Check("project test advisor prefers executable dotnet test runner", () =>
     finally { TryDelete(root); }
 });
 
+Check("reconcile local edit preserves original newline convention", () =>
+{
+    var lf = ReconcileLocalEditService.NormalizeDraftForOriginal(
+        "one\ntwo\n",
+        "one\r\ntwo edited\r\n");
+    var crlf = ReconcileLocalEditService.NormalizeDraftForOriginal(
+        "one\r\ntwo\r\n",
+        "one\ntwo edited\n");
+
+    return lf == "one\ntwo edited\n" &&
+           crlf == "one\r\ntwo edited\r\n";
+});
+
 Check("reconcile copy export uses language-aware Markdown fences", () =>
 {
     return ReconcileCopyExport.MarkdownFenceLanguage("validator.php") == "php" &&
@@ -1050,6 +1063,7 @@ await CheckAsync("Git-native preflight reports all ignore sources before staging
 await SavePreflightBatchRegression.RunAsync();
 await FileReviewRegression.RunAsync();
 await ReconcileInspectorSourceRegression.RunAsync();
+await ReconcileLocalEditRegression.RunAsync();
 await LongPathRegression.RunAsync();
 await WindowsFileLockRegression.RunAsync();
 

@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–4A COMPLETE / PHASE 5 COPY-MENU CRASH FIX APPLIED, REAL RE-SMOKE PENDING / PHASE 6 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–5 COMPLETE / PHASE 6 CODE COMPLETE, BUILD + LOCAL-EDIT SMOKE PENDING / PHASE 7 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -18,8 +18,8 @@
 - ✅ **Phase 3 — Two-Column Code Comparison Workspace** — **COMPLETE / REAL UI SMOKED.** Syntax coloring, Pretty/Exact view, BASE-derived change highlighting, linked scrolling, persistent splitter, and maximized review have been exercised on the real Millenova PHP comparison.
 - ✅ **Phase 4 — Change-Shape Analysis + Merged Preview** — **CORE COMPLETE / REAL SUMMARY + CLEAN MERGED PREVIEW SMOKED.** A real Millenova `BOTH SIDES` file reports `INDEPENDENT CHANGES`, `Overlap: NO`, and `CLEAN THREE-WAY MERGE` while preserving pinned BASE / LOCAL / REMOTE identities and leaving repository state untouched.
 - ✅ **Phase 4A — Decision-First Reconcile Summary UX** — **COMPLETE / REAL UI SMOKED.** The real Millenova Inspector now surfaces review status, change relationship, overlap, and merged-preview evidence before secondary source/provenance detail.
-- 🟡 **Phase 5 — Copy Actions + “Copy Everything” Export** — **CODE COMPLETE / BUILD + REAL CLIPBOARD SMOKE PENDING.** Copy actions now operate from raw backing source and include self-contained Markdown/plain-text reconciliation bundles.
-- ❌ **Phase 6 — Edit LOCAL Before Reconcile** — allow deliberate local corrections in the inspector, validate them, write to the working tree, and optionally create a new local correction commit without rewriting existing history.
+- ✅ **Phase 5 — Copy Actions + “Copy Everything” Export** — **COMPLETE / REAL MENU + COPY LIFECYCLE SMOKED.** The Copy menu can be opened/dismissed/reopened safely and exports use raw backing source.
+- 🟡 **Phase 6 — Edit LOCAL Before Reconciliation** — **CODE COMPLETE / BUILD + REAL LOCAL-EDIT SMOKE PENDING.** LOCAL can be edited in Exact mode, safety-validated, written as a working-tree change, or committed as one exact-path local correction before reconciliation.
 - ❌ **Phase 7 — Edit REMOTE Before Reconcile** — edit an isolated worktree based on the inspected remote commit, validate and commit there, then permit only an explicit fast-forward remote correction when the remote has not moved.
 - ❌ **Phase 8 — Editable MERGED CANDIDATE** — keep generated merge output read-only by default, allow an explicit editable candidate, validate it, and apply it only as the final reconciliation result after approval.
 - ❌ **Phase 9 — Validation + Race / Safety Hardening** — syntax/structure checks, configured project tests, remote-moved detection, immutable original snapshots, cancellation, cleanup, audit events, and no-force-push guarantees.
@@ -939,21 +939,44 @@ Implement:
 
 ---
 
-### ❌ Phase 6 — Edit LOCAL
+### 🟡 Phase 6 — Edit LOCAL
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / BUILD + REAL LOCAL-EDIT SMOKE PENDING
+
+Implemented in this slice:
+
+- added explicit **Edit local** mode; entering it switches to LOCAL ↔ REMOTE and forces **Exact** source so virtual Pretty lines can never be edited;
+- the pinned LOCAL commit SHA and raw committed source are captured as an immutable original edit snapshot;
+- the LOCAL source pane becomes editable only while edit mode is active;
+- dirty state is explicit: `LOCAL DRAFT MODIFIED · not written · not staged · not committed`;
+- comparison tabs, Activity, Pretty/Scroll, and Copy actions are locked/hidden while a draft is active so the editable source cannot silently change context;
+- **Validate edit** performs non-mutating path containment, logical-project scope, pinned-HEAD, working-tree freshness, text/NUL, and changed-content checks;
+- **Write local** writes only the selected file to the working tree, stages nothing, commits nothing, starts no reconciliation, sends nothing, then returns to the normal workboard so the change can follow ordinary Save later;
+- **Commit local** first requires a clean staging index, writes the edited file, runs existing Git identity + large-file safeguards, stages only the exact selected path with `SaveStagePlan`, and creates a new `reconcile correction: <timestamp>` local commit;
+- Commit local never amends/rebases/force-pushes and never starts Get, Send, or reconciliation;
+- suspicious-path confirmation reuses the existing `SuspiciousPathReview` path before either write or commit;
+- after a successful correction commit, Guardian/workboard refresh and Reconcile Inspector reload pin the new LOCAL HEAD and regenerate analysis + merged candidate;
+- stale drafts are rejected if HEAD moved after the Inspector snapshot was opened;
+- existing staged changes block Commit local so unrelated staged work cannot leak into the exact-path correction commit;
+- reconciliation source reads now preserve Git stdout exactly, including trailing newline content, instead of trimming source output before edit/copy use;
+- **Cancel edit** discards only the in-Inspector draft; before Write local / Commit local, nothing has touched disk;
+- regression coverage verifies newline preservation, write-without-commit behavior, exact local correction commit creation, clean post-commit tree, and stale pinned-HEAD rejection.
+
+Validation note: Phase 6 **Validate edit** is a repository/edit-safety validation. Language syntax/structure checks and configured-project test integration remain the dedicated Phase 9 hardening scope.
+
+Remaining Phase 6 gate: build/test locally, open the real Millenova `BOTH SIDES` file, enter **Edit local**, make a harmless local correction, validate it, test Cancel edit, then repeat and use **Commit local**. Confirm only that file is committed, nothing is sent, and the Inspector reloads with a new LOCAL SHA and regenerated summary/merged candidate. Optionally smoke **Write local** separately and verify it returns to the workboard as an ordinary unsaved local change.
 
 Implement:
 
 - explicit Edit local mode;
 - immutable original snapshot;
 - dirty state;
-- validate;
-- write local working file;
+- edit safety validation;
+- exact-path working-file write;
 - optional new local correction commit;
 - refresh source identities and candidate.
 
-**Exit gate:** a local last-minute correction can be made and committed from the inspector without rewriting earlier commits.
+**Exit gate:** a local last-minute correction can be made and committed from the Inspector without rewriting earlier commits or including unrelated staged work.
 
 ---
 

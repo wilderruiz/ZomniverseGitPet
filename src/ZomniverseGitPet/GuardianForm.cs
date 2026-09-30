@@ -689,6 +689,12 @@ public sealed class GuardianForm : Form
         _reconcileInspector.Visible = false;
         _reconcileInspector.ActivityRequested += (_, _) => ShowActivityPanel();
         _reconcileInspector.MaximizeRequested += (_, _) => ToggleReconcileInspectorMaximized();
+        _reconcileInspector.LocalEditValidateRequested += async (_, e) =>
+            await ValidateReconcileLocalEditAsync(e);
+        _reconcileInspector.LocalEditWriteRequested += async (_, e) =>
+            await WriteReconcileLocalEditAsync(e);
+        _reconcileInspector.LocalEditCommitRequested += async (_, e) =>
+            await CommitReconcileLocalEditAsync(e);
 
         host.Controls.Add(_activityPanel);
         host.Controls.Add(_comparisonPanel);
@@ -2622,6 +2628,203 @@ public sealed class GuardianForm : Form
             if (!IsDisposed && !token.IsCancellationRequested)
                 _reconcileInspector.ShowProblem(row, ex.Message);
         }
+    }
+
+    private async Task ValidateReconcileLocalEditAsync(
+        ReconcileLocalEditRequestEventArgs e)
+    {
+        if (!HasRepository()) return;
+
+        _reconcileInspector.SetLocalEditBusy(true, "Validating LOCAL draft…");
+        try
+        {
+            var result = await new ReconcileLocalEditService(_git).ValidateAsync(
+                _config.RepositoryPath!,
+                e.Draft,
+                requireCleanIndex: false,
+                CancellationToken.None);
+
+            _reconcileInspector.SetLocalEditFeedback(
+                result.Success
+                    ? "Edit safety validation passed · path/scope/HEAD/working-tree checks are current."
+                    : result.Message,
+                result.Success);
+        }
+        catch (Exception ex)
+        {
+            _reconcileInspector.SetLocalEditFeedback(
+                "Edit validation failed: " + ex.Message,
+                success: false);
+        }
+    }
+
+    private async Task WriteReconcileLocalEditAsync(
+        ReconcileLocalEditRequestEventArgs e)
+    {
+        if (!HasRepository()) return;
+
+        using var confirm = new GuardianConfirmDialog(
+            "Write local correction",
+            "WRITE LOCAL EDIT?",
+            $"Write the edited source to:\r\n\r\n{e.Draft.RelativePath}\r\n\r\n" +
+            "This changes only the local working file. It does NOT stage, commit, reconcile, Get, or Send anything.\r\n\r\n" +
+            "Afterward GitPet will return to the workboard, where the edit can be reviewed and saved normally.",
+            "Write local",
+            "Cancel");
+        if (confirm.ShowDialog(this) != DialogResult.Yes)
+            return;
+
+        if (!ConfirmReconcileEditSensitivePath(e.Draft.RelativePath))
+            return;
+
+        _reconcileInspector.SetLocalEditBusy(true, "Writing LOCAL working file…");
+        try
+        {
+            var result = await new ReconcileLocalEditService(_git).WriteAsync(
+                _config.RepositoryPath!,
+                e.Draft,
+                requireCleanIndex: false,
+                CancellationToken.None);
+
+            if (!result.Success)
+            {
+                _reconcileInspector.SetLocalEditFeedback(result.Message, success: false);
+                return;
+            }
+
+            await _audit.WriteAsync("reconcile_inspector_local_edit_written", new
+            {
+                file = e.Draft.RelativePath,
+                pinnedLocalCommit = e.Draft.PinnedLocalCommitSha
+            });
+
+            ReportActivity(
+                $"LOCAL correction written to working file:\n{e.Draft.RelativePath}\n\n" +
+                "Nothing was staged, committed, reconciled, or sent.",
+                GuardianActivityKind.Success);
+
+            await RefreshRepositoryViewAsync(CancellationToken.None);
+            await GuardianWorkboardRuntime.RefreshNowAsync();
+            ShowActivityPanel();
+        }
+        catch (Exception ex)
+        {
+            _reconcileInspector.SetLocalEditFeedback(
+                "LOCAL write failed: " + ex.Message,
+                success: false);
+        }
+    }
+
+    private async Task CommitReconcileLocalEditAsync(
+        ReconcileLocalEditRequestEventArgs e)
+    {
+        if (!HasRepository()) return;
+
+        using var confirm = new GuardianConfirmDialog(
+            "Commit local correction",
+            "COMMIT LOCAL CORRECTION?",
+            $"Write and save this correction as a new LOCAL commit:\r\n\r\n{e.Draft.RelativePath}\r\n\r\n" +
+            "GitPet will stage only this exact file. Existing history is not rewritten.\r\n" +
+            "Nothing will be sent online and reconciliation will not start.",
+            "Commit local",
+            "Cancel");
+        if (confirm.ShowDialog(this) != DialogResult.Yes)
+            return;
+
+        if (!ConfirmReconcileEditSensitivePath(e.Draft.RelativePath))
+            return;
+
+        _reconcileInspector.SetLocalEditBusy(true, "Validating exact-file correction commit…");
+        try
+        {
+            var repositoryPath = _config.RepositoryPath!;
+            var editor = new ReconcileLocalEditService(_git);
+            var write = await editor.WriteAsync(
+                repositoryPath,
+                e.Draft,
+                requireCleanIndex: true,
+                CancellationToken.None);
+            if (!write.Success)
+            {
+                _reconcileInspector.SetLocalEditFeedback(write.Message, success: false);
+                return;
+            }
+
+            var large = await _git.GetWorkingLargeFilePreflightAsync(
+                repositoryPath,
+                [e.Draft.RelativePath],
+                CancellationToken.None);
+            if (!large.Success || large.BlockingFiles.Count > 0)
+            {
+                _reconcileInspector.SetLocalEditFeedback(
+                    !large.Success
+                        ? large.Error
+                        : "Commit local stopped: the edited file exceeds the ordinary Git blob safety limit and is not configured for Git LFS. The working-file edit remains local and uncommitted.",
+                    success: false);
+                return;
+            }
+
+            if (!await EnsureGitIdentityAsync(CancellationToken.None))
+            {
+                _reconcileInspector.SetLocalEditFeedback(
+                    "Commit local cancelled while Git identity was being configured. The working-file edit remains local and uncommitted.",
+                    success: false);
+                return;
+            }
+
+            var stagePlan = new SaveStagePlan(
+                [e.Draft.RelativePath],
+                [],
+                []);
+            var message = $"reconcile correction: {DateTime.Now:yyyy-MM-dd HH:mm}";
+            var result = await _git.CreateCheckpointAsync(
+                repositoryPath,
+                message,
+                stagePlan,
+                CancellationToken.None);
+
+            if (!result.Success)
+            {
+                _reconcileInspector.SetLocalEditFeedback(
+                    result.Message + "\r\n\r\nThe working-file correction remains local and uncommitted.",
+                    success: false);
+                return;
+            }
+
+            await _audit.WriteAsync("reconcile_inspector_local_edit_committed", new
+            {
+                file = e.Draft.RelativePath,
+                previousLocalCommit = e.Draft.PinnedLocalCommitSha,
+                commit = result.CommitHash
+            });
+
+            ReportActivity(
+                $"LOCAL correction committed ✓\n\n{e.Draft.RelativePath}\n{result.CommitHash}\n\nNothing was sent online.",
+                GuardianActivityKind.Success);
+
+            await RefreshRepositoryViewAsync(CancellationToken.None);
+            await GuardianWorkboardRuntime.RefreshNowAsync();
+            await ShowReconcileInspectorAsync(e.Row);
+        }
+        catch (Exception ex)
+        {
+            _reconcileInspector.SetLocalEditFeedback(
+                "Commit local failed: " + ex.Message,
+                success: false);
+        }
+    }
+
+    private bool ConfirmReconcileEditSensitivePath(string relativePath)
+    {
+        var matches = GitService.FindSuspiciousPathMatches(
+            [new ChangedFile("M", relativePath)],
+            _config.SuspiciousPathPatterns);
+
+        return matches.Count == 0 ||
+               SuspiciousPathReview.Confirm(
+                   this,
+                   matches,
+                   "Reconcile Inspector local edit");
     }
 
     private void ToggleReconcileInspectorMaximized()

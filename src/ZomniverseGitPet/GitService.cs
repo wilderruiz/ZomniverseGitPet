@@ -342,7 +342,7 @@ public sealed class GitService(AuditLog audit)
         string file,
         string commit,
         CancellationToken token) =>
-        RunProcessAsync("git.exe",
+        RunProcessPreserveStdoutAsync("git.exe",
             ["show", $"{commit}:{NormalizeGitRelativePath(file)}"],
             path, TimeSpan.FromSeconds(20), token);
 
@@ -1173,6 +1173,60 @@ public sealed class GitService(AuditLog audit)
 
     private static string NormalizeGitRelativePath(string file) =>
         (file ?? "").Replace('\\', '/').TrimStart('/');
+
+    private static async Task<CommandResult> RunProcessPreserveStdoutAsync(
+        string fileName,
+        IEnumerable<string> arguments,
+        string workingDirectory,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+                CreateNoWindow = true
+            }
+        };
+        foreach (var argument in arguments)
+            process.StartInfo.ArgumentList.Add(argument);
+
+        try
+        {
+            process.Start();
+            var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+            using var timeoutSource = new CancellationTokenSource(timeout);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutSource.Token);
+            await process.WaitForExitAsync(linked.Token);
+
+            var output = await stdout;
+            var error = await stderr;
+            if (process.ExitCode == 0)
+                return new(0, output);
+
+            return new(process.ExitCode, JoinOutput(output, error));
+        }
+        catch (OperationCanceledException)
+        {
+            try { if (!process.HasExited) process.Kill(true); } catch { }
+            if (cancellationToken.IsCancellationRequested) throw;
+            return new(-1, $"Operation timed out after {timeout.TotalSeconds:0} seconds.", true);
+        }
+        catch (Exception ex)
+        {
+            return new(-1, ex.Message);
+        }
+    }
 
     private static async Task<CommandResult> RunProcessAsync(
         string fileName, IEnumerable<string> arguments, string workingDirectory,

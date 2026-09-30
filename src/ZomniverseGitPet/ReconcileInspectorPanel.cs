@@ -26,12 +26,22 @@ internal sealed class ReconcileInspectorPanel : Panel
     private Button? _copyButton;
     private Button? _copyEverythingButton;
     private ContextMenuStrip? _copyMenu;
+    private Button? _editLocalButton;
+    private Button? _validateEditButton;
+    private Button? _writeEditButton;
+    private Button? _commitEditButton;
+    private Button? _cancelEditButton;
+    private Button? _activityButton;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
     private bool _prettyView = true;
     private GuardianWorkboardRow? _selection;
     private ReconcileInspectorSourceModel? _sourceModel;
     private ReconcileInspectorView _selectedView;
+    private bool _localEditMode;
+    private string _localEditOriginalEditorText = "";
+    private string _localEditOriginalRawText = "";
+    private string _localEditPinnedSha = "";
 
     public ReconcileInspectorPanel()
     {
@@ -51,6 +61,12 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.Font = new Font("Cascadia Mono", 8f);
         _footer.TextAlign = ContentAlignment.MiddleLeft;
 
+        _leftBody.TextChanged += (_, _) =>
+        {
+            if (_localEditMode)
+                UpdateLocalEditDirtyState();
+        };
+
         _summaryPanel.Visible = false;
         Controls.Add(_split);
         Controls.Add(_summaryPanel);
@@ -63,6 +79,9 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     public event EventHandler? ActivityRequested;
     public event EventHandler? MaximizeRequested;
+    public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditValidateRequested;
+    public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditWriteRequested;
+    public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditCommitRequested;
 
     public void SetMaximizedMode(bool maximized)
     {
@@ -80,6 +99,7 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     public void ShowLoading(GuardianWorkboardRow row)
     {
+        ResetLocalEditState();
         _selection = row;
         _sourceModel = null;
         ApplySelectionIdentity(row);
@@ -98,6 +118,8 @@ internal sealed class ReconcileInspectorPanel : Panel
             $"Pinned read-only snapshots · BASE {model.Base.ShortSha} · LOCAL {model.Local.ShortSha} · " +
             $"REMOTE {model.Remote.ShortSha} · Pretty view is display-only; Exact preserves source whitespace.";
         _summaryPanel.ShowModel(model, WorkboardDetail());
+        if (_editLocalButton is not null)
+            _editLocalButton.Enabled = model.Local.Exists;
         SelectView(_selectedView);
     }
 
@@ -115,6 +137,8 @@ internal sealed class ReconcileInspectorPanel : Panel
             ? "GitPet could not load the pinned reconciliation sources."
             : message.Replace("\r", " ").Replace("\n", " ");
         _summaryPanel.ShowProblem(message);
+        if (_editLocalButton is not null)
+            _editLocalButton.Enabled = false;
     }
 
     private void ApplySelectionIdentity(GuardianWorkboardRow row)
@@ -211,18 +235,43 @@ internal sealed class ReconcileInspectorPanel : Panel
         _copyEverythingButton = MakeButton("Copy everything");
         _copyEverythingButton.Click += (_, _) => CopyEverythingMarkdown();
 
+        _editLocalButton = MakeButton("Edit local");
+        _editLocalButton.Enabled = false;
+        _editLocalButton.Click += (_, _) => BeginLocalEdit();
+
+        _validateEditButton = MakeButton("Validate edit");
+        _validateEditButton.Visible = false;
+        _validateEditButton.Click += (_, _) => RaiseLocalEdit(LocalEditValidateRequested);
+
+        _writeEditButton = MakeButton("Write local");
+        _writeEditButton.Visible = false;
+        _writeEditButton.Click += (_, _) => RaiseLocalEdit(LocalEditWriteRequested);
+
+        _commitEditButton = MakeButton("Commit local");
+        _commitEditButton.Visible = false;
+        _commitEditButton.Click += (_, _) => RaiseLocalEdit(LocalEditCommitRequested);
+
+        _cancelEditButton = MakeButton("Cancel edit");
+        _cancelEditButton.Visible = false;
+        _cancelEditButton.Click += (_, _) => CancelLocalEdit();
+
         _maximizeButton = MakeButton("Max ⛶");
         _maximizeButton.Click += (_, _) => MaximizeRequested?.Invoke(this, EventArgs.Empty);
 
-        var activity = MakeButton("Activity");
-        activity.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
+        _activityButton = MakeButton("Activity");
+        _activityButton.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
 
         actions.Controls.Add(_scrollLinkButton);
         actions.Controls.Add(_prettyButton);
         actions.Controls.Add(_copyButton);
         actions.Controls.Add(_copyEverythingButton);
+        actions.Controls.Add(_editLocalButton);
+        actions.Controls.Add(_validateEditButton);
+        actions.Controls.Add(_writeEditButton);
+        actions.Controls.Add(_commitEditButton);
+        actions.Controls.Add(_cancelEditButton);
         actions.Controls.Add(_maximizeButton);
-        actions.Controls.Add(activity);
+        actions.Controls.Add(_activityButton);
 
         header.Controls.Add(info, 0, 0);
         header.Controls.Add(actions, 1, 0);
@@ -320,6 +369,9 @@ internal sealed class ReconcileInspectorPanel : Panel
             button.ForeColor = selected ? Color.White : GuardianTheme.Ink;
             button.FlatAppearance.BorderColor = selected ? GuardianTheme.Violet : GuardianTheme.Border;
         }
+
+        if (_localEditMode && view != ReconcileInspectorView.LocalRemote)
+            return;
 
         var summarySelected = view == ReconcileInspectorView.Summary;
         _summaryPanel.Visible = summarySelected;
@@ -486,6 +538,162 @@ internal sealed class ReconcileInspectorPanel : Panel
             changedLines,
             changeBackground,
             prettyView);
+    }
+
+    private void BeginLocalEdit()
+    {
+        if (_sourceModel is null || !_sourceModel.Local.Exists || _selection is null)
+        {
+            SetLocalEditFeedback("LOCAL source is not available for editing.", success: false);
+            return;
+        }
+
+        _prettyView = false;
+        if (_prettyButton is not null)
+            _prettyButton.Text = "Exact";
+
+        SelectView(ReconcileInspectorView.LocalRemote);
+
+        _localEditMode = true;
+        _localEditOriginalRawText = _sourceModel.Local.Text;
+        _localEditPinnedSha = _sourceModel.Local.CommitSha;
+        _localEditOriginalEditorText = _leftBody.Text;
+        _leftBody.ReadOnly = false;
+        _leftTitle.Text = "EDITING LOCAL · " + _leftTitle.Text;
+        SetLocalEditUi(editing: true);
+        UpdateLocalEditDirtyState();
+        _leftBody.Focus();
+    }
+
+    private void CancelLocalEdit()
+    {
+        if (!_localEditMode) return;
+
+        if (!string.Equals(
+                _leftBody.Text,
+                _localEditOriginalEditorText,
+                StringComparison.Ordinal))
+        {
+            using var confirm = new GuardianConfirmDialog(
+                "Cancel local edit",
+                "DISCARD LOCAL DRAFT?",
+                "Discard the in-Inspector draft and return to the pinned LOCAL source?\r\n\r\n" +
+                "Nothing has been written to disk by this draft.",
+                "Discard draft",
+                "Keep editing");
+            if (confirm.ShowDialog(FindForm()) != DialogResult.Yes)
+                return;
+        }
+
+        EndLocalEditMode();
+        SelectView(ReconcileInspectorView.LocalRemote);
+        _footer.ForeColor = GuardianTheme.FaintInk;
+        _footer.Text = "Local edit cancelled. Repository unchanged.";
+    }
+
+    private void RaiseLocalEdit(
+        EventHandler<ReconcileLocalEditRequestEventArgs>? handler)
+    {
+        if (!_localEditMode || _sourceModel is null || _selection is null)
+            return;
+
+        if (string.Equals(
+                _leftBody.Text,
+                _localEditOriginalEditorText,
+                StringComparison.Ordinal))
+        {
+            SetLocalEditFeedback("No LOCAL source changes are present in the editor.", success: false);
+            return;
+        }
+
+        handler?.Invoke(
+            this,
+            new ReconcileLocalEditRequestEventArgs(
+                _selection,
+                new ReconcileLocalEditDraft(
+                    _sourceModel.RelativePath,
+                    _localEditPinnedSha,
+                    _localEditOriginalRawText,
+                    _leftBody.Text)));
+    }
+
+    public void SetLocalEditBusy(bool busy, string? message = null)
+    {
+        if (!_localEditMode) return;
+
+        if (_validateEditButton is not null) _validateEditButton.Enabled = !busy;
+        if (_writeEditButton is not null) _writeEditButton.Enabled = !busy;
+        if (_commitEditButton is not null) _commitEditButton.Enabled = !busy;
+        if (_cancelEditButton is not null) _cancelEditButton.Enabled = !busy;
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            _footer.ForeColor = GuardianTheme.Reconcile;
+            _footer.Text = message;
+        }
+    }
+
+    public void SetLocalEditFeedback(string message, bool success)
+    {
+        _footer.ForeColor = success ? GuardianTheme.Healthy : GuardianTheme.Warning;
+        _footer.Text = message;
+        SetLocalEditBusy(false);
+    }
+
+    private void UpdateLocalEditDirtyState()
+    {
+        if (!_localEditMode) return;
+        var dirty = !string.Equals(
+            _leftBody.Text,
+            _localEditOriginalEditorText,
+            StringComparison.Ordinal);
+
+        if (_validateEditButton is not null) _validateEditButton.Enabled = dirty;
+        if (_writeEditButton is not null) _writeEditButton.Enabled = dirty;
+        if (_commitEditButton is not null) _commitEditButton.Enabled = dirty;
+
+        _footer.ForeColor = dirty ? GuardianTheme.Reconcile : GuardianTheme.FaintInk;
+        _footer.Text = dirty
+            ? "LOCAL DRAFT MODIFIED · not written · not staged · not committed"
+            : "Editing pinned LOCAL source · no draft changes yet.";
+    }
+
+    private void SetLocalEditUi(bool editing)
+    {
+        foreach (var (view, button) in _viewButtons)
+            button.Enabled = !editing || view == ReconcileInspectorView.LocalRemote;
+
+        if (_scrollLinkButton is not null) _scrollLinkButton.Visible = !editing;
+        if (_prettyButton is not null) _prettyButton.Visible = !editing;
+        if (_copyButton is not null) _copyButton.Visible = !editing;
+        if (_copyEverythingButton is not null) _copyEverythingButton.Visible = !editing;
+        if (_editLocalButton is not null) _editLocalButton.Visible = !editing;
+
+        if (_validateEditButton is not null) _validateEditButton.Visible = editing;
+        if (_writeEditButton is not null) _writeEditButton.Visible = editing;
+        if (_commitEditButton is not null) _commitEditButton.Visible = editing;
+        if (_cancelEditButton is not null) _cancelEditButton.Visible = editing;
+        if (_activityButton is not null) _activityButton.Enabled = !editing;
+    }
+
+    private void EndLocalEditMode()
+    {
+        _leftBody.ReadOnly = true;
+        _localEditMode = false;
+        _localEditOriginalEditorText = "";
+        _localEditOriginalRawText = "";
+        _localEditPinnedSha = "";
+        SetLocalEditUi(editing: false);
+    }
+
+    private void ResetLocalEditState()
+    {
+        _leftBody.ReadOnly = true;
+        _localEditMode = false;
+        _localEditOriginalEditorText = "";
+        _localEditOriginalRawText = "";
+        _localEditPinnedSha = "";
+        SetLocalEditUi(editing: false);
     }
 
     private void ShowCopyMenu(Control anchor)
