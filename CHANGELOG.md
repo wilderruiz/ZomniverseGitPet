@@ -10,6 +10,7 @@
 - Corrected the Phase 4 clean-merge regression fixture so its independent edits are separated enough for Git's merge engine to merge cleanly, and added field-specific failure diagnostics.
 - Added the decision-first Reconcile Summary UX: a dedicated native assessment surface now promotes change relationship, overlap, and merged-preview status ahead of LOCAL/REMOTE detail and pinned revision provenance.
 - Added Reconcile Inspector copy/export actions, including exact-source selection/changed-block/file/comparison copying plus ChatGPT-ready **Copy everything** Markdown and plain-text bundles built from raw pinned source.
+- Fixed a Phase 5 Copy-menu crash by replacing self-disposal in the ContextMenuStrip Closed event with Inspector-owned menu lifetime management.
 
 - Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
 

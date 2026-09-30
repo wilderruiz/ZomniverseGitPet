@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–4A COMPLETE / PHASE 5 CODE COMPLETE, BUILD + COPY/EXPORT SMOKE PENDING / PHASE 6 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–4A COMPLETE / PHASE 5 COPY-MENU CRASH FIX APPLIED, REAL RE-SMOKE PENDING / PHASE 6 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -902,7 +902,7 @@ Coverage should prove:
 
 ### 🟡 Phase 5 — Copy + Export
 
-**Status:** CODE COMPLETE / BUILD + REAL CLIPBOARD SMOKE PENDING
+**Status:** CODE COMPLETE / COPY-MENU LIFECYCLE FIX APPLIED, REAL CLIPBOARD RE-SMOKE PENDING
 
 Implemented in this slice:
 
@@ -918,9 +918,10 @@ Implemented in this slice:
 - every successful clipboard action reminds the user that copied source is raw backing text rather than Pretty-view decoration;
 - Summary remains copyable through **Copy everything** even though code-specific copy actions require a code/merged tab;
 - clipboard exceptions are surfaced in the Inspector footer instead of crashing the UI;
-- regression coverage checks language-aware fence selection and raw changed-line extraction.
+- **smoke correction:** the first real Copy-menu smoke exposed a WinForms lifecycle bug caused by disposing a transient `ContextMenuStrip` inside its own `Closed` event; the menu is now Inspector-owned, reused across openings, and disposed only with the Inspector;
+- regression coverage checks language-aware fence selection, raw changed-line extraction, and full self-contained Markdown export content.
 
-Remaining Phase 5 gate: build/test locally, then smoke Copy selected in Exact mode, changed block, whole file, comparison, code-only bundle, Copy everything Markdown, and plain-text export against the real Millenova `BOTH SIDES` case. Paste the Markdown bundle into a text editor/ChatGPT and confirm the report is self-contained and source remains exact.
+Remaining Phase 5 gate: build/test locally, first verify **Copy ▾ → click away → reopen Copy ▾** no longer crashes, then smoke Copy selected in Exact mode, changed block, whole file, comparison, code-only bundle, Copy everything Markdown, and plain-text export against the real Millenova `BOTH SIDES` case. Paste the Markdown bundle into a text editor/ChatGPT and confirm the report is self-contained and source remains exact.
 
 Implement:
 

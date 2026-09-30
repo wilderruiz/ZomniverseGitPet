@@ -25,6 +25,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     private Button? _prettyButton;
     private Button? _copyButton;
     private Button? _copyEverythingButton;
+    private ContextMenuStrip? _copyMenu;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
     private bool _prettyView = true;
@@ -489,6 +490,17 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     private void ShowCopyMenu(Control anchor)
     {
+        if (_copyMenu is null || _copyMenu.IsDisposed)
+            _copyMenu = BuildCopyMenu();
+
+        if (_copyMenu.Visible)
+            _copyMenu.Close(ToolStripDropDownCloseReason.AppClicked);
+
+        _copyMenu.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    private ContextMenuStrip BuildCopyMenu()
+    {
         var menu = new ContextMenuStrip
         {
             Renderer = GuardianTheme.CreateMenuRenderer(),
@@ -506,8 +518,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         AddCopyItem(menu, "Copy everything — Markdown", CopyEverythingMarkdown);
         AddCopyItem(menu, "Copy everything — plain text", CopyEverythingPlainText);
 
-        menu.Closed += (_, _) => menu.Dispose();
-        menu.Show(anchor, new Point(0, anchor.Height));
+        return menu;
     }
 
     private static void AddCopyItem(
@@ -762,7 +773,11 @@ internal sealed class ReconcileInspectorPanel : Panel
     protected override void Dispose(bool disposing)
     {
         if (disposing)
+        {
+            _copyMenu?.Dispose();
+            _copyMenu = null;
             _scrollLink.Dispose();
+        }
         base.Dispose(disposing);
     }
 
