@@ -645,26 +645,26 @@ Implement:
 
 ### ✅ Phase 3 — Two-Column Code Workspace
 
-****Status:** COMPLETE / REAL UI SMOKEDnted in this slice:
+**Status:** COMPLETE / REAL UI SMOKED
+
+Implemented in this slice:
 
 - extracted a shared source renderer used by File Review Technical view and Reconcile Inspector;
 - added language-aware token coloring for PHP, C#, JS/TS, Java, Python, JSON, CSS-family, HTML/XML/SVG, SQL, and PowerShell;
-- source text remains the real backing code; syntax, change colors, and visual indentation are presentation-only;
-- supported brace/array-based languages can render a **display-only Pretty layout** that indents normal structures and expands long one-line arrays/objects into virtual display lines without rewriting the pinned Git text;
-- every Pretty display line carries provenance back to its original Git source line so changed-line highlighting remains correct even when one raw line expands into many visual lines;
-- Reconcile Inspector defaults **Pretty ✓** on for readability and exposes **Exact** to inspect the untouched source whitespace;
-- future Copy/Edit/Commit actions must use the backing raw source rather than Pretty-view text;
-- added read-only BASE→LOCAL and BASE→REMOTE zero-context changed-line maps without introducing Phase 4 semantic merge analysis;
-- BASE ↔ LOCAL and BASE ↔ REMOTE highlight the exact changed lines on each side;
+- source text remains the real backing code; syntax, change colors, and visual layout are presentation-only;
+- supported brace/array-based languages can render a display-only Pretty layout that indents normal structures and expands long one-line arrays/objects into virtual display lines without rewriting pinned Git text;
+- every Pretty display line carries provenance back to its original Git source line so changed-line highlighting remains tied to the real diff;
+- Reconcile Inspector defaults **Pretty ✓** on and exposes **Exact** for untouched source whitespace;
+- BASE ↔ LOCAL and BASE ↔ REMOTE highlight exact changed lines;
 - LOCAL ↔ REMOTE highlights each side's changes relative to BASE;
 - linked vertical/horizontal scrolling is on by default and can be toggled off;
-- the splitter preserves the user's left/right ratio through resize and DPI transitions using `SafeSplitContainer`;
-- pane headers remain docked above independently scrollable source panes;
-- Max/Restore moves the same live inspector into a maximized resizable window instead of cloning review state;
-- maximized review retains the selected tab, pinned sources, splitter ratio, and linked-scroll setting;
-- regression coverage checks distinct BASE→LOCAL and BASE→REMOTE changed-line maps plus PHP syntax-role recognition.
+- the splitter preserves the user's left/right ratio through resize and DPI transitions;
+- pane headers stay docked above independently scrollable source panes;
+- Max/Restore moves the same live inspector into a maximized resizable window instead of cloning state;
+- maximized review retains selected tab, pinned sources, splitter ratio, Pretty/Exact state, and linked-scroll state;
+- regression coverage checks BASE→LOCAL / BASE→REMOTE line maps, syntax roles, Pretty provenance, and virtual-line expansion.
 
-Observed smoke: the real Millenova PHP comparison passed the maximized two-column, syntax-color, Pretty/Exact, linked-scroll, changed-line and source-readability checks. **Phase 3 is accepted as complete.**nova PHP comparison rendered syntax colors in maximized two-column mode and Max/Restore + linked-scroll controls were visible. The first indentation smoke showed that preserving physical line count was still too cramped for Millenova's long one-line PHP arrays. Remaining Phase 3 gate: compile/test Pretty view, verify **Pretty ✓ / Exact** on the real PHP file, confirm virtual-line expansion is readable, changed-line highlights still map to the correct raw Git lines, and no Git/source content changes.
+Observed smoke: the real Millenova PHP comparison passed the maximized two-column, syntax-color, Pretty/Exact, linked-scroll, changed-line and source-readability checks. **Phase 3 is accepted as complete.**
 
 Implement:
 
