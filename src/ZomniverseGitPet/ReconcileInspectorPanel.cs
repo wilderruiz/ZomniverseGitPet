@@ -1611,12 +1611,12 @@ internal sealed class ReconcileInspectorPanel : Panel
             _ => ReconcileInspectorView.Summary
         };
 
-        return keyData is
-            Keys.Control | Keys.D1 or
-            Keys.Control | Keys.D2 or
-            Keys.Control | Keys.D3 or
-            Keys.Control | Keys.D4 or
-            Keys.Control | Keys.D5;
+        return
+            keyData == (Keys.Control | Keys.D1) ||
+            keyData == (Keys.Control | Keys.D2) ||
+            keyData == (Keys.Control | Keys.D3) ||
+            keyData == (Keys.Control | Keys.D4) ||
+            keyData == (Keys.Control | Keys.D5);
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
