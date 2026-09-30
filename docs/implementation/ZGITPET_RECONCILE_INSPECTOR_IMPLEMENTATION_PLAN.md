@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–8 COMPLETE / PHASE 9 CODE COMPLETE, BUILD + VALIDATION HARDENING SMOKE PENDING / PHASE 10 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 0–9 COMPLETE / PHASE 10 CODE + DOCS COMPLETE, FINAL BUILD/REGRESSION/UI SMOKE PENDING  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -22,8 +22,8 @@
 - ✅ **Phase 6 — Edit LOCAL Before Reconciliation** — **COMPLETE / REAL UI SMOKED.** Edit local is visible on valid LOCAL snapshots and the Exact-mode correction workflow is available without rewriting history.
 - ✅ **Phase 7 — Edit REMOTE** — **COMPLETE / REAL UI SMOKED.** REMOTE correction preparation, isolated worktree state, explicit Send/Discard flow, and remote-tip safety are exercised.
 - ✅ **Phase 8 — Editable MERGED CANDIDATE** — **COMPLETE / REAL UI SMOKED.** Generated-vs-edited candidate review, validation, cancellation, and explicit Accept + reconcile UI are exercised.
-- 🟡 **Phase 9 — Validation + Race / Safety Hardening** — **CODE COMPLETE / BUILD + REAL VALIDATION SMOKE PENDING.** Deterministic language checks, isolated saved Test Commands, explicit cancellation, stale/race gates, cleanup, audit, failure recovery, and sensitive-copy warnings are wired.
-- ❌ **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — keyboard flow, maximized editor polish, accessibility, large-file safeguards, regression tests, documentation updates, and release readiness.
+- ✅ **Phase 9 — Validation + Race / Safety Hardening** — **COMPLETE / REAL VALIDATION SMOKED.** Deterministic language checks, isolated saved Test Commands, explicit cancellation, stale/race gates, cleanup, audit, failure recovery, and sensitive-copy warnings are exercised.
+- 🟡 **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — **CODE + DOCS COMPLETE / FINAL SMOKE PENDING.** Keyboard navigation, accessibility names, per-tab scroll persistence, large-source exact performance mode, moved-REMOTE regression coverage, and the user/developer/safety/command docs are wired.
 
 > **Maintenance rule:** update this compact overview and the detailed phase status in the same commit as every Reconcile Inspector implementation update. The checklist must always show what is complete, what is next, and what has not started. Never mark planned behavior as current before it is wired and covered by appropriate regression tests.
 
@@ -1058,9 +1058,9 @@ Implement:
 
 ---
 
-### 🟡 Phase 9 — Validation + Safety Hardening
+### ✅ Phase 9 — Validation + Safety Hardening
 
-**Status:** CODE COMPLETE / BUILD + REAL VALIDATION HARDENING SMOKE PENDING
+**Status:** COMPLETE / REAL VALIDATION SMOKED
 
 Implemented in this slice:
 
@@ -1085,7 +1085,7 @@ Implemented in this slice:
 - configured suspicious-path patterns now also guard Inspector source export: selected source, changed blocks, whole-file copy, comparisons, and **Copy everything** require the same explicit sensitive-path review before clipboard export;
 - regression coverage verifies invalid JSON blocking, passing saved tests, non-blocking saved-test failure evidence, validation cancellation, and cleanup of cancelled validation worktrees.
 
-Remaining Phase 9 gate: build/test locally and smoke a real Millenova PHP edit/candidate. Expected PHP validation when `php` is installed: **Syntax ✓ PHP** plus the active project's saved Test Commands result. Test **Stop check** during a deliberately long configured test if convenient, and verify the draft survives cancellation.
+Observed smoke: Phase 9's real validation workflow passed in the DEV build. The isolated validation/test path, editor preservation, and validation UI are accepted as complete.
 
 Implement:
 
@@ -1103,31 +1103,30 @@ Implement:
 
 ---
 
-### ❌ Phase 10 — UX Polish + Regression + Documentation
+### 🟡 Phase 10 — UX Polish + Regression + Documentation
 
-**Status:** NOT STARTED
+**Status:** CODE + DOCS COMPLETE / FINAL BUILD + REGRESSION + UI SMOKE PENDING
 
-Implement:
+Implemented in this slice:
 
-- keyboard shortcuts;
-- focus order;
-- accessibility labels;
-- splitter/scroll persistence;
-- large-file performance;
-- copy-export regression tests;
-- local/remote edit regression tests;
-- moved-remote regression;
-- candidate integrity tests;
-- full documentation pass.
+- keyboard navigation is now deterministic: `Ctrl+1…5` switches Summary/comparison/Merged tabs, `Ctrl+P` toggles Pretty/Exact, `Ctrl+Shift+C` runs Copy everything, `Ctrl+Enter` validates the active edit draft, `F6` moves focus between source panes, `F11` toggles Max/Restore, and `Esc` safely cancels an active validation or unprepared edit;
+- the Inspector, source panes, source-identity labels, status surface, tabs, and action buttons expose accessibility names/descriptions;
+- explicit tab order is applied to the action row and source panes;
+- the existing `SafeSplitContainer.PreferredRatio` continues to preserve splitter position through resize/DPI/maximize transitions;
+- `RichTextScrollLink` now captures/restores left/right scroll coordinates, and Reconcile Inspector remembers them per comparison tab;
+- large sources remain complete but switch to **LARGE · EXACT PERFORMANCE MODE** above the configured character/line threshold, skipping Pretty transformation, syntax regex passes, and changed-line painting while preserving full raw copy/export;
+- regression coverage now locks `Ctrl+1…5` shortcut mapping and large-source fallback thresholds;
+- existing copy/export regressions cover Markdown language fences, changed raw lines, and self-contained raw **Copy everything** output;
+- existing LOCAL edit regression covers newline preservation, exact working-file write/commit, and stale-HEAD rejection;
+- REMOTE regression now covers both successful isolated prepare/send/cleanup and the required moved-REMOTE race: after a correction is prepared, another writer advances `origin/main`, stale Send is blocked, nothing is pushed by GitPet, primary HEAD/file stay unchanged, and explicit cleanup removes the prepared worktree/branch;
+- existing merged-candidate regression proves candidate integrity: pinned generated candidate validation, unchanged LOCAL/REMOTE history before Save, correct `MERGE_HEAD`, exact staged approved source, conflict-marker rejection, and merge-abort restoration;
+- `docs/user/RECONCILIATION.md` now documents the complete Inspector workflow, editing modes, validation, shortcuts, copy/sensitive-path behavior, large-source behavior, and final Save boundary;
+- `docs/developer/UI_ARCHITECTURE.md` now records the Inspector component/state architecture;
+- `docs/safety/RECONCILIATION_SAFETY.md` now reflects LOCAL/REMOTE/candidate editing, remote race protection, validation isolation, no-force/no-silent-commit rules, and recovery behavior;
+- `docs/reference/COMMANDS.md` now records the new read/write/worktree/reconcile commands and distinguishes built-in command families from user-saved Test Commands;
+- the docs index no longer labels Reconcile Inspector as merely planned.
 
-Only after implementation is verified:
-
-- update `docs/user/RECONCILIATION.md`;
-- update `docs/developer/UI_ARCHITECTURE.md`;
-- update `docs/safety/RECONCILIATION_SAFETY.md`;
-- update `docs/reference/COMMANDS.md` for any new Git commands;
-- update `CHANGELOG.md`;
-- mark phases complete here.
+Final Phase 10 gate: run the Release solution build, complete test executable, publish-local script, and a short real Inspector keyboard/scroll/maximize/large-file-accessibility smoke. After that passes, change this phase and the top-level status from 🟡 to ✅ and the Reconcile Inspector implementation plan is closed.
 
 **Exit gate:** implementation, regression tests, safety docs, user docs, and this plan all agree.
 
