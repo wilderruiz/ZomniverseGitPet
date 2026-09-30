@@ -18,7 +18,9 @@ internal sealed record ReconcileInspectorSourceModel(
     ReconcileSourceSnapshot Local,
     ReconcileSourceSnapshot Remote,
     DiffLineMap BaseLocalChanges,
-    DiffLineMap BaseRemoteChanges);
+    DiffLineMap BaseRemoteChanges,
+    ReconcileChangeAnalysis Analysis,
+    ReconcileMergePreview MergePreview);
 
 internal sealed class ReconcileInspectorSourceService(GitService git)
 {
@@ -85,21 +87,47 @@ internal sealed class ReconcileInspectorSourceService(GitService git)
 
         var localDiffResult = await baseLocalDiff;
         var remoteDiffResult = await baseRemoteDiff;
+        var baseSnapshot = await baseSource;
+        var localSnapshot = await localSource;
+        var remoteSnapshot = await remoteSource;
+
+        var localChanges = localDiffResult.Success
+            ? DiffLineMap.ParseUnifiedZeroContext(localDiffResult.Output)
+            : DiffLineMap.Empty;
+        var remoteChanges = remoteDiffResult.Success
+            ? DiffLineMap.ParseUnifiedZeroContext(remoteDiffResult.Output)
+            : DiffLineMap.Empty;
+        var localHunks = localDiffResult.Success
+            ? ReconcileDiffHunk.Parse(localDiffResult.Output)
+            : [];
+        var remoteHunks = remoteDiffResult.Success
+            ? ReconcileDiffHunk.Parse(remoteDiffResult.Output)
+            : [];
+
+        var analysis = ReconcileChangeAnalyzer.Analyze(
+            baseSnapshot,
+            localSnapshot,
+            remoteSnapshot,
+            localHunks,
+            remoteHunks);
+        var preview = await new ReconcileMergePreviewService(git).CreateAsync(
+            baseSnapshot,
+            localSnapshot,
+            remoteSnapshot,
+            token);
 
         return new ReconcileInspectorSourceModel(
             relativePath,
             row.State,
             branch,
             reconciliationPending,
-            await baseSource,
-            await localSource,
-            await remoteSource,
-            localDiffResult.Success
-                ? DiffLineMap.ParseUnifiedZeroContext(localDiffResult.Output)
-                : DiffLineMap.Empty,
-            remoteDiffResult.Success
-                ? DiffLineMap.ParseUnifiedZeroContext(remoteDiffResult.Output)
-                : DiffLineMap.Empty);
+            baseSnapshot,
+            localSnapshot,
+            remoteSnapshot,
+            localChanges,
+            remoteChanges,
+            analysis,
+            preview);
     }
 
     private async Task<ReconcileSourceSnapshot> ReadAsync(

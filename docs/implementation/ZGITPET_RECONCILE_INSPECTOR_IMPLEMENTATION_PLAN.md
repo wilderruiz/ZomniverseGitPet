@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–2 COMPLETE / PHASE 3 PRETTY-VIEW REFINEMENT CODE COMPLETE, SMOKE PENDING / PHASE 4 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–3 COMPLETE / PHASE 4 CODE COMPLETE, BUILD + REAL MERGED-PREVIEW SMOKE PENDING / PHASE 5 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -15,8 +15,8 @@
 - ✅ **Phase 0 — Existing File Review Foundation** — current File Review already provides a two-column split, Technical view, scrollable text panes, changed-line highlighting, safe text/binary handling, and Before / Now source loading.
 - ✅ **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **COMPLETE / REAL UI SMOKED.** A real Millenova `BOTH SIDES` row opens the dedicated lower-workspace Reconcile Inspector without starting reconciliation; compact/DPI-safe tab sizing is applied.
 - ✅ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **COMPLETE / REAL SOURCE UI SMOKED.** A real Millenova `BOTH SIDES` file loads pinned BASE / LOCAL / REMOTE SHAs and real PHP source side by side without changing repository state.
-- 🟡 **Phase 3 — Two-Column Code Comparison Workspace** — **CORE UI SMOKED / PRETTY-VIEW REFINEMENT CODE COMPLETE, SMOKE PENDING.** Shared syntax coloring, BASE-derived change-line backgrounds, linked scrolling, horizontal scrolling, persistent splitter ratio, sticky headers, maximize/restore, and a display-only Pretty/Exact source layout are wired.
-- ❌ **Phase 4 — Change-Shape Analysis + Read-Only Merged Preview** — classify independent additions vs. edits to existing structures, detect overlapping hunks, and generate a non-destructive three-way merged candidate.
+- ✅ **Phase 3 — Two-Column Code Comparison Workspace** — **COMPLETE / REAL UI SMOKED.** Syntax coloring, Pretty/Exact view, BASE-derived change highlighting, linked scrolling, persistent splitter, and maximized review have been exercised on the real Millenova PHP comparison.
+- 🟡 **Phase 4 — Change-Shape Analysis + Merged Preview** — **CODE COMPLETE / BUILD + REAL PREVIEW SMOKE PENDING.** GitPet classifies hunk shape and overlap from BASE coordinates and generates a read-only three-way candidate outside the repository working tree.
 - ❌ **Phase 5 — Copy Actions + “Copy Everything” Export** — copy selection, changed block, whole file, comparison, code-only bundle, plain text bundle, and ChatGPT-ready Markdown diagnostic bundle.
 - ❌ **Phase 6 — Edit LOCAL Before Reconcile** — allow deliberate local corrections in the inspector, validate them, write to the working tree, and optionally create a new local correction commit without rewriting existing history.
 - ❌ **Phase 7 — Edit REMOTE Before Reconcile** — edit an isolated worktree based on the inspected remote commit, validate and commit there, then permit only an explicit fast-forward remote correction when the remote has not moved.
@@ -643,11 +643,9 @@ Implement:
 
 ---
 
-### 🟡 Phase 3 — Two-Column Code Workspace
+### ✅ Phase 3 — Two-Column Code Workspace
 
-**Status:** CORE UI SMOKED / PRETTY-VIEW REFINEMENT CODE COMPLETE, SMOKE PENDING
-
-Implemented in this slice:
+****Status:** COMPLETE / REAL UI SMOKEDnted in this slice:
 
 - extracted a shared source renderer used by File Review Technical view and Reconcile Inspector;
 - added language-aware token coloring for PHP, C#, JS/TS, Java, Python, JSON, CSS-family, HTML/XML/SVG, SQL, and PowerShell;
@@ -666,7 +664,7 @@ Implemented in this slice:
 - maximized review retains the selected tab, pinned sources, splitter ratio, and linked-scroll setting;
 - regression coverage checks distinct BASE→LOCAL and BASE→REMOTE changed-line maps plus PHP syntax-role recognition.
 
-Observed core smoke: the real Millenova PHP comparison rendered syntax colors in maximized two-column mode and Max/Restore + linked-scroll controls were visible. The first indentation smoke showed that preserving physical line count was still too cramped for Millenova's long one-line PHP arrays. Remaining Phase 3 gate: compile/test Pretty view, verify **Pretty ✓ / Exact** on the real PHP file, confirm virtual-line expansion is readable, changed-line highlights still map to the correct raw Git lines, and no Git/source content changes.
+Observed smoke: the real Millenova PHP comparison passed the maximized two-column, syntax-color, Pretty/Exact, linked-scroll, changed-line and source-readability checks. **Phase 3 is accepted as complete.**nova PHP comparison rendered syntax colors in maximized two-column mode and Max/Restore + linked-scroll controls were visible. The first indentation smoke showed that preserving physical line count was still too cramped for Millenova's long one-line PHP arrays. Remaining Phase 3 gate: compile/test Pretty view, verify **Pretty ✓ / Exact** on the real PHP file, confirm virtual-line expansion is readable, changed-line highlights still map to the correct raw Git lines, and no Git/source content changes.
 
 Implement:
 
@@ -685,9 +683,27 @@ Implement:
 
 ---
 
-### ❌ Phase 4 — Change-Shape Analysis + Merged Preview
+### 🟡 Phase 4 — Change-Shape Analysis + Merged Preview
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / BUILD + REAL PREVIEW SMOKE PENDING
+
+Implemented in this slice:
+
+- parse zero-context diff headers into deterministic BASE/NEW hunk ranges;
+- classify each side as NEW BLOCK, MODIFIED EXISTING BLOCK, DELETE, MIXED STRUCTURAL EDIT, or UNCHANGED;
+- detect overlap in BASE coordinates, including same-anchor pure additions that line-set intersection would miss;
+- summarize same-path divergence as INDEPENDENT CHANGES, BOTH MODIFIED SAME AREA, DELETE vs MODIFY, DELETE vs UNCHANGED, SAME RESULT, or one-sided change;
+- generate the three-way candidate with `git merge-file -p` against temporary BASE / LOCAL / REMOTE files under the OS temp directory;
+- candidate generation never checks out, stages, merges, resets, commits, pushes, or writes into the repository working tree/index;
+- clean merges display the merged source directly;
+- textual conflicts remain inspectable with explicit `LOCAL / BASE / REMOTE` conflict markers;
+- delete/modify conflicts are reported without inventing a fake candidate;
+- Summary now displays the deterministic change-shape analysis and candidate status;
+- Merged view displays LOCAL-before-merge ↔ MERGED CANDIDATE side by side;
+- existing Pretty/Exact presentation applies to the generated candidate without changing the candidate backing text;
+- regression coverage proves independent-hunk classification, same-anchor insertion overlap, clean three-way candidate generation, and unchanged HEAD/remote/working-tree state.
+
+Remaining Phase 4 gate: compile/test locally, then use the real Millenova `BOTH SIDES` file to confirm the Summary label and Merged candidate are sensible and that the working tree remains untouched.
 
 Implement:
 

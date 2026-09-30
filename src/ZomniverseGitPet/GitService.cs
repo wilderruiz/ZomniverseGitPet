@@ -357,6 +357,51 @@ public sealed class GitService(AuditLog audit)
              fromCommit, toCommit, "--", NormalizeGitRelativePath(file)],
             path, TimeSpan.FromSeconds(20), token);
 
+    internal async Task<CommandResult> CreateReconcileMergePreviewAsync(
+        string baseText,
+        string localText,
+        string remoteText,
+        CancellationToken token)
+    {
+        var tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "GitPet-reconcile-preview-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            var basePath = Path.Combine(tempRoot, "BASE");
+            var localPath = Path.Combine(tempRoot, "LOCAL");
+            var remotePath = Path.Combine(tempRoot, "REMOTE");
+
+            await File.WriteAllTextAsync(basePath, baseText ?? "", encoding, token);
+            await File.WriteAllTextAsync(localPath, localText ?? "", encoding, token);
+            await File.WriteAllTextAsync(remotePath, remoteText ?? "", encoding, token);
+
+            return await RunProcessAsync(
+                "git.exe",
+                ["merge-file", "-p",
+                 "-L", "LOCAL",
+                 "-L", "BASE",
+                 "-L", "REMOTE",
+                 localPath, basePath, remotePath],
+                tempRoot,
+                TimeSpan.FromSeconds(20),
+                token);
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                    Directory.Delete(tempRoot, recursive: true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
     public Task<CommandResult> GetRecentCommitsAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-12", "--date=short", "--pretty=format:%h  %ad  %s"], cancellationToken: token);
 

@@ -312,15 +312,42 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         if (view == ReconcileInspectorView.MergedPreview)
         {
-            _leftTitle.Text = "BEFORE MERGE";
-            _rightTitle.Text = "MERGED CANDIDATE · NOT GENERATED";
-            _leftBody.Clear();
-            _rightBody.Clear();
-            if (_sourceModel is not null)
+            if (_sourceModel is null)
             {
-                _footer.ForeColor = GuardianTheme.FaintInk;
-                _footer.Text = "BASE / LOCAL / REMOTE are pinned. Merged-candidate generation starts in Phase 4.";
+                _leftTitle.Text = "BEFORE MERGE · LOADING…";
+                _rightTitle.Text = "MERGED CANDIDATE · LOADING…";
+                _leftBody.Clear();
+                _rightBody.Clear();
+                return;
             }
+
+            RenderSource(
+                _leftTitle,
+                _leftBody,
+                _sourceModel.Local,
+                _sourceModel.Branch,
+                _sourceModel.RelativePath,
+                _sourceModel.BaseLocalChanges.AfterLines,
+                SharedCodeReviewRenderer.LocalChangeBackground,
+                _prettyView);
+            _leftTitle.Text = "BEFORE MERGE · " + _leftTitle.Text;
+
+            var preview = _sourceModel.MergePreview;
+            _rightTitle.Text = "MERGED CANDIDATE · " + preview.Status;
+
+            SharedCodeReviewRenderer.RenderCode(
+                _rightBody,
+                preview.Available && preview.Exists ? preview.Text : "",
+                _sourceModel.RelativePath,
+                visualIndent: _prettyView);
+
+            _footer.ForeColor = preview.HasConflicts
+                ? GuardianTheme.Warning
+                : preview.Available
+                    ? GuardianTheme.Healthy
+                    : GuardianTheme.Warning;
+            _footer.Text =
+                $"{_sourceModel.Analysis.OverallLabel} · {preview.Status} · preview only; repository unchanged.";
             return;
         }
 
@@ -404,6 +431,11 @@ internal sealed class ReconcileInspectorPanel : Panel
             _leftBody,
             $"Path\r\n{_sourceModel.RelativePath}\r\n\r\n" +
             $"State\r\n{_sourceModel.State}\r\n\r\n" +
+            $"Analysis\r\n{_sourceModel.Analysis.OverallLabel}\r\n" +
+            $"{_sourceModel.Analysis.LocalLabel} ({_sourceModel.Analysis.LocalHunkCount} hunks)\r\n" +
+            $"{_sourceModel.Analysis.RemoteLabel} ({_sourceModel.Analysis.RemoteHunkCount} hunks)\r\n" +
+            $"Overlap: {(_sourceModel.Analysis.HasOverlap ? "YES" : "NO")}\r\n\r\n" +
+            $"{_sourceModel.Analysis.Detail}\r\n\r\n" +
             $"Workboard detail\r\n{detail}",
             wordWrap: true);
 
@@ -411,7 +443,8 @@ internal sealed class ReconcileInspectorPanel : Panel
             _rightBody,
             $"BASE\r\n{_sourceModel.Base.CommitSha}\r\n{_sourceModel.Base.Locator}\r\n\r\n" +
             $"LOCAL\r\n{_sourceModel.Local.CommitSha}\r\n{_sourceModel.Local.Locator}\r\n\r\n" +
-            $"REMOTE\r\n{_sourceModel.Remote.CommitSha}\r\n{_sourceModel.Remote.Locator}",
+            $"REMOTE\r\n{_sourceModel.Remote.CommitSha}\r\n{_sourceModel.Remote.Locator}\r\n\r\n" +
+            $"MERGED PREVIEW\r\n{_sourceModel.MergePreview.Status}",
             wordWrap: true);
     }
 

@@ -56,6 +56,12 @@ internal static class ReconcileInspectorSourceRegression
                 !model.BaseLocalChanges.AfterLines.SetEquals([3]) ||
                 !model.BaseRemoteChanges.BeforeLines.SetEquals([2]) ||
                 !model.BaseRemoteChanges.AfterLines.SetEquals([2]) ||
+                model.Analysis.OverallLabel != "INDEPENDENT CHANGES" ||
+                model.Analysis.HasOverlap ||
+                !model.MergePreview.Available ||
+                model.MergePreview.HasConflicts ||
+                model.MergePreview.Status != "CLEAN THREE-WAY MERGE" ||
+                model.MergePreview.Text != "alpha\nbeta remote\ngamma local" ||
                 model.Base.Locator != "merge-base:shared.txt" ||
                 model.Local.Locator != "HEAD:shared.txt" ||
                 model.Remote.Locator != "origin/main:shared.txt" ||
@@ -65,7 +71,7 @@ internal static class ReconcileInspectorSourceRegression
                 throw new InvalidOperationException(
                     "Reconcile Inspector did not preserve pinned BASE / LOCAL / REMOTE source identity.");
 
-            Console.WriteLine("Reconcile Inspector Phase 2 pinned-source regression passed.");
+            Console.WriteLine("Reconcile Inspector Phase 4 source/analysis/preview regression passed.");
         }
         finally
         {

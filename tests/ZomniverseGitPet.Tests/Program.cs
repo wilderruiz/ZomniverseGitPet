@@ -378,6 +378,20 @@ Check("project test advisor prefers executable dotnet test runner", () =>
     finally { TryDelete(root); }
 });
 
+Check("reconcile hunk analysis distinguishes independent changes", () =>
+{
+    var local = ReconcileDiffHunk.Parse("@@ -3 +3 @@\n-gamma\n+gamma local");
+    var remote = ReconcileDiffHunk.Parse("@@ -2 +2 @@\n-beta\n+beta remote");
+    return !ReconcileChangeAnalyzer.HasOverlap(local, remote);
+});
+
+Check("reconcile hunk analysis catches same-anchor additions", () =>
+{
+    var local = ReconcileDiffHunk.Parse("@@ -4,0 +5,2 @@\n+local one\n+local two");
+    var remote = ReconcileDiffHunk.Parse("@@ -4,0 +5 @@\n+remote");
+    return ReconcileChangeAnalyzer.HasOverlap(local, remote);
+});
+
 Check("shared code renderer recognizes PHP syntax roles", () =>
 {
     const string php = "<?php function validate($value) { // comment\n return $value === 'ok'; }";
