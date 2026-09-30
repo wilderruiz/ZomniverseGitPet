@@ -99,9 +99,9 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     public void ShowLoading(GuardianWorkboardRow row)
     {
+        _sourceModel = null;
         ResetLocalEditState();
         _selection = row;
-        _sourceModel = null;
         ApplySelectionIdentity(row);
         _footer.ForeColor = GuardianTheme.FaintInk;
         _footer.Text = "Loading pinned BASE / LOCAL / REMOTE snapshots… read-only Git inspection only.";
@@ -690,8 +690,6 @@ internal sealed class ReconcileInspectorPanel : Panel
         _editLocalButton.Visible = available;
         _editLocalButton.Enabled = available;
 
-        if (available)
-            _editLocalButton.BringToFront();
     }
 
     private void EndLocalEditMode()
