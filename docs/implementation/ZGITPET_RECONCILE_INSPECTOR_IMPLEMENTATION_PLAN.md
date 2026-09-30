@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–7 COMPLETE / PHASE 8 CODE COMPLETE, BUILD + MERGED-CANDIDATE SMOKE PENDING / PHASE 9 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–8 COMPLETE / PHASE 9 CODE COMPLETE, BUILD + VALIDATION HARDENING SMOKE PENDING / PHASE 10 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -21,8 +21,8 @@
 - ✅ **Phase 5 — Copy Actions + “Copy Everything” Export** — **COMPLETE / REAL MENU + COPY LIFECYCLE SMOKED.** The Copy menu can be opened/dismissed/reopened safely and exports use raw backing source.
 - ✅ **Phase 6 — Edit LOCAL Before Reconciliation** — **COMPLETE / REAL UI SMOKED.** Edit local is visible on valid LOCAL snapshots and the Exact-mode correction workflow is available without rewriting history.
 - ✅ **Phase 7 — Edit REMOTE** — **COMPLETE / REAL UI SMOKED.** REMOTE correction preparation, isolated worktree state, explicit Send/Discard flow, and remote-tip safety are exercised.
-- 🟡 **Phase 8 — Editable MERGED CANDIDATE** — **CODE COMPLETE / BUILD + REAL UI SMOKE PENDING.** Generated merge evidence stays immutable on the left while an Exact editable draft on the right can be validated and explicitly accepted into the normal no-commit reconciliation.
-- ❌ **Phase 9 — Validation + Race / Safety Hardening** — syntax/structure checks, configured project tests, remote-moved detection, immutable original snapshots, cancellation, cleanup, audit events, and no-force-push guarantees.
+- ✅ **Phase 8 — Editable MERGED CANDIDATE** — **COMPLETE / REAL UI SMOKED.** Generated-vs-edited candidate review, validation, cancellation, and explicit Accept + reconcile UI are exercised.
+- 🟡 **Phase 9 — Validation + Race / Safety Hardening** — **CODE COMPLETE / BUILD + REAL VALIDATION SMOKE PENDING.** Deterministic language checks, isolated saved Test Commands, explicit cancellation, stale/race gates, cleanup, audit, failure recovery, and sensitive-copy warnings are wired.
 - ❌ **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — keyboard flow, maximized editor polish, accessibility, large-file safeguards, regression tests, documentation updates, and release readiness.
 
 > **Maintenance rule:** update this compact overview and the detailed phase status in the same commit as every Reconcile Inspector implementation update. The checklist must always show what is complete, what is next, and what has not started. Never mark planned behavior as current before it is wired and covered by appropriate regression tests.
@@ -1058,9 +1058,34 @@ Implement:
 
 ---
 
-### ❌ Phase 9 — Validation + Safety Hardening
+### 🟡 Phase 9 — Validation + Safety Hardening
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / BUILD + REAL VALIDATION HARDENING SMOKE PENDING
+
+Implemented in this slice:
+
+- added a shared `ReconcileValidationService` used by LOCAL, REMOTE, and editable MERGED candidate validation;
+- source validation blocks NUL/binary-like text and unresolved Git conflict-marker blocks before mutation;
+- JSON uses deterministic `System.Text.Json` parsing;
+- XML-family files (`xml/svg/xaml/csproj/props/targets`) use deterministic XML parsing;
+- CSS-family files receive quote/comment-aware brace-structure validation;
+- when installed locally, PHP uses `php -l`, JavaScript uses `node --check`, Python uses `python -m py_compile`, and PowerShell uses parser-only ScriptBlock creation;
+- unavailable optional language tools are reported as skipped rather than falsely failing otherwise valid source;
+- saved project **Test Commands** run in order inside a disposable detached Git worktree containing the proposed source;
+- merged-candidate validation reproduces LOCAL + REMOTE in the disposable worktree before writing/staging the candidate, so tests see the proposed integrated file rather than either original side alone;
+- logical projects map their saved test working directory into the equivalent subfolder of the validation worktree;
+- saved-test failure is prominent evidence but is not silently treated as absolute authority: before Write local, Commit local, Prepare remote, or Accept + reconcile, GitPet shows the failed test evidence and requires an explicit **Continue anyway** decision;
+- deterministic syntax/structure or validation-infrastructure failure remains blocking;
+- **Stop check** cancels an in-progress isolated validation/test run while preserving the Inspector draft;
+- opening another Inspector row, returning to Activity, closing Guardian, or disposing the form cancels outstanding validation;
+- validation worktrees are removed with best-effort `git worktree remove --force` + prune in `finally`, including cancellation/failure paths;
+- validation start/completion/cancellation and external validator commands are audited;
+- existing stale-state rules remain authoritative: LOCAL HEAD/working-file checks, branch checks, generated-candidate regeneration, `origin/<branch>` checks, live `ls-remote` checks, and remote Send recheck all run before their respective mutations;
+- existing recovery remains intact: merged-candidate failure after merge start aborts the merge, REMOTE preparation cleans temporary worktrees/branches, and LOCAL validation mutates nothing;
+- configured suspicious-path patterns now also guard Inspector source export: selected source, changed blocks, whole-file copy, comparisons, and **Copy everything** require the same explicit sensitive-path review before clipboard export;
+- regression coverage verifies invalid JSON blocking, passing saved tests, non-blocking saved-test failure evidence, validation cancellation, and cleanup of cancelled validation worktrees.
+
+Remaining Phase 9 gate: build/test locally and smoke a real Millenova PHP edit/candidate. Expected PHP validation when `php` is installed: **Syntax ✓ PHP** plus the active project's saved Test Commands result. Test **Stop check** during a deliberately long configured test if convenient, and verify the draft survives cancellation.
 
 Implement:
 
