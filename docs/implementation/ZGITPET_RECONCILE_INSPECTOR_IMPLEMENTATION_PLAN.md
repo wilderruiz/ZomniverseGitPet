@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASE 1 BUILD + REAL UI ENTRY SMOKE PASSED / COMPACT-UI REFINEMENT APPLIED / FULL REGRESSION RERUN PENDING  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASE 1 COMPLETE / PHASE 2 CODE COMPLETE, LOCAL BUILD + SOURCE SMOKE PENDING / PHASE 3 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -13,8 +13,8 @@
 **Legend:** ✅ complete foundation · 🟡 next/in progress · ❌ not started
 
 - ✅ **Phase 0 — Existing File Review Foundation** — current File Review already provides a two-column split, Technical view, scrollable text panes, changed-line highlighting, safe text/binary handling, and Before / Now source loading.
-- 🟡 **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **BUILD + REAL UI ENTRY SMOKE PASSED / FULL REGRESSION RERUN PENDING.** A real Millenova `BOTH SIDES` row opens the dedicated lower-workspace Reconcile Inspector without starting reconciliation; compact/DPI-safe tab sizing is now applied.
-- ❌ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — resolve the common ancestor and load immutable BASE, LOCAL, and REMOTE source snapshots with exact branch/commit/path identity.
+- ✅ **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **COMPLETE / REAL UI SMOKED.** A real Millenova `BOTH SIDES` row opens the dedicated lower-workspace Reconcile Inspector without starting reconciliation; compact/DPI-safe tab sizing is applied.
+- 🟡 **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **CODE COMPLETE / LOCAL BUILD + REAL SOURCE SMOKE PENDING.** The inspector pins HEAD, origin/current-branch (or MERGE_HEAD during an active reconciliation), resolves the merge-base, and reads the selected path from immutable Git revisions.
 - ❌ **Phase 3 — Two-Column Code Comparison Workspace** — reusable side-by-side code panes, syntax coloring, changed-hunk backgrounds, synchronized scrolling, horizontal scrolling, movable splitter, and maximize/full-screen state.
 - ❌ **Phase 4 — Change-Shape Analysis + Read-Only Merged Preview** — classify independent additions vs. edits to existing structures, detect overlapping hunks, and generate a non-destructive three-way merged candidate.
 - ❌ **Phase 5 — Copy Actions + “Copy Everything” Export** — copy selection, changed block, whole file, comparison, code-only bundle, plain text bundle, and ChatGPT-ready Markdown diagnostic bundle.
@@ -566,9 +566,9 @@ Existing capabilities to reuse:
 
 ---
 
-### 🟡 Phase 1 — Reconcile Inspector Shell + Workboard Entry
+### ✅ Phase 1 — Reconcile Inspector Shell + Workboard Entry
 
-**Status:** BUILD + REAL UI ENTRY SMOKE PASSED / FULL REGRESSION RERUN PENDING
+**Status:** COMPLETE / REAL UI SMOKED
 
 Implemented in this slice:
 
@@ -583,7 +583,7 @@ Implemented in this slice:
 - opening the inspector runs no merge, checkout, commit, reset, or push operation;
 - regression coverage locks the accepted row states and default-view routing.
 
-Observed smoke: the Release solution build completed with **0 warnings / 0 errors**, the published DEV app opened a real Millenova `BOTH SIDES` row in the correct LOCAL ↔ REMOTE inspector view, and no reconciliation operation was started. The first full regression run stopped later in the suite on an unrelated stale `LogicalProjectRegression` setup issue introduced when same-root projects were added; that test setup has now been corrected. Remaining gate: rerun the full regression executable and confirm it reaches the Reconcile Inspector regression plus the final summary.
+Observed smoke: the Release solution build completed with **0 warnings / 0 errors**, the published DEV app opened a real Millenova `BOTH SIDES` row in the correct LOCAL ↔ REMOTE inspector view, and no reconciliation operation was started. The stale `LogicalProjectRegression` setup exposed by the first full-suite attempt was corrected separately. **Phase 1 is accepted as complete.**
 
 Implement:
 
@@ -609,9 +609,24 @@ Implement:
 
 ---
 
-### ❌ Phase 2 — Three-Way Source Identity + Loading
+### 🟡 Phase 2 — Three-Way Source Identity + Loading
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / LOCAL BUILD + REAL SOURCE SMOKE PENDING
+
+Implemented in this slice:
+
+- pin current branch, `HEAD`, remote revision, and merge-base using read-only Git commands;
+- use `MERGE_HEAD` as REMOTE during an active reconciliation, otherwise `origin/<branch>`;
+- load BASE / LOCAL / REMOTE source from immutable commit SHAs;
+- keep SHA/ref/path identity in pane headers and real source only in code buffers;
+- represent a file absent at one revision with an empty code buffer plus `NOT PRESENT` in its header;
+- cancel source loading when another review replaces it, Activity is restored, or Guardian closes;
+- keep source panes read-only, no-wrap, and vertically/horizontally scrollable;
+- keep Summary metadata separate from source;
+- leave Merged intentionally ungenerated until Phase 4;
+- regression-test a genuinely diverged temporary repository and prove source inspection does not move HEAD, change the remote-tracking ref, or dirty the working tree.
+
+Remaining Phase 2 gate: compile locally, rerun the full regression executable, then open the real Millenova `BOTH SIDES` file and verify BASE / LOCAL / REMOTE source and SHAs.
 
 Implement:
 

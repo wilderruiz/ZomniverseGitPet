@@ -68,6 +68,7 @@ public sealed class GuardianForm : Form
 
     private CancellationTokenSource? _operation;
     private CancellationTokenSource? _comparisonLoad;
+    private CancellationTokenSource? _reconcileInspectorLoad;
     private RepositoryStatus? _status;
     private bool _refreshInProgress;
     private bool _exitRequested;
@@ -1458,6 +1459,7 @@ public sealed class GuardianForm : Form
         var token = _comparisonLoad.Token;
         _reviewedPath = relativePath;
 
+        _reconcileInspectorLoad?.Cancel();
         _reconcileInspector.Visible = false;
         if (_activityPanel is not null) _activityPanel.Visible = false;
         _comparisonPanel.Visible = true;
@@ -2576,23 +2578,53 @@ public sealed class GuardianForm : Form
             ReportActivity(text);
     }
 
-    internal void ShowReconcileInspector(GuardianWorkboardRow row)
+    internal void ShowReconcileInspector(GuardianWorkboardRow row) =>
+        _ = ShowReconcileInspectorAsync(row);
+
+    private async Task ShowReconcileInspectorAsync(GuardianWorkboardRow row)
     {
         if (_operation is not null || !HasRepository()) return;
         if (!GuardianWorkboardControl.IsReconcileInspectableState(row.State)) return;
 
         _comparisonLoad?.Cancel();
+        _reconcileInspectorLoad?.Cancel();
+        _reconcileInspectorLoad?.Dispose();
+        _reconcileInspectorLoad = new CancellationTokenSource();
+        var token = _reconcileInspectorLoad.Token;
+
         _comparisonPanel.Visible = false;
         if (_activityPanel is not null) _activityPanel.Visible = false;
 
-        _reconcileInspector.ShowSelection(row);
+        _reconcileInspector.ShowLoading(row);
         _reconcileInspector.Visible = true;
         _reconcileInspector.BringToFront();
+
+        try
+        {
+            var model = await new ReconcileInspectorSourceService(_git).LoadAsync(
+                _config.RepositoryPath!,
+                row,
+                GuardianSyncState.Current.ReconciliationPending,
+                token);
+
+            token.ThrowIfCancellationRequested();
+            if (IsDisposed || !_reconcileInspector.Visible) return;
+            _reconcileInspector.ShowSources(model);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!IsDisposed && !token.IsCancellationRequested)
+                _reconcileInspector.ShowProblem(row, ex.Message);
+        }
     }
 
     private void ShowActivityPanel()
     {
         if (_activityPanel is null) return;
+        _reconcileInspectorLoad?.Cancel();
         _comparisonPanel.Visible = false;
         _reconcileInspector.Visible = false;
         _activityPanel.Visible = true;
@@ -2612,6 +2644,7 @@ public sealed class GuardianForm : Form
         e.Cancel = true;
         _operation?.Cancel();
         _comparisonLoad?.Cancel();
+        _reconcileInspectorLoad?.Cancel();
         Hide();
     }
 
@@ -2620,6 +2653,7 @@ public sealed class GuardianForm : Form
         _exitRequested = true;
         _operation?.Cancel();
         _comparisonLoad?.Cancel();
+        _reconcileInspectorLoad?.Cancel();
         Close();
     }
 
@@ -2637,6 +2671,8 @@ public sealed class GuardianForm : Form
             _reconcileOperation.Changed -= OnSaveOperationStateChanged;
             _comparisonLoad?.Cancel();
             _comparisonLoad?.Dispose();
+            _reconcileInspectorLoad?.Cancel();
+            _reconcileInspectorLoad?.Dispose();
             _repositoryBranchMenu?.Dispose();
             _repositoryBranchMenu = null;
             _toolTips.Dispose();

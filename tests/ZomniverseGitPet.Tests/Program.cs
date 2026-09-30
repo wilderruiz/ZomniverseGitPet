@@ -850,6 +850,7 @@ await CheckAsync("Git-native preflight reports all ignore sources before staging
 
 await SavePreflightBatchRegression.RunAsync();
 await FileReviewRegression.RunAsync();
+await ReconcileInspectorSourceRegression.RunAsync();
 await LongPathRegression.RunAsync();
 await WindowsFileLockRegression.RunAsync();
 
@@ -858,7 +859,7 @@ if (failures.Count > 0)
     Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
     return 1;
 }
-Console.WriteLine("All 52 ZomniverseGitPet tests passed.");
+Console.WriteLine("All ZomniverseGitPet tests passed.");
 return 0;
 
 void Check(string name, Func<bool> test)

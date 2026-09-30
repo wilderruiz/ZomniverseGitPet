@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Added the initial **Reconcile Inspector** shell: reconciliation workboard rows can now open a dedicated read-only lower-workspace review mode with state-aware default comparison tabs and a permanent two-column layout. Exact BASE / LOCAL / REMOTE source loading remains the next implementation phase.
+- Added the initial **Reconcile Inspector** shell: reconciliation workboard rows can open a dedicated read-only lower-workspace review mode with state-aware default comparison tabs and a permanent two-column layout.
+- Added pinned **BASE / LOCAL / REMOTE** source loading for Reconcile Inspector. GitPet resolves the merge-base and immutable local/remote commit identities and displays real source code without modifying the repository.
 
 - Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
 

@@ -20,6 +20,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     private readonly Label _footer = new();
     private readonly Dictionary<ReconcileInspectorView, Button> _viewButtons = [];
     private GuardianWorkboardRow? _selection;
+    private ReconcileInspectorSourceModel? _sourceModel;
     private ReconcileInspectorView _selectedView;
 
     public ReconcileInspectorPanel()
@@ -57,19 +58,49 @@ internal sealed class ReconcileInspectorPanel : Panel
         _ => ReconcileInspectorView.Summary
     };
 
-    public void ShowSelection(GuardianWorkboardRow row)
+    public void ShowLoading(GuardianWorkboardRow row)
     {
         _selection = row;
+        _sourceModel = null;
+        ApplySelectionIdentity(row);
+        _footer.ForeColor = GuardianTheme.FaintInk;
+        _footer.Text = "Loading pinned BASE / LOCAL / REMOTE snapshots… read-only Git inspection only.";
+        SelectView(DefaultViewForState(row.State));
+    }
+
+    public void ShowSources(ReconcileInspectorSourceModel model)
+    {
+        _sourceModel = model;
+        _pathLabel.Text = model.RelativePath;
+        _footer.ForeColor = GuardianTheme.Healthy;
+        _footer.Text =
+            $"Pinned read-only snapshots · BASE {model.Base.ShortSha} · LOCAL {model.Local.ShortSha} · " +
+            $"REMOTE {model.Remote.ShortSha} · no repository changes.";
+        SelectView(_selectedView);
+    }
+
+    public void ShowProblem(GuardianWorkboardRow row, string message)
+    {
+        _selection = row;
+        _sourceModel = null;
+        ApplySelectionIdentity(row);
+        _leftBody.Clear();
+        _rightBody.Clear();
+        _leftTitle.Text = "REVIEW UNAVAILABLE";
+        _rightTitle.Text = "DETAILS";
+        _footer.ForeColor = GuardianTheme.Warning;
+        _footer.Text = string.IsNullOrWhiteSpace(message)
+            ? "GitPet could not load the pinned reconciliation sources."
+            : message.Replace("\r", " ").Replace("\n", " ");
+    }
+
+    private void ApplySelectionIdentity(GuardianWorkboardRow row)
+    {
         _pathLabel.Text = row.Path;
         _stateLabel.Text = row.State;
         _stateLabel.ForeColor = row.State is "BOTH SIDES" or "CONFLICT"
             ? GuardianTheme.Warning
             : GuardianTheme.Changes;
-
-        _footer.Text =
-            $"{row.State} · review only · opening this inspector does not merge, commit, checkout, reset, or push anything.";
-
-        SelectView(DefaultViewForState(row.State));
     }
 
     private Control BuildHeader()
@@ -198,8 +229,8 @@ internal sealed class ReconcileInspectorPanel : Panel
         };
 
         title.Dock = DockStyle.Top;
-        title.Height = 38;
-        title.Padding = new Padding(12, 0, 10, 0);
+        title.Height = 52;
+        title.Padding = new Padding(12, 3, 10, 3);
         title.BackColor = GuardianTheme.SurfaceSoft;
         title.ForeColor = GuardianTheme.MutedInk;
         title.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
@@ -207,8 +238,8 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         body.Dock = DockStyle.Fill;
         body.ReadOnly = true;
-        body.WordWrap = true;
-        body.ScrollBars = RichTextBoxScrollBars.Vertical;
+        body.WordWrap = false;
+        body.ScrollBars = RichTextBoxScrollBars.Both;
         body.BorderStyle = BorderStyle.None;
         body.BackColor = GuardianTheme.Console;
         body.ForeColor = GuardianTheme.MutedInk;
@@ -245,28 +276,99 @@ internal sealed class ReconcileInspectorPanel : Panel
             button.FlatAppearance.BorderColor = selected ? GuardianTheme.Violet : GuardianTheme.Border;
         }
 
-        var (left, right) = PaneTitles(view);
-        _leftTitle.Text = left;
-        _rightTitle.Text = right;
+        if (view == ReconcileInspectorView.Summary)
+        {
+            RenderSummary();
+            return;
+        }
 
+        if (view == ReconcileInspectorView.MergedPreview)
+        {
+            _leftTitle.Text = "BEFORE MERGE";
+            _rightTitle.Text = "MERGED CANDIDATE · NOT GENERATED";
+            _leftBody.Clear();
+            _rightBody.Clear();
+            if (_sourceModel is not null)
+            {
+                _footer.ForeColor = GuardianTheme.FaintInk;
+                _footer.Text = "BASE / LOCAL / REMOTE are pinned. Merged-candidate generation starts in Phase 4.";
+            }
+            return;
+        }
+
+        if (_sourceModel is null)
+        {
+            var (left, right) = PaneTitles(view);
+            _leftTitle.Text = left + " · LOADING…";
+            _rightTitle.Text = right + " · LOADING…";
+            _leftBody.Clear();
+            _rightBody.Clear();
+            return;
+        }
+
+        var (leftSource, rightSource) = view switch
+        {
+            ReconcileInspectorView.BaseLocal => (_sourceModel.Base, _sourceModel.Local),
+            ReconcileInspectorView.LocalRemote => (_sourceModel.Local, _sourceModel.Remote),
+            ReconcileInspectorView.BaseRemote => (_sourceModel.Base, _sourceModel.Remote),
+            _ => (_sourceModel.Base, _sourceModel.Local)
+        };
+
+        RenderSource(_leftTitle, _leftBody, leftSource, _sourceModel.Branch);
+        RenderSource(_rightTitle, _rightBody, rightSource, _sourceModel.Branch);
+    }
+
+    private void RenderSummary()
+    {
         var path = _selection?.Path ?? "Select a reconciliation row.";
         var detail = string.IsNullOrWhiteSpace(_selection?.Detail)
             ? "No reconciliation detail is available yet."
             : _selection!.Detail;
 
-        if (view == ReconcileInspectorView.Summary)
+        _leftTitle.Text = "SELECTION";
+        _rightTitle.Text = "PINNED REVISIONS";
+        _leftBody.WordWrap = true;
+        _rightBody.WordWrap = true;
+
+        if (_sourceModel is null)
         {
-            _leftBody.Text =
-                $"SELECTED PATH\r\n\r\n{path}\r\n\r\n" +
-                "Phase 1 provides the inspector shell and safe workboard entry only.";
-            _rightBody.Text =
-                $"REVIEW STATUS\r\n\r\n{detail}\r\n\r\n" +
-                "Exact BASE / LOCAL / REMOTE source snapshots arrive in Phase 2.";
+            _leftBody.Text = $"Path\r\n{path}\r\n\r\nState\r\n{_selection?.State ?? "—"}";
+            _rightBody.Text = "Loading immutable Git identities…";
             return;
         }
 
-        _leftBody.Text = SourcePlaceholder(left, path);
-        _rightBody.Text = SourcePlaceholder(right, path);
+        _leftBody.Text =
+            $"Path\r\n{_sourceModel.RelativePath}\r\n\r\n" +
+            $"State\r\n{_sourceModel.State}\r\n\r\n" +
+            $"Workboard detail\r\n{detail}";
+
+        _rightBody.Text =
+            $"BASE\r\n{_sourceModel.Base.CommitSha}\r\n{_sourceModel.Base.Locator}\r\n\r\n" +
+            $"LOCAL\r\n{_sourceModel.Local.CommitSha}\r\n{_sourceModel.Local.Locator}\r\n\r\n" +
+            $"REMOTE\r\n{_sourceModel.Remote.CommitSha}\r\n{_sourceModel.Remote.Locator}";
+    }
+
+    private static void RenderSource(
+        Label title,
+        RichTextBox body,
+        ReconcileSourceSnapshot source,
+        string branch)
+    {
+        var branchText = source.Role switch
+        {
+            "LOCAL" => $" · {branch}",
+            "REMOTE" when source.RefName == "MERGE_HEAD" => " · MERGE_HEAD",
+            "REMOTE" => $" · origin/{branch}",
+            _ => ""
+        };
+
+        title.Text =
+            $"{source.Role}{branchText} @ {source.ShortSha}\r\n" +
+            (source.Exists ? source.Locator : source.Locator + " · NOT PRESENT");
+
+        body.WordWrap = false;
+        body.Text = source.Exists ? source.Text : "";
+        body.Select(0, 0);
     }
 
     private static (string Left, string Right) PaneTitles(ReconcileInspectorView view) => view switch
@@ -277,11 +379,6 @@ internal sealed class ReconcileInspectorPanel : Panel
         ReconcileInspectorView.MergedPreview => ("BEFORE MERGE", "MERGED CANDIDATE"),
         _ => ("SELECTION", "STATUS")
     };
-
-    private static string SourcePlaceholder(string side, string path) =>
-        $"{side} SOURCE\r\n\r\n{path}\r\n\r\n" +
-        "Source not loaded in Phase 1.\r\n\r\n" +
-        "Opening this view is read-only and does not change Git state.";
 
     private static Button MakeButton(string text)
     {

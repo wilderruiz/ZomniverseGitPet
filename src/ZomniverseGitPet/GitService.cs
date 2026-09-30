@@ -307,6 +307,45 @@ public sealed class GitService(AuditLog audit)
             ["diff", "--no-ext-diff", "--no-textconv", "--unified=0", commit, "--", NormalizeGitRelativePath(file)],
             path, TimeSpan.FromSeconds(20), token);
 
+    // Reconcile Inspector pins immutable Git objects and reads them without
+    // entering the normal queued Git mutation workflow.
+    internal Task<CommandResult> GetReconcileBranchAsync(string path, CancellationToken token) =>
+        RunProcessAsync("git.exe", ["symbolic-ref", "--quiet", "--short", "HEAD"],
+            path, TimeSpan.FromSeconds(12), token);
+
+    internal Task<CommandResult> GetReconcileRevisionAsync(
+        string path,
+        string revision,
+        CancellationToken token) =>
+        RunProcessAsync("git.exe", ["rev-parse", "--verify", $"{revision}^{{commit}}"],
+            path, TimeSpan.FromSeconds(12), token);
+
+    internal Task<CommandResult> GetReconcileMergeBaseAsync(
+        string path,
+        string localCommit,
+        string remoteCommit,
+        CancellationToken token) =>
+        RunProcessAsync("git.exe", ["merge-base", localCommit, remoteCommit],
+            path, TimeSpan.FromSeconds(12), token);
+
+    internal Task<CommandResult> ReconcilePathExistsAsync(
+        string path,
+        string file,
+        string commit,
+        CancellationToken token) =>
+        RunProcessAsync("git.exe",
+            ["cat-file", "-e", $"{commit}:{NormalizeGitRelativePath(file)}"],
+            path, TimeSpan.FromSeconds(12), token);
+
+    internal Task<CommandResult> GetReconcileContentAsync(
+        string path,
+        string file,
+        string commit,
+        CancellationToken token) =>
+        RunProcessAsync("git.exe",
+            ["show", $"{commit}:{NormalizeGitRelativePath(file)}"],
+            path, TimeSpan.FromSeconds(20), token);
+
     public Task<CommandResult> GetRecentCommitsAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-12", "--date=short", "--pretty=format:%h  %ad  %s"], cancellationToken: token);
 
