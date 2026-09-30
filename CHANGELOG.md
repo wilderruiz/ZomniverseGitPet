@@ -15,6 +15,7 @@
 - Fixed Phase 6 Edit-local action visibility so a loaded LOCAL snapshot explicitly restores the Edit local button after Inspector state/reparent transitions.
 - Added Reconcile Inspector Phase 7 REMOTE editing with isolated temporary worktree/branch preparation, separate explicit Send, live remote-tip race detection, normal non-force fast-forward push, and cleanup that leaves the primary working tree untouched.
 - Added Reconcile Inspector Phase 8 editable merged candidates: immutable generated-vs-edited side-by-side review, pinned/live-history validation, conflict-marker rejection, and explicit candidate acceptance into the existing no-commit reconciliation/Save workflow.
+- Added Reconcile Inspector Phase 9 validation hardening: deterministic JSON/XML/CSS checks, optional local PHP/JavaScript/Python/PowerShell parsers, saved project tests in disposable validation worktrees, cancellable checks, cleanup/audit coverage, explicit failed-test override, and sensitive-path review before source copy/export.
 
 - Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
 
