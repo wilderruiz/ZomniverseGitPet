@@ -65,10 +65,10 @@ internal sealed record ReconcileSummaryPresentation(
             overlapTone,
             preview.Status,
             previewTone,
-            Interpretation(analysis, preview));
+            BuildInterpretation(analysis, preview));
     }
 
-    private static string Interpretation(
+    private static string BuildInterpretation(
         ReconcileChangeAnalysis analysis,
         ReconcileMergePreview preview)
     {
