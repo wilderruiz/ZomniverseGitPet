@@ -493,6 +493,13 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     private void SelectView(ReconcileInspectorView view)
     {
+        if ((_localEditMode || _remoteEditMode) &&
+            view != ReconcileInspectorView.LocalRemote)
+            return;
+        if (_candidateEditMode &&
+            view != ReconcileInspectorView.MergedPreview)
+            return;
+
         CaptureViewScroll(_selectedView);
         _selectedView = view;
 
@@ -505,12 +512,6 @@ internal sealed class ReconcileInspectorPanel : Panel
         }
 
         RefreshEditActionState();
-
-        if ((_localEditMode || _remoteEditMode) &&
-            view != ReconcileInspectorView.LocalRemote)
-            return;
-        if (_candidateEditMode && view != ReconcileInspectorView.MergedPreview)
-            return;
 
         var summarySelected = view == ReconcileInspectorView.Summary;
         _summaryPanel.Visible = summarySelected;
