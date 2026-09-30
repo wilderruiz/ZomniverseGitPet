@@ -32,7 +32,7 @@ flowchart LR
 
 | Document | What it covers |
 | --- | --- |
-| [Reconcile Inspector Implementation Plan](implementation/ZGITPET_RECONCILE_INSPECTOR_IMPLEMENTATION_PLAN.md) | **PLANNED** phased implementation for three-way reconciliation inspection, side-by-side code review, safe LOCAL/REMOTE/candidate editing, validation, and structured copy/export. |
+| [Reconcile Inspector Implementation Plan](implementation/ZGITPET_RECONCILE_INSPECTOR_IMPLEMENTATION_PLAN.md) | Implementation record and release checklist for three-way reconciliation inspection, side-by-side code review, safe LOCAL/REMOTE/candidate editing, validation, structured copy/export, and UX hardening. |
 
 ## For developers
 
