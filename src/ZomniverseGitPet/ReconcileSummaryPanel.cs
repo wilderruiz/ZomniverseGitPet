@@ -27,6 +27,7 @@ internal sealed class ReconcileSummaryPanel : Panel
         _content.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         _content.ColumnCount = 1;
         _content.RowCount = 0;
+        _content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _content.BackColor = GuardianTheme.Console;
         _content.Padding = new Padding(0);
         _content.GrowStyle = TableLayoutPanelGrowStyle.AddRows;

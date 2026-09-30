@@ -319,7 +319,6 @@ internal sealed class ReconcileInspectorPanel : Panel
         if (summarySelected)
         {
             RenderSummary();
-            _summaryPanel.BringToFront();
             return;
         }
 
