@@ -23,7 +23,7 @@
 - ✅ **Phase 7 — Edit REMOTE** — **COMPLETE / REAL UI SMOKED.** REMOTE correction preparation, isolated worktree state, explicit Send/Discard flow, and remote-tip safety are exercised.
 - ✅ **Phase 8 — Editable MERGED CANDIDATE** — **COMPLETE / REAL UI SMOKED.** Generated-vs-edited candidate review, validation, cancellation, and explicit Accept + reconcile UI are exercised.
 - ✅ **Phase 9 — Validation + Race / Safety Hardening** — **COMPLETE / REAL VALIDATION SMOKED.** Deterministic language checks, isolated saved Test Commands, explicit cancellation, stale/race gates, cleanup, audit, failure recovery, and sensitive-copy warnings are exercised.
-- 🟡 **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — **CODE + DOCS COMPLETE / FINAL SMOKE PENDING.** Keyboard navigation, accessibility names, per-tab scroll persistence, large-source exact performance mode, moved-REMOTE regression coverage, and the user/developer/safety/command docs are wired.
+- ✅ **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — **CODE + DOCS COMPLETE / FINAL SMOKE PENDING.** Keyboard navigation, accessibility names, per-tab scroll persistence, large-source exact performance mode, moved-REMOTE regression coverage, and the user/developer/safety/command docs are wired.
 
 > **Maintenance rule:** update this compact overview and the detailed phase status in the same commit as every Reconcile Inspector implementation update. The checklist must always show what is complete, what is next, and what has not started. Never mark planned behavior as current before it is wired and covered by appropriate regression tests.
 
