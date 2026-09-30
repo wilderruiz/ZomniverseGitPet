@@ -113,7 +113,7 @@ internal static class SharedCodeReviewRenderer
                 Add(spans, text, @"#.*$", CodeSyntaxKind.Comment);
                 break;
             case "json":
-                Add(spans, text, ""(?:\\.|[^"\\])*"(?=\s*:)", CodeSyntaxKind.Property);
+                Add(spans, text, @"""(?:\\.|[^""\\])*""(?=\s*:)", CodeSyntaxKind.Property);
                 Add(spans, text, @"\b(?:true|false|null)\b", CodeSyntaxKind.Keyword);
                 AddNumbers(spans, text);
                 break;
@@ -166,7 +166,7 @@ internal static class SharedCodeReviewRenderer
     }
 
     private static void AddStrings(List<CodeSyntaxSpan> spans, string text) =>
-        Add(spans, text, ""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'", CodeSyntaxKind.String);
+        Add(spans, text, @"""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*'", CodeSyntaxKind.String);
 
     private static void AddNumbers(List<CodeSyntaxSpan> spans, string text) =>
         Add(spans, text, @"\b(?:0x[0-9A-Fa-f]+|\d+(?:\.\d+)?)\b", CodeSyntaxKind.Number);
