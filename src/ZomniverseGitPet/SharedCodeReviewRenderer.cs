@@ -26,6 +26,25 @@ internal static class SharedCodeReviewRenderer
     internal static readonly Color RemoteChangeBackground = Color.FromArgb(48, 38, 24);
 
     private const int SyntaxHighlightCharacterLimit = 750_000;
+    internal const int LargeFilePerformanceCharacterLimit = 1_500_000;
+    internal const int LargeFilePerformanceLineLimit = 50_000;
+
+    internal static bool UsesLargeFileFallback(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+        if (text.Length > LargeFilePerformanceCharacterLimit) return true;
+
+        var lines = 1;
+        foreach (var ch in text)
+        {
+            if (ch != '\n') continue;
+            lines++;
+            if (lines > LargeFilePerformanceLineLimit)
+                return true;
+        }
+
+        return false;
+    }
 
     public static void RenderCode(
         RichTextBox box,
@@ -35,7 +54,8 @@ internal static class SharedCodeReviewRenderer
         Color? changeBackground = null,
         bool visualIndent = false)
     {
-        var layout = visualIndent
+        var largeFileFallback = UsesLargeFileFallback(text);
+        var layout = visualIndent && !largeFileFallback
             ? BuildPrettyLayout(text, path)
             : BuildExactLayout(text);
         var normalized = layout.Text;
@@ -49,7 +69,8 @@ internal static class SharedCodeReviewRenderer
             box.SelectionBackColor = GuardianTheme.Console;
             box.SelectionFont = new Font("Cascadia Mono", 9.1f);
 
-            if (normalized.Length <= SyntaxHighlightCharacterLimit)
+            if (!largeFileFallback &&
+                normalized.Length <= SyntaxHighlightCharacterLimit)
             {
                 foreach (var span in GetSyntaxSpans(normalized, path))
                 {
@@ -60,7 +81,9 @@ internal static class SharedCodeReviewRenderer
                 }
             }
 
-            if (changedLines is { Count: > 0 } && changeBackground.HasValue)
+            if (!largeFileFallback &&
+                changedLines is { Count: > 0 } &&
+                changeBackground.HasValue)
             {
                 var visualChangedLines = MapChangedLines(
                     changedLines,
