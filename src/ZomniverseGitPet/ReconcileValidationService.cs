@@ -500,7 +500,7 @@ internal sealed class ReconcileValidationService(GitService git)
     }
 
     private static string QuoteCmd(string value) =>
-        """ + value.Replace(""", """", StringComparison.Ordinal) + """;
+        "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
     private static ReconcileValidationResult InfrastructureFailure(
         string message,
