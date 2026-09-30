@@ -16,19 +16,19 @@ internal static class ReconcileInspectorSourceRegression
             await MustGit(git, root, ["branch", "-M", "main"]);
 
             var file = Path.Combine(root, "shared.txt");
-            File.WriteAllText(file, "alpha\nbeta\ngamma");
+            File.WriteAllText(file, "alpha\nbeta\nmiddle one\nmiddle two\ngamma");
             await MustGit(git, root, ["add", "--", "shared.txt"]);
             await MustGit(git, root, ["commit", "-m", "base"]);
             var baseSha = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
 
             await MustGit(git, root, ["switch", "-c", "remote-side"]);
-            File.WriteAllText(file, "alpha\nbeta remote\ngamma");
+            File.WriteAllText(file, "alpha\nbeta remote\nmiddle one\nmiddle two\ngamma");
             await MustGit(git, root, ["add", "--", "shared.txt"]);
             await MustGit(git, root, ["commit", "-m", "remote"]);
             var remoteSha = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
 
             await MustGit(git, root, ["switch", "main"]);
-            File.WriteAllText(file, "alpha\nbeta\ngamma local");
+            File.WriteAllText(file, "alpha\nbeta\nmiddle one\nmiddle two\ngamma local");
             await MustGit(git, root, ["add", "--", "shared.txt"]);
             await MustGit(git, root, ["commit", "-m", "local"]);
             var localSha = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
@@ -45,31 +45,44 @@ internal static class ReconcileInspectorSourceRegression
             var afterHead = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
             var afterRemote = (await MustGit(git, root, ["rev-parse", "refs/remotes/origin/main"])).Trim();
 
-            if (model.Branch != "main" ||
-                model.Base.CommitSha != baseSha ||
-                model.Local.CommitSha != localSha ||
-                model.Remote.CommitSha != remoteSha ||
-                model.Base.Text != "alpha\nbeta\ngamma" ||
-                model.Local.Text != "alpha\nbeta\ngamma local" ||
-                model.Remote.Text != "alpha\nbeta remote\ngamma" ||
-                !model.BaseLocalChanges.BeforeLines.SetEquals([3]) ||
-                !model.BaseLocalChanges.AfterLines.SetEquals([3]) ||
-                !model.BaseRemoteChanges.BeforeLines.SetEquals([2]) ||
-                !model.BaseRemoteChanges.AfterLines.SetEquals([2]) ||
-                model.Analysis.OverallLabel != "INDEPENDENT CHANGES" ||
-                model.Analysis.HasOverlap ||
-                !model.MergePreview.Available ||
-                model.MergePreview.HasConflicts ||
-                model.MergePreview.Status != "CLEAN THREE-WAY MERGE" ||
-                model.MergePreview.Text != "alpha\nbeta remote\ngamma local" ||
-                model.Base.Locator != "merge-base:shared.txt" ||
-                model.Local.Locator != "HEAD:shared.txt" ||
-                model.Remote.Locator != "origin/main:shared.txt" ||
-                beforeStatus != afterStatus ||
-                afterHead != localSha ||
-                afterRemote != remoteSha)
+            var failures = new List<string>();
+            void Expect(bool condition, string message)
+            {
+                if (!condition) failures.Add(message);
+            }
+
+            Expect(model.Branch == "main", $"branch was '{model.Branch}'");
+            Expect(model.Base.CommitSha == baseSha, "BASE SHA mismatch");
+            Expect(model.Local.CommitSha == localSha, "LOCAL SHA mismatch");
+            Expect(model.Remote.CommitSha == remoteSha, "REMOTE SHA mismatch");
+            Expect(model.Base.Text == "alpha\nbeta\nmiddle one\nmiddle two\ngamma", "BASE source mismatch");
+            Expect(model.Local.Text == "alpha\nbeta\nmiddle one\nmiddle two\ngamma local", "LOCAL source mismatch");
+            Expect(model.Remote.Text == "alpha\nbeta remote\nmiddle one\nmiddle two\ngamma", "REMOTE source mismatch");
+            Expect(model.BaseLocalChanges.BeforeLines.SetEquals([5]), "BASE→LOCAL before-line map mismatch");
+            Expect(model.BaseLocalChanges.AfterLines.SetEquals([5]), "BASE→LOCAL after-line map mismatch");
+            Expect(model.BaseRemoteChanges.BeforeLines.SetEquals([2]), "BASE→REMOTE before-line map mismatch");
+            Expect(model.BaseRemoteChanges.AfterLines.SetEquals([2]), "BASE→REMOTE after-line map mismatch");
+            Expect(model.Analysis.OverallLabel == "INDEPENDENT CHANGES",
+                $"analysis was '{model.Analysis.OverallLabel}'");
+            Expect(!model.Analysis.HasOverlap, "analysis incorrectly reported overlap");
+            Expect(model.MergePreview.Available, "merge preview unavailable");
+            Expect(!model.MergePreview.HasConflicts,
+                $"merge preview unexpectedly conflicted: {model.MergePreview.Status}");
+            Expect(model.MergePreview.Status == "CLEAN THREE-WAY MERGE",
+                $"merge preview status was '{model.MergePreview.Status}'");
+            Expect(model.MergePreview.Text == "alpha\nbeta remote\nmiddle one\nmiddle two\ngamma local",
+                "merged candidate source mismatch");
+            Expect(model.Base.Locator == "merge-base:shared.txt", "BASE locator mismatch");
+            Expect(model.Local.Locator == "HEAD:shared.txt", "LOCAL locator mismatch");
+            Expect(model.Remote.Locator == "origin/main:shared.txt", "REMOTE locator mismatch");
+            Expect(beforeStatus == afterStatus, "working-tree status changed during preview");
+            Expect(afterHead == localSha, "HEAD moved during preview");
+            Expect(afterRemote == remoteSha, "remote-tracking ref moved during preview");
+
+            if (failures.Count > 0)
                 throw new InvalidOperationException(
-                    "Reconcile Inspector did not preserve pinned BASE / LOCAL / REMOTE source identity.");
+                    "Reconcile Inspector Phase 4 regression failed: " +
+                    string.Join("; ", failures) + ".");
 
             Console.WriteLine("Reconcile Inspector Phase 4 source/analysis/preview regression passed.");
         }

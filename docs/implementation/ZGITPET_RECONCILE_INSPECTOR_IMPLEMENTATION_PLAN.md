@@ -702,6 +702,7 @@ Implemented in this slice:
 - Merged view displays LOCAL-before-merge ↔ MERGED CANDIDATE side by side;
 - existing Pretty/Exact presentation applies to the generated candidate without changing the candidate backing text;
 - regression coverage proves independent-hunk classification, same-anchor insertion overlap, clean three-way candidate generation, and unchanged HEAD/remote/working-tree state.
+- clean-merge regression uses non-adjacent independent edits because Git's textual merge engine may legitimately combine adjacent non-overlapping zero-context hunks into one conflict region; analysis and merge-engine outcome remain separate evidence.
 
 Remaining Phase 4 gate: compile/test locally, then use the real Millenova `BOTH SIDES` file to confirm the Summary label and Merged candidate are sensible and that the working tree remains untouched.
 

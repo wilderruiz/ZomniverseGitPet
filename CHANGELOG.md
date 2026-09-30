@@ -7,6 +7,7 @@
 - Upgraded Reconcile Inspector into a two-column code workspace with shared syntax coloring, BASE-derived changed-line highlighting, linked scrolling, persistent splitter sizing, and maximized review mode; File Review Technical view now uses the same renderer.
 - Added display-only Pretty/Exact source layout to Reconcile Inspector. Pretty mode can expand long one-line arrays/objects into indented virtual lines while preserving provenance to the original Git line for diff highlighting; Exact shows untouched whitespace.
 - Added Reconcile Inspector change-shape analysis and non-destructive merged preview. GitPet now distinguishes independent vs overlapping BASE hunks and generates clean/conflicted three-way candidates in an OS temp workspace without changing the repository.
+- Corrected the Phase 4 clean-merge regression fixture so its independent edits are separated enough for Git's merge engine to merge cleanly, and added field-specific failure diagnostics.
 
 - Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
 
