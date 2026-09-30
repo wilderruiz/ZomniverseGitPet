@@ -73,6 +73,7 @@ public sealed class GuardianForm : Form
     private CancellationTokenSource? _operation;
     private CancellationTokenSource? _comparisonLoad;
     private CancellationTokenSource? _reconcileInspectorLoad;
+    private CancellationTokenSource? _reconcileValidation;
     private RepositoryStatus? _status;
     private bool _refreshInProgress;
     private bool _exitRequested;
@@ -706,6 +707,10 @@ public sealed class GuardianForm : Form
             await SendReconcileRemoteEditAsync();
         _reconcileInspector.RemoteEditDiscardRequested += async (_, _) =>
             await DiscardReconcileRemoteEditAsync();
+        _reconcileInspector.ValidationCancelRequested += (_, _) =>
+            _reconcileValidation?.Cancel();
+        _reconcileInspector.SensitivePathApproval = path =>
+            ConfirmReconcileSensitivePath(path, "Reconcile Inspector source export");
         _reconcileInspector.MergedCandidateValidateRequested += async (_, e) =>
             await ValidateMergedCandidateAsync(e);
         _reconcileInspector.MergedCandidateAcceptRequested += async (_, e) =>
@@ -2610,6 +2615,7 @@ public sealed class GuardianForm : Form
         if (_operation is not null || !HasRepository()) return;
         if (!GuardianWorkboardControl.IsReconcileInspectableState(row.State)) return;
 
+        _reconcileValidation?.Cancel();
         _comparisonLoad?.Cancel();
         _reconcileInspectorLoad?.Cancel();
         _reconcileInspectorLoad?.Dispose();
@@ -2645,24 +2651,188 @@ public sealed class GuardianForm : Form
         }
     }
 
+    private ReconcileValidationRequest CreateReconcileValidationRequest(
+        string relativePath,
+        string baselineCommitSha,
+        string sourceText,
+        string? mergeRemoteCommitSha = null)
+    {
+        var repositoryPath = _config.RepositoryPath!;
+        var project = _config.GetActiveProject();
+        var projectRelative = project is null
+            ? null
+            : LogicalProjectScopeRuntime.TryGetRelativePath(
+                repositoryPath,
+                project.Path);
+
+        return new ReconcileValidationRequest(
+            relativePath,
+            baselineCommitSha,
+            sourceText,
+            _config.GetTestCommandsForRepository(repositoryPath).ToArray(),
+            projectRelative,
+            mergeRemoteCommitSha);
+    }
+
+    private async Task<ReconcileValidationResult?> RunReconcileValidationAsync(
+        string mode,
+        ReconcileValidationRequest request)
+    {
+        _reconcileValidation?.Cancel();
+        _reconcileValidation?.Dispose();
+
+        var cancellation = new CancellationTokenSource();
+        _reconcileValidation = cancellation;
+        _reconcileInspector.SetValidationRunning(
+            true,
+            $"Checking {mode} source · syntax/structure + saved Test Commands in isolated worktree…");
+
+        await _audit.WriteAsync("reconcile_inspector_validation_started", new
+        {
+            mode,
+            file = request.RelativePath,
+            tests = request.TestCommands.Count,
+            merged = !string.IsNullOrWhiteSpace(request.MergeRemoteCommitSha)
+        });
+
+        try
+        {
+            var result = await new ReconcileValidationService(_git).ValidateAsync(
+                _config.RepositoryPath!,
+                request,
+                cancellation.Token);
+
+            await _audit.WriteAsync("reconcile_inspector_validation_completed", new
+            {
+                mode,
+                file = request.RelativePath,
+                result.InfrastructurePassed,
+                result.SyntaxPassed,
+                result.SyntaxSummary,
+                result.TestsConfigured,
+                result.TestsCompleted,
+                result.TestsPassed,
+                result.TestsSkipped
+            });
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            await _audit.WriteAsync("reconcile_inspector_validation_cancelled", new
+            {
+                mode,
+                file = request.RelativePath
+            });
+            return null;
+        }
+        finally
+        {
+            if (ReferenceEquals(_reconcileValidation, cancellation))
+            {
+                _reconcileValidation = null;
+                cancellation.Dispose();
+            }
+
+            _reconcileInspector.SetValidationRunning(false);
+        }
+    }
+
+    private bool ReviewReconcileValidationEvidence(
+        ReconcileValidationResult result,
+        string intendedAction)
+    {
+        if (!result.BlockingPassed)
+            return false;
+
+        if (result.TestsConfigured == 0 || result.TestsPassed)
+            return true;
+
+        using var warning = new GuardianConfirmDialog(
+            "Reconcile validation",
+            "SAVED TESTS DID NOT PASS",
+            result.CompactSummary + "\r\n\r\n" +
+            string.Join("\r\n\r\n", result.Details.TakeLast(4)) +
+            "\r\n\r\nThe tests ran in an isolated Git worktree. Ignored/untracked dependencies such as local caches or node_modules are not copied there, so an environment-dependent test can fail even when the source is valid.\r\n\r\n" +
+            $"Continue with {intendedAction} anyway?",
+            "Continue anyway",
+            "Cancel",
+            dialogSize: new Size(840, 620),
+            scrollable: true,
+            confirmWidth: 170);
+        return warning.ShowDialog(this) == DialogResult.Yes;
+    }
+
+    private void ShowReconcileValidationFailure(
+        string title,
+        ReconcileValidationResult result)
+    {
+        using var dialog = new GuardianConfirmDialog(
+            "Reconcile validation",
+            title,
+            result.CompactSummary + "\r\n\r\n" +
+            string.Join("\r\n\r\n", result.Details.TakeLast(6)),
+            "OK",
+            "",
+            showCancel: false,
+            dialogSize: new Size(840, 620),
+            scrollable: true);
+        dialog.ShowDialog(this);
+    }
+
     private async Task ValidateMergedCandidateAsync(
         ReconcileMergedCandidateRequestEventArgs e)
     {
         if (!HasRepository()) return;
 
-        _reconcileInspector.SetCandidateBusy(true, "Validating generated/edited candidate against pinned histories…");
+        _reconcileInspector.SetCandidateBusy(
+            true,
+            "Validating candidate identity, syntax/structure, and saved tests…");
         try
         {
-            var result = await new ReconcileMergedCandidateService(_git).ValidateAsync(
+            var identity = await new ReconcileMergedCandidateService(_git).ValidateAsync(
                 _config.RepositoryPath!,
                 e.Draft,
                 CancellationToken.None);
+            if (!identity.Success)
+            {
+                _reconcileInspector.SetCandidateFeedback(identity.Message, false);
+                return;
+            }
+
+            var normalized = ReconcileLocalEditService.NormalizeDraftForOriginal(
+                e.Draft.GeneratedText,
+                e.Draft.EditedText);
+            var validation = await RunReconcileValidationAsync(
+                "MERGED CANDIDATE",
+                CreateReconcileValidationRequest(
+                    e.Draft.RelativePath,
+                    e.Draft.PinnedLocalCommitSha,
+                    normalized,
+                    e.Draft.PinnedRemoteCommitSha));
+
+            if (validation is null)
+            {
+                _reconcileInspector.SetCandidateFeedback(
+                    "Candidate validation cancelled · draft preserved.",
+                    false);
+                return;
+            }
 
             _reconcileInspector.SetCandidateFeedback(
-                result.Success
-                    ? "Candidate validation passed · LOCAL, REMOTE, live remote, generated preview, and clean working tree still match."
-                    : result.Message,
-                result.Success);
+                validation.CompactSummary +
+                (validation.BlockingPassed
+                    ? " · pinned LOCAL/REMOTE/live remote still match."
+                    : " · candidate is blocked until the source check passes."),
+                validation.BlockingPassed);
+
+            if (!validation.BlockingPassed || !validation.TestsPassed)
+            {
+                ShowReconcileValidationFailure(
+                    validation.BlockingPassed
+                        ? "VALIDATION PASSED WITH TEST WARNINGS"
+                        : "CANDIDATE VALIDATION BLOCKED",
+                    validation);
+            }
         }
         catch (Exception ex)
         {
@@ -2695,8 +2865,46 @@ public sealed class GuardianForm : Form
                 "Reconcile Inspector merged candidate"))
             return;
 
+        _reconcileInspector.SetCandidateBusy(
+            true,
+            "Validating candidate syntax/structure + saved tests before repository mutation…");
+
+        var normalizedCandidate = ReconcileLocalEditService.NormalizeDraftForOriginal(
+            e.Draft.GeneratedText,
+            e.Draft.EditedText);
+        var validation = await RunReconcileValidationAsync(
+            "MERGED CANDIDATE",
+            CreateReconcileValidationRequest(
+                e.Draft.RelativePath,
+                e.Draft.PinnedLocalCommitSha,
+                normalizedCandidate,
+                e.Draft.PinnedRemoteCommitSha));
+
+        if (validation is null)
+        {
+            _reconcileInspector.SetCandidateFeedback(
+                "Candidate acceptance cancelled during validation · repository unchanged.",
+                false);
+            return;
+        }
+
+        if (!validation.BlockingPassed)
+        {
+            _reconcileInspector.SetCandidateFeedback(validation.CompactSummary, false);
+            ShowReconcileValidationFailure("CANDIDATE ACCEPTANCE BLOCKED", validation);
+            return;
+        }
+
+        if (!ReviewReconcileValidationEvidence(validation, "Accept + reconcile"))
+        {
+            _reconcileInspector.SetCandidateFeedback(
+                validation.CompactSummary + " · acceptance cancelled after test review.",
+                false);
+            return;
+        }
+
         GuardianReconciliation.SuspendAutomaticSavingForInspectorCandidate(this);
-        _reconcileInspector.SetCandidateBusy(true, "Revalidating and preparing no-commit reconciliation…");
+        _reconcileInspector.SetCandidateBusy(true, "Revalidating pinned histories and preparing no-commit reconciliation…");
 
         var reconciliationStarted = false;
         try
@@ -2783,20 +2991,60 @@ public sealed class GuardianForm : Form
     {
         if (!HasRepository()) return;
 
-        _reconcileInspector.SetRemoteEditBusy(true, "Validating live REMOTE tip and draft…");
+        _reconcileInspector.SetRemoteEditBusy(
+            true,
+            "Validating REMOTE identity, source, and saved tests…");
         try
         {
-            var result = await _reconcileRemoteEditService.ValidateAsync(
-                _config.RepositoryPath!, e.Draft, CancellationToken.None);
+            var identity = await _reconcileRemoteEditService.ValidateAsync(
+                _config.RepositoryPath!,
+                e.Draft,
+                CancellationToken.None);
+            if (!identity.Success)
+            {
+                _reconcileInspector.SetRemoteEditFeedback(identity.Message, false);
+                return;
+            }
+
+            var normalized = ReconcileLocalEditService.NormalizeDraftForOriginal(
+                e.Draft.OriginalText,
+                e.Draft.EditedText);
+            var validation = await RunReconcileValidationAsync(
+                "REMOTE",
+                CreateReconcileValidationRequest(
+                    e.Draft.RelativePath,
+                    e.Draft.PinnedRemoteCommitSha,
+                    normalized));
+
+            if (validation is null)
+            {
+                _reconcileInspector.SetRemoteEditFeedback(
+                    "REMOTE validation cancelled · draft preserved.",
+                    false);
+                return;
+            }
+
             _reconcileInspector.SetRemoteEditFeedback(
-                result.Success
-                    ? "REMOTE edit validation passed · live tip still matches the inspected REMOTE SHA."
-                    : result.Message,
-                result.Success);
+                validation.CompactSummary +
+                (validation.BlockingPassed
+                    ? " · live REMOTE still matches the inspected SHA."
+                    : " · REMOTE correction is blocked until the source check passes."),
+                validation.BlockingPassed);
+
+            if (!validation.BlockingPassed || !validation.TestsPassed)
+            {
+                ShowReconcileValidationFailure(
+                    validation.BlockingPassed
+                        ? "VALIDATION PASSED WITH TEST WARNINGS"
+                        : "REMOTE VALIDATION BLOCKED",
+                    validation);
+            }
         }
         catch (Exception ex)
         {
-            _reconcileInspector.SetRemoteEditFeedback("REMOTE validation failed: " + ex.Message, false);
+            _reconcileInspector.SetRemoteEditFeedback(
+                "REMOTE validation failed: " + ex.Message,
+                false);
         }
     }
 
@@ -2815,6 +3063,43 @@ public sealed class GuardianForm : Form
             "Cancel");
         if (confirm.ShowDialog(this) != DialogResult.Yes) return;
         if (!ConfirmReconcileSensitivePath(e.Draft.RelativePath, "Reconcile Inspector source edit")) return;
+
+        _reconcileInspector.SetRemoteEditBusy(
+            true,
+            "Validating REMOTE source + saved tests before preparing correction…");
+
+        var normalizedRemote = ReconcileLocalEditService.NormalizeDraftForOriginal(
+            e.Draft.OriginalText,
+            e.Draft.EditedText);
+        var validation = await RunReconcileValidationAsync(
+            "REMOTE",
+            CreateReconcileValidationRequest(
+                e.Draft.RelativePath,
+                e.Draft.PinnedRemoteCommitSha,
+                normalizedRemote));
+
+        if (validation is null)
+        {
+            _reconcileInspector.SetRemoteEditFeedback(
+                "REMOTE preparation cancelled during validation · draft preserved.",
+                false);
+            return;
+        }
+
+        if (!validation.BlockingPassed)
+        {
+            _reconcileInspector.SetRemoteEditFeedback(validation.CompactSummary, false);
+            ShowReconcileValidationFailure("REMOTE PREPARATION BLOCKED", validation);
+            return;
+        }
+
+        if (!ReviewReconcileValidationEvidence(validation, "Prepare remote"))
+        {
+            _reconcileInspector.SetRemoteEditFeedback(
+                validation.CompactSummary + " · preparation cancelled after test review.",
+                false);
+            return;
+        }
 
         _reconcileInspector.SetRemoteEditBusy(true, "Preparing isolated REMOTE correction commit…");
         try
@@ -2949,26 +3234,62 @@ public sealed class GuardianForm : Form
     {
         if (!HasRepository()) return;
 
-        _reconcileInspector.SetLocalEditBusy(true, "Validating LOCAL draft…");
+        _reconcileInspector.SetLocalEditBusy(
+            true,
+            "Validating LOCAL identity, source, and saved tests…");
         try
         {
-            var result = await new ReconcileLocalEditService(_git).ValidateAsync(
+            var identity = await new ReconcileLocalEditService(_git).ValidateAsync(
                 _config.RepositoryPath!,
                 e.Draft,
                 requireCleanIndex: false,
                 CancellationToken.None);
+            if (!identity.Success)
+            {
+                _reconcileInspector.SetLocalEditFeedback(identity.Message, false);
+                return;
+            }
+
+            var normalized = identity.NormalizedEditedText ??
+                ReconcileLocalEditService.NormalizeDraftForOriginal(
+                    e.Draft.OriginalText,
+                    e.Draft.EditedText);
+            var validation = await RunReconcileValidationAsync(
+                "LOCAL",
+                CreateReconcileValidationRequest(
+                    e.Draft.RelativePath,
+                    e.Draft.PinnedLocalCommitSha,
+                    normalized));
+
+            if (validation is null)
+            {
+                _reconcileInspector.SetLocalEditFeedback(
+                    "LOCAL validation cancelled · draft preserved.",
+                    false);
+                return;
+            }
 
             _reconcileInspector.SetLocalEditFeedback(
-                result.Success
-                    ? "Edit safety validation passed · path/scope/HEAD/working-tree checks are current."
-                    : result.Message,
-                result.Success);
+                validation.CompactSummary +
+                (validation.BlockingPassed
+                    ? " · LOCAL HEAD/working file still match the inspected snapshot."
+                    : " · LOCAL correction is blocked until the source check passes."),
+                validation.BlockingPassed);
+
+            if (!validation.BlockingPassed || !validation.TestsPassed)
+            {
+                ShowReconcileValidationFailure(
+                    validation.BlockingPassed
+                        ? "VALIDATION PASSED WITH TEST WARNINGS"
+                        : "LOCAL VALIDATION BLOCKED",
+                    validation);
+            }
         }
         catch (Exception ex)
         {
             _reconcileInspector.SetLocalEditFeedback(
-                "Edit validation failed: " + ex.Message,
-                success: false);
+                "LOCAL validation failed: " + ex.Message,
+                false);
         }
     }
 
@@ -2990,6 +3311,43 @@ public sealed class GuardianForm : Form
 
         if (!ConfirmReconcileSensitivePath(e.Draft.RelativePath, "Reconcile Inspector source edit"))
             return;
+
+        _reconcileInspector.SetLocalEditBusy(
+            true,
+            "Validating LOCAL source + saved tests before writing…");
+
+        var normalizedLocal = ReconcileLocalEditService.NormalizeDraftForOriginal(
+            e.Draft.OriginalText,
+            e.Draft.EditedText);
+        var validation = await RunReconcileValidationAsync(
+            "LOCAL",
+            CreateReconcileValidationRequest(
+                e.Draft.RelativePath,
+                e.Draft.PinnedLocalCommitSha,
+                normalizedLocal));
+
+        if (validation is null)
+        {
+            _reconcileInspector.SetLocalEditFeedback(
+                "LOCAL write cancelled during validation · draft preserved.",
+                false);
+            return;
+        }
+
+        if (!validation.BlockingPassed)
+        {
+            _reconcileInspector.SetLocalEditFeedback(validation.CompactSummary, false);
+            ShowReconcileValidationFailure("LOCAL WRITE BLOCKED", validation);
+            return;
+        }
+
+        if (!ReviewReconcileValidationEvidence(validation, "Write local"))
+        {
+            _reconcileInspector.SetLocalEditFeedback(
+                validation.CompactSummary + " · write cancelled after test review.",
+                false);
+            return;
+        }
 
         _reconcileInspector.SetLocalEditBusy(true, "Writing LOCAL working file…");
         try
@@ -3047,6 +3405,43 @@ public sealed class GuardianForm : Form
 
         if (!ConfirmReconcileSensitivePath(e.Draft.RelativePath, "Reconcile Inspector source edit"))
             return;
+
+        _reconcileInspector.SetLocalEditBusy(
+            true,
+            "Validating LOCAL source + saved tests before correction commit…");
+
+        var normalizedLocal = ReconcileLocalEditService.NormalizeDraftForOriginal(
+            e.Draft.OriginalText,
+            e.Draft.EditedText);
+        var validation = await RunReconcileValidationAsync(
+            "LOCAL",
+            CreateReconcileValidationRequest(
+                e.Draft.RelativePath,
+                e.Draft.PinnedLocalCommitSha,
+                normalizedLocal));
+
+        if (validation is null)
+        {
+            _reconcileInspector.SetLocalEditFeedback(
+                "Commit local cancelled during validation · draft preserved.",
+                false);
+            return;
+        }
+
+        if (!validation.BlockingPassed)
+        {
+            _reconcileInspector.SetLocalEditFeedback(validation.CompactSummary, false);
+            ShowReconcileValidationFailure("LOCAL COMMIT BLOCKED", validation);
+            return;
+        }
+
+        if (!ReviewReconcileValidationEvidence(validation, "Commit local"))
+        {
+            _reconcileInspector.SetLocalEditFeedback(
+                validation.CompactSummary + " · commit cancelled after test review.",
+                false);
+            return;
+        }
 
         _reconcileInspector.SetLocalEditBusy(true, "Validating exact-file correction commit…");
         try
@@ -3206,6 +3601,7 @@ public sealed class GuardianForm : Form
     private void ShowActivityPanel()
     {
         if (_activityPanel is null) return;
+        _reconcileValidation?.Cancel();
         _reconcileInspectorLoad?.Cancel();
 
         if (_reconcileInspectorWindow is { IsDisposed: false } window)
@@ -3231,6 +3627,7 @@ public sealed class GuardianForm : Form
         _operation?.Cancel();
         _comparisonLoad?.Cancel();
         _reconcileInspectorLoad?.Cancel();
+        _reconcileValidation?.Cancel();
         if (_reconcileInspectorWindow is { IsDisposed: false } window) window.Close();
         Hide();
     }
@@ -3241,6 +3638,7 @@ public sealed class GuardianForm : Form
         _operation?.Cancel();
         _comparisonLoad?.Cancel();
         _reconcileInspectorLoad?.Cancel();
+        _reconcileValidation?.Cancel();
         if (_reconcileInspectorWindow is { IsDisposed: false } window) window.Close();
         Close();
     }
@@ -3261,6 +3659,9 @@ public sealed class GuardianForm : Form
             _comparisonLoad?.Dispose();
             _reconcileInspectorLoad?.Cancel();
             _reconcileInspectorLoad?.Dispose();
+            _reconcileValidation?.Cancel();
+            _reconcileValidation?.Dispose();
+            _reconcileValidation = null;
             if (_reconcileRemoteEditSession is not null)
             {
                 try
