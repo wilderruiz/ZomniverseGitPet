@@ -21,6 +21,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     private readonly ReconcileSummaryPanel _summaryPanel = new();
     private readonly SplitContainer _split = new();
     private readonly Dictionary<ReconcileInspectorView, Button> _viewButtons = [];
+    private readonly Dictionary<ReconcileInspectorView, RichTextScrollSnapshot> _viewScroll = [];
     private Button? _scrollLinkButton;
     private Button? _prettyButton;
     private Button? _copyButton;
@@ -66,6 +67,23 @@ internal sealed class ReconcileInspectorPanel : Panel
     {
         Dock = DockStyle.Fill;
         BackColor = GuardianTheme.Console;
+        AccessibleName = "Reconcile Inspector";
+        AccessibleDescription =
+            "Review BASE, LOCAL, REMOTE, and merged candidate source side by side before reconciliation.";
+        TabStop = true;
+
+        _pathLabel.AccessibleName = "Reconciliation file path";
+        _stateLabel.AccessibleName = "Reconciliation state";
+        _leftTitle.AccessibleName = "Left source identity";
+        _rightTitle.AccessibleName = "Right source identity";
+        _leftBody.AccessibleName = "Left reconciliation source";
+        _leftBody.AccessibleDescription =
+            "Source code in the left side of the active reconciliation comparison.";
+        _rightBody.AccessibleName = "Right reconciliation source";
+        _rightBody.AccessibleDescription =
+            "Source code in the right side of the active reconciliation comparison.";
+        _footer.AccessibleName = "Reconcile Inspector status";
+        _summaryPanel.AccessibleName = "Reconciliation decision summary";
 
         var header = BuildHeader();
         var tabs = BuildTabs();
@@ -134,6 +152,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     public void ShowLoading(GuardianWorkboardRow row)
     {
         _sourceModel = null;
+        _viewScroll.Clear();
         ResetLocalEditState();
         _selection = row;
         ApplySelectionIdentity(row);
@@ -160,6 +179,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     {
         _selection = row;
         _sourceModel = null;
+        _viewScroll.Clear();
         ApplySelectionIdentity(row);
         _leftBody.Clear();
         _rightBody.Clear();
@@ -378,6 +398,9 @@ internal sealed class ReconcileInspectorPanel : Panel
         actions.Controls.Add(_maximizeButton);
         actions.Controls.Add(_activityButton);
 
+        for (var i = 0; i < actions.Controls.Count; i++)
+            actions.Controls[i].TabIndex = i;
+
         header.Controls.Add(info, 0, 0);
         header.Controls.Add(actions, 1, 0);
         return header;
@@ -417,6 +440,8 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         _split.Panel1.Controls.Add(BuildSourcePlaceholder(_leftTitle, _leftBody));
         _split.Panel2.Controls.Add(BuildSourcePlaceholder(_rightTitle, _rightBody));
+        _leftBody.TabIndex = 0;
+        _rightBody.TabIndex = 1;
     }
 
     private static Control BuildSourcePlaceholder(Label title, RichTextBox body)
@@ -445,6 +470,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         body.Font = new Font("Cascadia Mono", 9f);
         body.DetectUrls = false;
         body.Padding = new Padding(12);
+        body.TabStop = true;
 
         panel.Controls.Add(body);
         panel.Controls.Add(title);
@@ -458,6 +484,8 @@ internal sealed class ReconcileInspectorPanel : Panel
     {
         var button = MakeButton(text);
         button.Tag = view;
+        button.AccessibleName = text + " reconciliation view";
+        button.AccessibleDescription = "Switch Reconcile Inspector to " + text + ".";
         button.Click += (_, _) => SelectView(view);
         _viewButtons[view] = button;
         tabs.Controls.Add(button);
@@ -465,6 +493,7 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     private void SelectView(ReconcileInspectorView view)
     {
+        CaptureViewScroll(_selectedView);
         _selectedView = view;
 
         foreach (var (candidate, button) in _viewButtons)
@@ -500,6 +529,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             if (_candidateEditMode)
             {
                 RenderCandidateEditor();
+                RestoreViewScroll(view);
                 return;
             }
 
@@ -509,6 +539,7 @@ internal sealed class ReconcileInspectorPanel : Panel
                 _rightTitle.Text = "MERGED CANDIDATE · LOADING…";
                 _leftBody.Clear();
                 _rightBody.Clear();
+                RestoreViewScroll(view);
                 return;
             }
 
@@ -524,7 +555,11 @@ internal sealed class ReconcileInspectorPanel : Panel
             _leftTitle.Text = "BEFORE MERGE · " + _leftTitle.Text;
 
             var preview = _sourceModel.MergePreview;
-            _rightTitle.Text = "MERGED CANDIDATE · " + preview.Status;
+            _rightTitle.Text =
+                "MERGED CANDIDATE · " + preview.Status +
+                (SharedCodeReviewRenderer.UsesLargeFileFallback(preview.Text)
+                    ? " · LARGE · EXACT PERFORMANCE MODE"
+                    : "");
 
             SharedCodeReviewRenderer.RenderCode(
                 _rightBody,
@@ -539,6 +574,7 @@ internal sealed class ReconcileInspectorPanel : Panel
                     : GuardianTheme.Warning;
             _footer.Text =
                 $"{_sourceModel.Analysis.OverallLabel} · {preview.Status} · preview only; repository unchanged.";
+            RestoreViewScroll(view);
             return;
         }
 
@@ -549,6 +585,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             _rightTitle.Text = right + " · LOADING…";
             _leftBody.Clear();
             _rightBody.Clear();
+            RestoreViewScroll(view);
             return;
         }
 
@@ -591,6 +628,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         RenderSource(
             _rightTitle, _rightBody, rightSource, _sourceModel.Branch,
             _sourceModel.RelativePath, rightLines, rightBackground, _prettyView);
+        RestoreViewScroll(view);
     }
 
     private void RenderSummary()
@@ -643,8 +681,14 @@ internal sealed class ReconcileInspectorPanel : Panel
             _ => ""
         };
 
+        var largeFileFallback =
+            source.Exists &&
+            SharedCodeReviewRenderer.UsesLargeFileFallback(source.Text);
+
         title.Text =
-            $"{source.Role}{branchText} @ {source.ShortSha}\r\n" +
+            $"{source.Role}{branchText} @ {source.ShortSha}" +
+            (largeFileFallback ? " · LARGE · EXACT PERFORMANCE MODE" : "") +
+            "\r\n" +
             (source.Exists ? source.Locator : source.Locator + " · NOT PRESENT");
 
         SharedCodeReviewRenderer.RenderCode(
@@ -691,6 +735,9 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         _leftTitle.Text =
             "GENERATED CANDIDATE · " + _sourceModel.MergePreview.Status +
+            (SharedCodeReviewRenderer.UsesLargeFileFallback(_candidateGeneratedText)
+                ? " · LARGE · EXACT PERFORMANCE MODE"
+                : "") +
             "\r\nimmutable preview";
         SharedCodeReviewRenderer.RenderCode(
             _leftBody,
@@ -700,7 +747,11 @@ internal sealed class ReconcileInspectorPanel : Panel
         _leftBody.ReadOnly = true;
 
         _rightTitle.Text =
-            "EDITED CANDIDATE · draft\r\nnot applied · not staged · not committed";
+            "EDITED CANDIDATE · draft" +
+            (SharedCodeReviewRenderer.UsesLargeFileFallback(_candidateOriginalEditorText)
+                ? " · LARGE · EXACT PERFORMANCE MODE"
+                : "") +
+            "\r\nnot applied · not staged · not committed";
         SharedCodeReviewRenderer.RenderCode(
             _rightBody,
             _candidateOriginalEditorText,
@@ -1510,6 +1561,142 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.Text = message;
     }
 
+    private void CaptureViewScroll(ReconcileInspectorView view)
+    {
+        if (view == ReconcileInspectorView.Summary ||
+            !_split.Visible ||
+            _sourceModel is null)
+            return;
+
+        _viewScroll[view] = _scrollLink.Capture();
+    }
+
+    private void RestoreViewScroll(ReconcileInspectorView view)
+    {
+        if (view == ReconcileInspectorView.Summary ||
+            !_viewScroll.TryGetValue(view, out var snapshot))
+            return;
+
+        void RestoreNow()
+        {
+            if (IsDisposed || _selectedView != view || !_split.Visible) return;
+            _scrollLink.Restore(snapshot);
+        }
+
+        if (IsHandleCreated)
+            BeginInvoke((Action)RestoreNow);
+    }
+
+    private void TogglePaneFocus()
+    {
+        if (!_split.Visible) return;
+
+        if (_leftBody.Focused || _leftBody.ContainsFocus)
+            _rightBody.Focus();
+        else
+            _leftBody.Focus();
+    }
+
+    internal static bool TryResolveViewShortcut(
+        Keys keyData,
+        out ReconcileInspectorView view)
+    {
+        view = keyData switch
+        {
+            Keys.Control | Keys.D1 => ReconcileInspectorView.Summary,
+            Keys.Control | Keys.D2 => ReconcileInspectorView.BaseLocal,
+            Keys.Control | Keys.D3 => ReconcileInspectorView.LocalRemote,
+            Keys.Control | Keys.D4 => ReconcileInspectorView.BaseRemote,
+            Keys.Control | Keys.D5 => ReconcileInspectorView.MergedPreview,
+            _ => ReconcileInspectorView.Summary
+        };
+
+        return keyData is
+            Keys.Control | Keys.D1 or
+            Keys.Control | Keys.D2 or
+            Keys.Control | Keys.D3 or
+            Keys.Control | Keys.D4 or
+            Keys.Control | Keys.D5;
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (TryResolveViewShortcut(keyData, out var view))
+        {
+            SelectView(view);
+            return true;
+        }
+
+        if (keyData == (Keys.Control | Keys.P) &&
+            _prettyButton is { Visible: true, Enabled: true })
+        {
+            _prettyButton.PerformClick();
+            return true;
+        }
+
+        if (keyData == (Keys.Control | Keys.Shift | Keys.C) &&
+            _copyEverythingButton is { Visible: true, Enabled: true })
+        {
+            CopyEverythingMarkdown();
+            return true;
+        }
+
+        if (keyData == (Keys.Control | Keys.Enter))
+        {
+            if (_candidateEditMode)
+                RaiseCandidate(MergedCandidateValidateRequested);
+            else if (_remoteEditMode)
+                RaiseRemoteEdit(RemoteEditValidateRequested);
+            else if (_localEditMode)
+                RaiseLocalEdit(LocalEditValidateRequested);
+            else
+                return base.ProcessCmdKey(ref msg, keyData);
+
+            return true;
+        }
+
+        if (keyData == Keys.F6 && _split.Visible)
+        {
+            TogglePaneFocus();
+            return true;
+        }
+
+        if (keyData == Keys.F11)
+        {
+            MaximizeRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        if (keyData == Keys.Escape)
+        {
+            if (_stopValidationButton is { Visible: true, Enabled: true })
+            {
+                _stopValidationButton.PerformClick();
+                return true;
+            }
+
+            if (_candidateEditMode)
+            {
+                CancelCandidateEdit();
+                return true;
+            }
+
+            if (_remoteEditMode && !_remotePrepared)
+            {
+                CancelRemoteEdit();
+                return true;
+            }
+
+            if (_localEditMode)
+            {
+                CancelLocalEdit();
+                return true;
+            }
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
     private static (string Left, string Right) PaneTitles(ReconcileInspectorView view) => view switch
     {
         ReconcileInspectorView.BaseLocal => ("BASE", "LOCAL"),
@@ -1546,7 +1733,8 @@ internal sealed class ReconcileInspectorPanel : Panel
             Cursor = Cursors.Hand,
             Font = new Font("Segoe UI", 8.2f, FontStyle.Bold),
             UseVisualStyleBackColor = false,
-            Margin = new Padding(4, 0, 4, 0)
+            Margin = new Padding(4, 0, 4, 0),
+            AccessibleName = text.Replace("✓", "").Replace("⛶", "").Replace("▾", "").Trim()
         };
         button.FlatAppearance.BorderColor = GuardianTheme.Border;
         button.FlatAppearance.BorderSize = 1;
