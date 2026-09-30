@@ -95,19 +95,19 @@ internal sealed class ReconcileInspectorPanel : Panel
         var title = new Label
         {
             AutoSize = false,
-            Width = 172,
+            Width = 108,
             Height = 24,
             Location = new Point(0, 0),
-            Text = "RECONCILE INSPECTOR",
+            Text = "RECONCILE",
             ForeColor = GuardianTheme.Reconcile,
             Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft
         };
 
         _stateLabel.AutoSize = false;
-        _stateLabel.Width = 112;
+        _stateLabel.Width = 132;
         _stateLabel.Height = 24;
-        _stateLabel.Location = new Point(176, 0);
+        _stateLabel.Location = new Point(112, 0);
         _stateLabel.Font = new Font("Cascadia Mono", 8f, FontStyle.Bold);
         _stateLabel.TextAlign = ContentAlignment.MiddleLeft;
 
@@ -125,7 +125,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         info.Controls.Add(_pathLabel);
         info.Resize += (_, _) => _pathLabel.Width = Math.Max(120, info.ClientSize.Width);
 
-        var activity = MakeButton("Activity", 86);
+        var activity = MakeButton("Activity");
         activity.Margin = new Padding(8, 8, 0, 0);
         activity.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
 
@@ -142,15 +142,16 @@ internal sealed class ReconcileInspectorPanel : Panel
             Height = 42,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
+            AutoScroll = true,
             BackColor = GuardianTheme.SurfaceSoft,
             Padding = new Padding(10, 5, 10, 3)
         };
 
-        AddViewButton(tabs, "Summary", ReconcileInspectorView.Summary, 88);
-        AddViewButton(tabs, "Base ↔ Local", ReconcileInspectorView.BaseLocal, 112);
-        AddViewButton(tabs, "Local ↔ Remote", ReconcileInspectorView.LocalRemote, 126);
-        AddViewButton(tabs, "Base ↔ Remote", ReconcileInspectorView.BaseRemote, 126);
-        AddViewButton(tabs, "Merged Preview", ReconcileInspectorView.MergedPreview, 124);
+        AddViewButton(tabs, "Summary", ReconcileInspectorView.Summary);
+        AddViewButton(tabs, "Base ↔ Local", ReconcileInspectorView.BaseLocal);
+        AddViewButton(tabs, "Local ↔ Remote", ReconcileInspectorView.LocalRemote);
+        AddViewButton(tabs, "Base ↔ Remote", ReconcileInspectorView.BaseRemote);
+        AddViewButton(tabs, "Merged", ReconcileInspectorView.MergedPreview);
 
         return tabs;
     }
@@ -223,10 +224,9 @@ internal sealed class ReconcileInspectorPanel : Panel
     private void AddViewButton(
         FlowLayoutPanel tabs,
         string text,
-        ReconcileInspectorView view,
-        int width)
+        ReconcileInspectorView view)
     {
-        var button = MakeButton(text, width);
+        var button = MakeButton(text);
         button.Tag = view;
         button.Click += (_, _) => SelectView(view);
         _viewButtons[view] = button;
@@ -283,13 +283,16 @@ internal sealed class ReconcileInspectorPanel : Panel
         "Source not loaded in Phase 1.\r\n\r\n" +
         "Opening this view is read-only and does not change Git state.";
 
-    private static Button MakeButton(string text, int width)
+    private static Button MakeButton(string text)
     {
         var button = new Button
         {
             Text = text,
-            Width = width,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(72, 31),
             Height = 31,
+            Padding = new Padding(10, 0, 10, 0),
             FlatStyle = FlatStyle.Flat,
             BackColor = GuardianTheme.SurfaceRaised,
             ForeColor = GuardianTheme.Ink,

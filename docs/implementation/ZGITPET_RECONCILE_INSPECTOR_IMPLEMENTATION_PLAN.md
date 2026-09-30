@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASE 1 CODE COMPLETE / LOCAL BUILD + UI SMOKE PENDING / PHASE 2 NEXT AFTER PHASE 1 SMOKE  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASE 1 BUILD + REAL UI ENTRY SMOKE PASSED / COMPACT-UI REFINEMENT APPLIED / FULL REGRESSION RERUN PENDING  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -13,7 +13,7 @@
 **Legend:** ✅ complete foundation · 🟡 next/in progress · ❌ not started
 
 - ✅ **Phase 0 — Existing File Review Foundation** — current File Review already provides a two-column split, Technical view, scrollable text panes, changed-line highlighting, safe text/binary handling, and Before / Now source loading.
-- 🟡 **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **CODE COMPLETE / LOCAL BUILD + UI SMOKE PENDING.** Clicking a `LOCAL`, `REMOTE`, `BOTH SIDES`, or `CONFLICT` reconciliation row now routes into a dedicated lower-workspace Reconcile Inspector shell without starting reconciliation.
+- 🟡 **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **BUILD + REAL UI ENTRY SMOKE PASSED / FULL REGRESSION RERUN PENDING.** A real Millenova `BOTH SIDES` row opens the dedicated lower-workspace Reconcile Inspector without starting reconciliation; compact/DPI-safe tab sizing is now applied.
 - ❌ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — resolve the common ancestor and load immutable BASE, LOCAL, and REMOTE source snapshots with exact branch/commit/path identity.
 - ❌ **Phase 3 — Two-Column Code Comparison Workspace** — reusable side-by-side code panes, syntax coloring, changed-hunk backgrounds, synchronized scrolling, horizontal scrolling, movable splitter, and maximize/full-screen state.
 - ❌ **Phase 4 — Change-Shape Analysis + Read-Only Merged Preview** — classify independent additions vs. edits to existing structures, detect overlapping hunks, and generate a non-destructive three-way merged candidate.
@@ -568,7 +568,7 @@ Existing capabilities to reuse:
 
 ### 🟡 Phase 1 — Reconcile Inspector Shell + Workboard Entry
 
-**Status:** CODE COMPLETE / LOCAL BUILD + UI SMOKE PENDING
+**Status:** BUILD + REAL UI ENTRY SMOKE PASSED / FULL REGRESSION RERUN PENDING
 
 Implemented in this slice:
 
@@ -583,7 +583,7 @@ Implemented in this slice:
 - opening the inspector runs no merge, checkout, commit, reset, or push operation;
 - regression coverage locks the accepted row states and default-view routing.
 
-Remaining Phase 1 gate: compile the pulled code locally and smoke the four row-state entry paths in the real Guardian UI.
+Observed smoke: the Release solution build completed with **0 warnings / 0 errors**, the published DEV app opened a real Millenova `BOTH SIDES` row in the correct LOCAL ↔ REMOTE inspector view, and no reconciliation operation was started. The first full regression run stopped later in the suite on an unrelated stale `LogicalProjectRegression` setup issue introduced when same-root projects were added; that test setup has now been corrected. Remaining gate: rerun the full regression executable and confirm it reaches the Reconcile Inspector regression plus the final summary.
 
 Implement:
 

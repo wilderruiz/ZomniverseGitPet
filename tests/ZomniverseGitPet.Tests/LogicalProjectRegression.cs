@@ -52,6 +52,12 @@ internal static class LogicalProjectRegression
             !samePathProjects.Any(item => item.Id == secondSameRootProject.Id))
             throw new InvalidOperationException("Multiple logical projects could not share the exact same repository root/path.");
 
+        // RememberProject intentionally activates the project it remembers. The two
+        // same-root setup entries above therefore replace Wildverse as the active
+        // project. Reactivate Wildverse before asserting Wildverse's scoped Git rules.
+        if (!config.ActivateProject(wildverseProject.Id))
+            throw new InvalidOperationException("Wildverse test project could not be reactivated.");
+
         var specs = LogicalProjectScopeRuntime.GetPathspecs(root, includeRootGitIgnore: true);
         if (!specs.Contains("wildverse", StringComparer.OrdinalIgnoreCase) ||
             !specs.Contains(".gitignore", StringComparer.OrdinalIgnoreCase) ||
