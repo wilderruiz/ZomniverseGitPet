@@ -23,6 +23,8 @@ internal sealed class ReconcileInspectorPanel : Panel
     private readonly Dictionary<ReconcileInspectorView, Button> _viewButtons = [];
     private Button? _scrollLinkButton;
     private Button? _prettyButton;
+    private Button? _copyButton;
+    private Button? _copyEverythingButton;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
     private bool _prettyView = true;
@@ -202,6 +204,12 @@ internal sealed class ReconcileInspectorPanel : Panel
             SelectView(_selectedView);
         };
 
+        _copyButton = MakeButton("Copy ▾");
+        _copyButton.Click += (_, _) => ShowCopyMenu(_copyButton);
+
+        _copyEverythingButton = MakeButton("Copy everything");
+        _copyEverythingButton.Click += (_, _) => CopyEverythingMarkdown();
+
         _maximizeButton = MakeButton("Max ⛶");
         _maximizeButton.Click += (_, _) => MaximizeRequested?.Invoke(this, EventArgs.Empty);
 
@@ -210,6 +218,8 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         actions.Controls.Add(_scrollLinkButton);
         actions.Controls.Add(_prettyButton);
+        actions.Controls.Add(_copyButton);
+        actions.Controls.Add(_copyEverythingButton);
         actions.Controls.Add(_maximizeButton);
         actions.Controls.Add(activity);
 
@@ -475,6 +485,269 @@ internal sealed class ReconcileInspectorPanel : Panel
             changedLines,
             changeBackground,
             prettyView);
+    }
+
+    private void ShowCopyMenu(Control anchor)
+    {
+        var menu = new ContextMenuStrip
+        {
+            Renderer = GuardianTheme.CreateMenuRenderer(),
+            BackColor = GuardianTheme.SurfaceRaised,
+            ForeColor = GuardianTheme.Ink,
+            ShowImageMargin = false
+        };
+
+        AddCopyItem(menu, "Copy selected", CopySelectedExact);
+        AddCopyItem(menu, "Copy changed block", CopyChangedBlock);
+        AddCopyItem(menu, "Copy whole file", CopyWholeFile);
+        AddCopyItem(menu, "Copy code only", CopyCodeOnly);
+        AddCopyItem(menu, "Copy comparison", CopyComparison);
+        menu.Items.Add(new ToolStripSeparator());
+        AddCopyItem(menu, "Copy everything — Markdown", CopyEverythingMarkdown);
+        AddCopyItem(menu, "Copy everything — plain text", CopyEverythingPlainText);
+
+        menu.Closed += (_, _) => menu.Dispose();
+        menu.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    private static void AddCopyItem(
+        ContextMenuStrip menu,
+        string text,
+        Action action)
+    {
+        var item = new ToolStripMenuItem(text)
+        {
+            ForeColor = GuardianTheme.Ink
+        };
+        item.Click += (_, _) => action();
+        menu.Items.Add(item);
+    }
+
+    private void CopySelectedExact()
+    {
+        if (_sourceModel is null)
+        {
+            CopyUnavailable("Nothing is loaded yet.");
+            return;
+        }
+
+        if (_selectedView == ReconcileInspectorView.Summary)
+        {
+            CopyUnavailable("Summary has no source selection. Choose a code comparison tab.");
+            return;
+        }
+
+        if (_prettyView)
+        {
+            CopyUnavailable("Copy selected uses exact source only. Switch Pretty to Exact, then select source text.");
+            return;
+        }
+
+        var box = ActiveBody();
+        if (box is null || string.IsNullOrEmpty(box.SelectedText))
+        {
+            CopyUnavailable("Select source text in the active code pane first.");
+            return;
+        }
+
+        SetClipboard(box.SelectedText, "Selected exact source copied.");
+    }
+
+    private void CopyChangedBlock()
+    {
+        if (!TryGetActiveSource(out var source, out var changedLines))
+            return;
+
+        var text = ReconcileCopyExport.BuildChangedBlock(
+            source.Text,
+            changedLines);
+        if (string.IsNullOrEmpty(text))
+        {
+            CopyUnavailable($"No changed raw lines are available for {source.Role} in this view.");
+            return;
+        }
+
+        SetClipboard(text, $"Changed raw source copied from {source.Role}. No Pretty formatting included.");
+    }
+
+    private void CopyWholeFile()
+    {
+        if (!TryGetActiveSource(out var source, out _))
+            return;
+
+        if (!source.Exists)
+        {
+            CopyUnavailable($"{source.Role} is not present at this revision.");
+            return;
+        }
+
+        SetClipboard(
+            source.Text,
+            $"Whole {source.Role} file copied from raw backing source.");
+    }
+
+    private void CopyCodeOnly()
+    {
+        if (_sourceModel is null)
+        {
+            CopyUnavailable("Nothing is loaded yet.");
+            return;
+        }
+
+        SetClipboard(
+            ReconcileCopyExport.BuildCodeOnlyMarkdown(_sourceModel),
+            "BASE / LOCAL / REMOTE code-only Markdown copied from raw backing source.");
+    }
+
+    private void CopyComparison()
+    {
+        if (_sourceModel is null)
+        {
+            CopyUnavailable("Nothing is loaded yet.");
+            return;
+        }
+
+        if (_selectedView == ReconcileInspectorView.Summary)
+        {
+            CopyUnavailable("Choose a comparison or Merged tab before copying a comparison.");
+            return;
+        }
+
+        SetClipboard(
+            ReconcileCopyExport.BuildComparison(_sourceModel, _selectedView),
+            "Current raw source comparison copied.");
+    }
+
+    private void CopyEverythingMarkdown()
+    {
+        if (_sourceModel is null)
+        {
+            CopyUnavailable("Nothing is loaded yet.");
+            return;
+        }
+
+        SetClipboard(
+            ReconcileCopyExport.BuildEverythingMarkdown(
+                _sourceModel,
+                WorkboardDetail()),
+            "Copy everything — Markdown copied. Raw pinned source + reconciliation evidence are ready to paste into ChatGPT.");
+    }
+
+    private void CopyEverythingPlainText()
+    {
+        if (_sourceModel is null)
+        {
+            CopyUnavailable("Nothing is loaded yet.");
+            return;
+        }
+
+        SetClipboard(
+            ReconcileCopyExport.BuildEverythingPlainText(
+                _sourceModel,
+                WorkboardDetail()),
+            "Copy everything — plain text copied from raw backing source.");
+    }
+
+    private bool TryGetActiveSource(
+        out ReconcileSourceSnapshot source,
+        out IReadOnlySet<int> changedLines)
+    {
+        source = null!;
+        changedLines = new HashSet<int>();
+
+        if (_sourceModel is null)
+        {
+            CopyUnavailable("Nothing is loaded yet.");
+            return false;
+        }
+
+        if (_selectedView == ReconcileInspectorView.Summary)
+        {
+            CopyUnavailable("Choose a code comparison tab first.");
+            return false;
+        }
+
+        var useRight = ReferenceEquals(ActiveBody(), _rightBody);
+
+        switch (_selectedView)
+        {
+            case ReconcileInspectorView.BaseLocal:
+                source = useRight ? _sourceModel.Local : _sourceModel.Base;
+                changedLines = useRight
+                    ? _sourceModel.BaseLocalChanges.AfterLines
+                    : _sourceModel.BaseLocalChanges.BeforeLines;
+                return true;
+
+            case ReconcileInspectorView.LocalRemote:
+                source = useRight ? _sourceModel.Remote : _sourceModel.Local;
+                changedLines = useRight
+                    ? _sourceModel.BaseRemoteChanges.AfterLines
+                    : _sourceModel.BaseLocalChanges.AfterLines;
+                return true;
+
+            case ReconcileInspectorView.BaseRemote:
+                source = useRight ? _sourceModel.Remote : _sourceModel.Base;
+                changedLines = useRight
+                    ? _sourceModel.BaseRemoteChanges.AfterLines
+                    : _sourceModel.BaseRemoteChanges.BeforeLines;
+                return true;
+
+            case ReconcileInspectorView.MergedPreview:
+                if (useRight)
+                {
+                    source = new ReconcileSourceSnapshot(
+                        "MERGED",
+                        "preview",
+                        "",
+                        "",
+                        "generated-preview",
+                        _sourceModel.MergePreview.Available &&
+                        _sourceModel.MergePreview.Exists,
+                        _sourceModel.MergePreview.Text);
+                    changedLines = new HashSet<int>();
+                }
+                else
+                {
+                    source = _sourceModel.Local;
+                    changedLines = _sourceModel.BaseLocalChanges.AfterLines;
+                }
+                return true;
+
+            default:
+                CopyUnavailable("This view does not expose a copyable source side.");
+                return false;
+        }
+    }
+
+    private RichTextBox? ActiveBody()
+    {
+        if (_rightBody.Focused || _rightBody.ContainsFocus)
+            return _rightBody;
+        if (_leftBody.Focused || _leftBody.ContainsFocus)
+            return _leftBody;
+
+        return _leftBody;
+    }
+
+    private void SetClipboard(string text, string success)
+    {
+        try
+        {
+            Clipboard.SetText(text ?? "");
+            _footer.ForeColor = GuardianTheme.Healthy;
+            _footer.Text = success + " Clipboard uses raw source, not display decoration.";
+        }
+        catch (Exception ex)
+        {
+            _footer.ForeColor = GuardianTheme.Warning;
+            _footer.Text = "Clipboard copy failed: " + ex.Message;
+        }
+    }
+
+    private void CopyUnavailable(string message)
+    {
+        _footer.ForeColor = GuardianTheme.Reconcile;
+        _footer.Text = message;
     }
 
     private static (string Left, string Right) PaneTitles(ReconcileInspectorView view) => view switch

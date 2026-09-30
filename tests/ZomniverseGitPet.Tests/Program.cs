@@ -378,6 +378,23 @@ Check("project test advisor prefers executable dotnet test runner", () =>
     finally { TryDelete(root); }
 });
 
+Check("reconcile copy export uses language-aware Markdown fences", () =>
+{
+    return ReconcileCopyExport.MarkdownFenceLanguage("validator.php") == "php" &&
+           ReconcileCopyExport.MarkdownFenceLanguage("app.cs") == "csharp" &&
+           ReconcileCopyExport.MarkdownFenceLanguage("ui.ts") == "typescript" &&
+           ReconcileCopyExport.MarkdownFenceLanguage("unknown.bin") == "text";
+});
+
+Check("reconcile changed-block copy uses raw requested lines only", () =>
+{
+    var raw = "one\ntwo\nthree\nfour";
+    var copied = ReconcileCopyExport.BuildChangedBlock(
+        raw,
+        new HashSet<int> { 2, 4 });
+    return copied == $"two{Environment.NewLine}four";
+});
+
 Check("reconcile summary promotes independent clean evidence", () =>
 {
     var analysis = new ReconcileChangeAnalysis(

@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–4 COMPLETE / PHASE 4A CODE COMPLETE, BUILD + REAL SUMMARY UI SMOKE PENDING / PHASE 5 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–4A COMPLETE / PHASE 5 CODE COMPLETE, BUILD + COPY/EXPORT SMOKE PENDING / PHASE 6 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -17,8 +17,8 @@
 - ✅ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **COMPLETE / REAL SOURCE UI SMOKED.** A real Millenova `BOTH SIDES` file loads pinned BASE / LOCAL / REMOTE SHAs and real PHP source side by side without changing repository state.
 - ✅ **Phase 3 — Two-Column Code Comparison Workspace** — **COMPLETE / REAL UI SMOKED.** Syntax coloring, Pretty/Exact view, BASE-derived change highlighting, linked scrolling, persistent splitter, and maximized review have been exercised on the real Millenova PHP comparison.
 - ✅ **Phase 4 — Change-Shape Analysis + Merged Preview** — **CORE COMPLETE / REAL SUMMARY + CLEAN MERGED PREVIEW SMOKED.** A real Millenova `BOTH SIDES` file reports `INDEPENDENT CHANGES`, `Overlap: NO`, and `CLEAN THREE-WAY MERGE` while preserving pinned BASE / LOCAL / REMOTE identities and leaving repository state untouched.
-- 🟡 **Phase 4A — Decision-First Reconcile Summary UX** — **CODE COMPLETE / BUILD + REAL UI SMOKE PENDING.** Summary now uses a dedicated native decision surface with assessment status, three primary evidence cards, interpretation, LOCAL/REMOTE detail, and secondary pinned provenance.
-- ❌ **Phase 5 — Copy Actions + “Copy Everything” Export** — copy selection, changed block, whole file, comparison, code-only bundle, plain text bundle, and ChatGPT-ready Markdown diagnostic bundle.
+- ✅ **Phase 4A — Decision-First Reconcile Summary UX** — **COMPLETE / REAL UI SMOKED.** The real Millenova Inspector now surfaces review status, change relationship, overlap, and merged-preview evidence before secondary source/provenance detail.
+- 🟡 **Phase 5 — Copy Actions + “Copy Everything” Export** — **CODE COMPLETE / BUILD + REAL CLIPBOARD SMOKE PENDING.** Copy actions now operate from raw backing source and include self-contained Markdown/plain-text reconciliation bundles.
 - ❌ **Phase 6 — Edit LOCAL Before Reconcile** — allow deliberate local corrections in the inspector, validate them, write to the working tree, and optionally create a new local correction commit without rewriting existing history.
 - ❌ **Phase 7 — Edit REMOTE Before Reconcile** — edit an isolated worktree based on the inspected remote commit, validate and commit there, then permit only an explicit fast-forward remote correction when the remote has not moved.
 - ❌ **Phase 8 — Editable MERGED CANDIDATE** — keep generated merge output read-only by default, allow an explicit editable candidate, validate it, and apply it only as the final reconciliation result after approval.
@@ -900,9 +900,27 @@ Coverage should prove:
 
 ---
 
-### ❌ Phase 5 — Copy + Export
+### 🟡 Phase 5 — Copy + Export
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / BUILD + REAL CLIPBOARD SMOKE PENDING
+
+Implemented in this slice:
+
+- added a compact **Copy ▾** menu plus dedicated **Copy everything** header action;
+- **Copy selected** copies only an Exact-view text selection; Pretty-mode selection is intentionally rejected because virtual display lines are not raw Git source;
+- **Copy changed block** derives changed raw lines from the active pane's BASE-derived line map rather than copying highlighted UI text;
+- **Copy whole file** copies the active pane's raw backing source;
+- **Copy code only** exports raw BASE / LOCAL / REMOTE and available merged candidate as lightweight Markdown code sections without assessment/provenance prose;
+- **Copy comparison** exports the currently selected raw left/right comparison;
+- **Copy everything — Markdown** produces a self-contained ChatGPT-ready bundle with decision summary, plain-language interpretation, file/state/branch, LOCAL/REMOTE hunk shape/count, pinned revision SHAs/locators, raw BASE/LOCAL/REMOTE source, merged-preview status and raw candidate;
+- **Copy everything — plain text** provides the same evidence without Markdown formatting;
+- Markdown exports use language-aware fences derived from the source path and automatically lengthen the fence when source itself contains backtick runs;
+- every successful clipboard action reminds the user that copied source is raw backing text rather than Pretty-view decoration;
+- Summary remains copyable through **Copy everything** even though code-specific copy actions require a code/merged tab;
+- clipboard exceptions are surfaced in the Inspector footer instead of crashing the UI;
+- regression coverage checks language-aware fence selection and raw changed-line extraction.
+
+Remaining Phase 5 gate: build/test locally, then smoke Copy selected in Exact mode, changed block, whole file, comparison, code-only bundle, Copy everything Markdown, and plain-text export against the real Millenova `BOTH SIDES` case. Paste the Markdown bundle into a text editor/ChatGPT and confirm the report is self-contained and source remains exact.
 
 Implement:
 
