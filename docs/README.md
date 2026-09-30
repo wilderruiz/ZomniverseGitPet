@@ -28,6 +28,12 @@ flowchart LR
 | [Releases and Updates](user/RELEASES_AND_UPDATES.md) | How GitPet checks for and installs its own updates, and where to get the latest release. |
 | [Troubleshooting](user/TROUBLESHOOTING.md) | Known failure modes (dubious ownership, diverged branches, missing GitHub CLI, blocked Send) and what to do about them. |
 
+## Implementation plans
+
+| Document | What it covers |
+| --- | --- |
+| [Reconcile Inspector Implementation Plan](implementation/ZGITPET_RECONCILE_INSPECTOR_IMPLEMENTATION_PLAN.md) | **PLANNED** phased implementation for three-way reconciliation inspection, side-by-side code review, safe LOCAL/REMOTE/candidate editing, validation, and structured copy/export. |
+
 ## For developers
 
 | Document | What it covers |
