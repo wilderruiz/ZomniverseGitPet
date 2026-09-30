@@ -1,13 +1,13 @@
 # Testing
 
-Source: `tests/ZomniverseGitPet.Tests/` (11 files: `ZomniverseGitPet.Tests.csproj`, `Program.cs`, and 9 regression files).
+Source: `tests/ZomniverseGitPet.Tests/` (`ZomniverseGitPet.Tests.csproj`, `Program.cs`, and the regression source files in that folder).
 
 ## Not a standard test framework
 
 There is no xUnit, NUnit, or MSTest package referenced anywhere in `ZomniverseGitPet.Tests.csproj`. The test project is a plain `net8.0-windows` **console executable** that references the main application project directly. Two mechanisms coexist:
 
 - **`Program.cs`** implements a bespoke `Check(name, Func<bool>)` / `CheckAsync(name, Func<Task<bool>>)` runner: each check catches its own exceptions and records a named failure; at the end the process prints a pass/fail summary and returns a non-zero exit code if anything failed.
-- **The other 9 files** are each an `internal static class` with a `[ModuleInitializer]`-attributed `Run()` method, which the CLR executes automatically the moment the assembly loads — before `Program.cs`'s own checks even start. These throw a plain exception on failure rather than returning a bool.
+- **The regression source files** use `internal static class` helpers with `[ModuleInitializer]`-attributed `Run()` methods where appropriate, which the CLR executes automatically when the assembly loads — before `Program.cs`'s own checks start. These throw a plain exception on failure rather than returning a bool.
 
 "Running the tests" means running the compiled test executable and checking its exit code / printed summary — there is no `dotnet test` attribute-discovery step, and no separate output artifact beyond console text and the process exit code.
 
