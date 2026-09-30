@@ -391,6 +391,51 @@ Check("reconcile local edit preserves original newline convention", () =>
            crlf == "one\r\ntwo edited\r\n";
 });
 
+Check("reconcile inspector keyboard shortcuts map deterministically", () =>
+{
+    return
+        ReconcileInspectorPanel.TryResolveViewShortcut(
+            Keys.Control | Keys.D1,
+            out var summary) &&
+        summary == ReconcileInspectorView.Summary &&
+        ReconcileInspectorPanel.TryResolveViewShortcut(
+            Keys.Control | Keys.D2,
+            out var baseLocal) &&
+        baseLocal == ReconcileInspectorView.BaseLocal &&
+        ReconcileInspectorPanel.TryResolveViewShortcut(
+            Keys.Control | Keys.D3,
+            out var localRemote) &&
+        localRemote == ReconcileInspectorView.LocalRemote &&
+        ReconcileInspectorPanel.TryResolveViewShortcut(
+            Keys.Control | Keys.D4,
+            out var baseRemote) &&
+        baseRemote == ReconcileInspectorView.BaseRemote &&
+        ReconcileInspectorPanel.TryResolveViewShortcut(
+            Keys.Control | Keys.D5,
+            out var merged) &&
+        merged == ReconcileInspectorView.MergedPreview &&
+        !ReconcileInspectorPanel.TryResolveViewShortcut(
+            Keys.Control | Keys.D6,
+            out _);
+});
+
+Check("shared code renderer uses exact performance fallback for large source", () =>
+{
+    var small = new string('x', 4096);
+    var largeCharacters = new string(
+        'x',
+        SharedCodeReviewRenderer.LargeFilePerformanceCharacterLimit + 1);
+    var manyLines = string.Concat(
+        Enumerable.Repeat(
+            "x\n",
+            SharedCodeReviewRenderer.LargeFilePerformanceLineLimit + 1));
+
+    return
+        !SharedCodeReviewRenderer.UsesLargeFileFallback(small) &&
+        SharedCodeReviewRenderer.UsesLargeFileFallback(largeCharacters) &&
+        SharedCodeReviewRenderer.UsesLargeFileFallback(manyLines);
+});
+
 Check("reconcile copy export uses language-aware Markdown fences", () =>
 {
     return ReconcileCopyExport.MarkdownFenceLanguage("validator.php") == "php" &&
