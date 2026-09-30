@@ -1081,6 +1081,28 @@ public sealed class GitService(AuditLog audit)
         return result;
     }
 
+    public async Task<CommandResult> RunValidationCommandAsync(
+        string workingDirectory,
+        string command,
+        CancellationToken token = default)
+    {
+        var result = await RunProcessAsync(
+            "cmd.exe",
+            ["/d", "/s", "/c", command],
+            workingDirectory,
+            TimeSpan.FromMinutes(10),
+            token);
+        await audit.WriteAsync("reconcile_validation_command", new
+        {
+            command,
+            workingDirectory,
+            success = result.Success,
+            result.ExitCode,
+            result.TimedOut
+        });
+        return result;
+    }
+
     internal static RepositoryStatus ParsePorcelainV2(string output)
     {
         var files = new List<ChangedFile>();
