@@ -167,6 +167,7 @@ internal static class GuardianWorkboardRuntime
         {
             Dock = DockStyle.Fill
         };
+        board.ReconcileRowActivated += (_, e) => guardian.ShowReconcileInspector(e.Row);
         originalHost.Controls.Add(board);
         board.BringToFront();
 

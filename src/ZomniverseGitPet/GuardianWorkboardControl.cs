@@ -1,5 +1,10 @@
 namespace ZomniverseGitPet;
 
+internal sealed class GuardianWorkboardRowEventArgs(GuardianWorkboardRow row) : EventArgs
+{
+    public GuardianWorkboardRow Row { get; } = row;
+}
+
 /* ==========================================================================
    PATCH: GUARDIAN FOUR-PANEL WORKBOARD
    DATE.TIME: 2026-09-11 12:42 +03:00
@@ -11,6 +16,8 @@ internal sealed class GuardianWorkboardControl : UserControl
     private readonly WorkboardSection _get;
     private readonly WorkboardSection _send;
     private readonly WorkboardSection _reconcile;
+
+    internal event EventHandler<GuardianWorkboardRowEventArgs>? ReconcileRowActivated;
 
     public GuardianWorkboardControl(DataGridView saveGrid)
     {
@@ -50,6 +57,11 @@ internal sealed class GuardianWorkboardControl : UserControl
             "RECONCILE — HISTORIES",
             GuardianTheme.Reconcile,
             GuardianTheme.SurfaceSoft);
+        _reconcile.RowActivated += (_, e) =>
+        {
+            if (IsReconcileInspectableState(e.Row.State))
+                ReconcileRowActivated?.Invoke(this, e);
+        };
 
         layout.Controls.Add(_save, 0, 0);
         layout.Controls.Add(_get, 1, 0);
@@ -137,6 +149,9 @@ internal sealed class GuardianWorkboardControl : UserControl
         };
     }
 
+    internal static bool IsReconcileInspectableState(string? state) =>
+        state is "LOCAL" or "REMOTE" or "BOTH SIDES" or "CONFLICT";
+
     private static int CountProjectedFiles(IEnumerable<GuardianWorkboardRow> rows) =>
         rows.Count(row => !row.IsCommit && row.State != "MORE");
 
@@ -157,6 +172,9 @@ internal sealed class GuardianWorkboardControl : UserControl
         private string _normalBadge = "CLEAR";
         private SaveOperationVisualState _operationState =
             new(SaveOperationPhase.Idle, "Ready", DateTimeOffset.UtcNow);
+
+        public event EventHandler<GuardianWorkboardRowEventArgs>? RowActivated;
+
         public bool HasActiveOperation => _operationState.IsActive;
         public bool HasOperationState => _operationState.Phase != SaveOperationPhase.Idle;
 
@@ -213,6 +231,12 @@ internal sealed class GuardianWorkboardControl : UserControl
 
             _grid = existingGrid ?? CreateGrid();
             _grid.Dock = DockStyle.Fill;
+            _grid.CellClick += (_, e) =>
+            {
+                if (e.RowIndex < 0) return;
+                if (_grid.Rows[e.RowIndex].Tag is GuardianWorkboardRow row)
+                    RowActivated?.Invoke(this, new GuardianWorkboardRowEventArgs(row));
+            };
 
             _empty.Dock = DockStyle.Fill;
             _empty.BackColor = GuardianTheme.Surface;
@@ -240,6 +264,7 @@ internal sealed class GuardianWorkboardControl : UserControl
                 {
                     var rowIndex = _grid.Rows.Add(row.State, row.Path);
                     var gridRow = _grid.Rows[rowIndex];
+                    gridRow.Tag = row;
                     gridRow.Cells[0].Style.ForeColor = StateColor(row);
                     gridRow.Cells[0].ToolTipText = row.Detail;
                     gridRow.Cells[1].ToolTipText = string.IsNullOrWhiteSpace(row.Detail)

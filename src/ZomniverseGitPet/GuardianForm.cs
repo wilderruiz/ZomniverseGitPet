@@ -43,6 +43,7 @@ public sealed class GuardianForm : Form
     private GuardianActivityConsole? _activityConsole;
     private readonly CheckBox _automatic = new();
     private readonly FileComparisonPanel _comparisonPanel = new();
+    private readonly ReconcileInspectorPanel _reconcileInspector = new();
     private Panel? _activityPanel;
 
     private readonly ToolTip _toolTips = new()
@@ -681,8 +682,13 @@ public sealed class GuardianForm : Form
         _comparisonPanel.ActivityRequested += (_, _) => ShowActivityPanel();
         _comparisonPanel.CreateCheckpointRequested += async (_, _) => await CreateCheckpointAsync();
 
+        _reconcileInspector.Dock = DockStyle.Fill;
+        _reconcileInspector.Visible = false;
+        _reconcileInspector.ActivityRequested += (_, _) => ShowActivityPanel();
+
         host.Controls.Add(_activityPanel);
         host.Controls.Add(_comparisonPanel);
+        host.Controls.Add(_reconcileInspector);
         return host;
     }
 
@@ -1452,6 +1458,8 @@ public sealed class GuardianForm : Form
         var token = _comparisonLoad.Token;
         _reviewedPath = relativePath;
 
+        _reconcileInspector.Visible = false;
+        if (_activityPanel is not null) _activityPanel.Visible = false;
         _comparisonPanel.Visible = true;
         _comparisonPanel.BringToFront();
         _comparisonPanel.ShowLoading(relativePath);
@@ -2568,10 +2576,25 @@ public sealed class GuardianForm : Form
             ReportActivity(text);
     }
 
+    internal void ShowReconcileInspector(GuardianWorkboardRow row)
+    {
+        if (_operation is not null || !HasRepository()) return;
+        if (!GuardianWorkboardControl.IsReconcileInspectableState(row.State)) return;
+
+        _comparisonLoad?.Cancel();
+        _comparisonPanel.Visible = false;
+        if (_activityPanel is not null) _activityPanel.Visible = false;
+
+        _reconcileInspector.ShowSelection(row);
+        _reconcileInspector.Visible = true;
+        _reconcileInspector.BringToFront();
+    }
+
     private void ShowActivityPanel()
     {
         if (_activityPanel is null) return;
         _comparisonPanel.Visible = false;
+        _reconcileInspector.Visible = false;
         _activityPanel.Visible = true;
         _activityPanel.BringToFront();
     }

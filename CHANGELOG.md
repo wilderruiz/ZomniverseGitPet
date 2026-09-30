@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added the initial **Reconcile Inspector** shell: reconciliation workboard rows can now open a dedicated read-only lower-workspace review mode with state-aware default comparison tabs and a permanent two-column layout. Exact BASE / LOCAL / REMOTE source loading remains the next implementation phase.
+
 - Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
 
 ## 0.5.0 - 2026-09-22
