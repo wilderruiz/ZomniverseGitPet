@@ -118,8 +118,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             $"Pinned read-only snapshots · BASE {model.Base.ShortSha} · LOCAL {model.Local.ShortSha} · " +
             $"REMOTE {model.Remote.ShortSha} · Pretty view is display-only; Exact preserves source whitespace.";
         _summaryPanel.ShowModel(model, WorkboardDetail());
-        if (_editLocalButton is not null)
-            _editLocalButton.Enabled = model.Local.Exists;
+        RefreshLocalEditActionState();
         SelectView(_selectedView);
     }
 
@@ -138,7 +137,10 @@ internal sealed class ReconcileInspectorPanel : Panel
             : message.Replace("\r", " ").Replace("\n", " ");
         _summaryPanel.ShowProblem(message);
         if (_editLocalButton is not null)
+        {
             _editLocalButton.Enabled = false;
+            _editLocalButton.Visible = false;
+        }
     }
 
     private void ApplySelectionIdentity(GuardianWorkboardRow row)
@@ -667,13 +669,29 @@ internal sealed class ReconcileInspectorPanel : Panel
         if (_prettyButton is not null) _prettyButton.Visible = !editing;
         if (_copyButton is not null) _copyButton.Visible = !editing;
         if (_copyEverythingButton is not null) _copyEverythingButton.Visible = !editing;
-        if (_editLocalButton is not null) _editLocalButton.Visible = !editing;
+        RefreshLocalEditActionState();
 
         if (_validateEditButton is not null) _validateEditButton.Visible = editing;
         if (_writeEditButton is not null) _writeEditButton.Visible = editing;
         if (_commitEditButton is not null) _commitEditButton.Visible = editing;
         if (_cancelEditButton is not null) _cancelEditButton.Visible = editing;
         if (_activityButton is not null) _activityButton.Enabled = !editing;
+    }
+
+    private void RefreshLocalEditActionState()
+    {
+        if (_editLocalButton is null) return;
+
+        var available =
+            !_localEditMode &&
+            _sourceModel is not null &&
+            _sourceModel.Local.Exists;
+
+        _editLocalButton.Visible = available;
+        _editLocalButton.Enabled = available;
+
+        if (available)
+            _editLocalButton.BringToFront();
     }
 
     private void EndLocalEditMode()
@@ -684,6 +702,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _localEditOriginalRawText = "";
         _localEditPinnedSha = "";
         SetLocalEditUi(editing: false);
+        RefreshLocalEditActionState();
     }
 
     private void ResetLocalEditState()
@@ -694,6 +713,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _localEditOriginalRawText = "";
         _localEditPinnedSha = "";
         SetLocalEditUi(editing: false);
+        RefreshLocalEditActionState();
     }
 
     private void ShowCopyMenu(Control anchor)

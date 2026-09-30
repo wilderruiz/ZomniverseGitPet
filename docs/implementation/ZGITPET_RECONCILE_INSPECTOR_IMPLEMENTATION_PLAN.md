@@ -941,7 +941,7 @@ Implement:
 
 ### 🟡 Phase 6 — Edit LOCAL
 
-**Status:** CODE COMPLETE / BUILD + REAL LOCAL-EDIT SMOKE PENDING
+**Status:** CODE COMPLETE / EDIT-ACTION VISIBILITY FIX APPLIED, REAL LOCAL-EDIT RE-SMOKE PENDING
 
 Implemented in this slice:
 
@@ -964,7 +964,7 @@ Implemented in this slice:
 
 Validation note: Phase 6 **Validate edit** is a repository/edit-safety validation. Language syntax/structure checks and configured-project test integration remain the dedicated Phase 9 hardening scope.
 
-Remaining Phase 6 gate: build/test locally, open the real Millenova `BOTH SIDES` file, enter **Edit local**, make a harmless local correction, validate it, test Cancel edit, then repeat and use **Commit local**. Confirm only that file is committed, nothing is sent, and the Inspector reloads with a new LOCAL SHA and regenerated summary/merged candidate. Optionally smoke **Write local** separately and verify it returns to the workboard as an ordinary unsaved local change.
+Smoke correction: the first real Phase 6 UI smoke showed **Edit local** could remain hidden because source load only re-enabled the control without reasserting its visibility after WinForms state/reparent transitions. The Inspector now treats a valid LOCAL snapshot as an explicit visibility invariant: when not already editing, **Edit local** is visible + enabled; when source is unavailable or edit mode is active, it is hidden.\n\nRemaining Phase 6 gate: build/test locally, open the real Millenova `BOTH SIDES` file, confirm **Edit local** is visible, enter **Edit local**, make a harmless local correction, validate it, test Cancel edit, then repeat and use **Commit local**. Confirm only that file is committed, nothing is sent, and the Inspector reloads with a new LOCAL SHA and regenerated summary/merged candidate. Optionally smoke **Write local** separately and verify it returns to the workboard as an ordinary unsaved local change.
 
 Implement:
 

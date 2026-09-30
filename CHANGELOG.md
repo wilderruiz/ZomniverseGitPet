@@ -12,6 +12,7 @@
 - Added Reconcile Inspector copy/export actions, including exact-source selection/changed-block/file/comparison copying plus ChatGPT-ready **Copy everything** Markdown and plain-text bundles built from raw pinned source.
 - Fixed a Phase 5 Copy-menu crash by replacing self-disposal in the ContextMenuStrip Closed event with Inspector-owned menu lifetime management.
 - Added Reconcile Inspector Phase 6 LOCAL editing: Exact-mode draft editing, safety validation, working-tree write, and exact-path local correction commits that refresh the pinned LOCAL identity/candidate without sending or rewriting history.
+- Fixed Phase 6 Edit-local action visibility so a loaded LOCAL snapshot explicitly restores the Edit local button after Inspector state/reparent transitions.
 
 - Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
 
