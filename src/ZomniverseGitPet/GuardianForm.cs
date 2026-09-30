@@ -45,6 +45,8 @@ public sealed class GuardianForm : Form
     private readonly FileComparisonPanel _comparisonPanel = new();
     private readonly ReconcileInspectorPanel _reconcileInspector = new();
     private Panel? _activityPanel;
+    private Form? _reconcileInspectorWindow;
+    private Control? _reconcileInspectorHome;
 
     private readonly ToolTip _toolTips = new()
     {
@@ -686,6 +688,7 @@ public sealed class GuardianForm : Form
         _reconcileInspector.Dock = DockStyle.Fill;
         _reconcileInspector.Visible = false;
         _reconcileInspector.ActivityRequested += (_, _) => ShowActivityPanel();
+        _reconcileInspector.MaximizeRequested += (_, _) => ToggleReconcileInspectorMaximized();
 
         host.Controls.Add(_activityPanel);
         host.Controls.Add(_comparisonPanel);
@@ -2621,10 +2624,74 @@ public sealed class GuardianForm : Form
         }
     }
 
+    private void ToggleReconcileInspectorMaximized()
+    {
+        if (_reconcileInspectorWindow is { IsDisposed: false } existing)
+        {
+            existing.Close();
+            return;
+        }
+
+        var home = _reconcileInspector.Parent;
+        if (home is null || home.IsDisposed) return;
+
+        _reconcileInspectorHome = home;
+        home.Controls.Remove(_reconcileInspector);
+
+        var window = new Form
+        {
+            Text = "ZGit Pet — Reconcile Inspector",
+            Icon = AppIconProvider.Icon,
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.Sizable,
+            MaximizeBox = true,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            BackColor = GuardianTheme.Window,
+            MinimumSize = new Size(900, 620)
+        };
+        WindowChrome.ApplyGuardianChrome(window);
+
+        window.Controls.Add(_reconcileInspector);
+        _reconcileInspector.Dock = DockStyle.Fill;
+        _reconcileInspector.Visible = true;
+        _reconcileInspector.SetMaximizedMode(true);
+        window.FormClosing += (_, _) => RestoreReconcileInspectorHome(window);
+
+        _reconcileInspectorWindow = window;
+        window.Show(this);
+        window.WindowState = FormWindowState.Maximized;
+    }
+
+    private void RestoreReconcileInspectorHome(Form window)
+    {
+        if (!ReferenceEquals(_reconcileInspectorWindow, window)) return;
+
+        if (ReferenceEquals(_reconcileInspector.Parent, window))
+            window.Controls.Remove(_reconcileInspector);
+
+        var home = _reconcileInspectorHome;
+        if (home is not null && !home.IsDisposed)
+        {
+            home.Controls.Add(_reconcileInspector);
+            _reconcileInspector.Dock = DockStyle.Fill;
+            _reconcileInspector.Visible = true;
+            _reconcileInspector.BringToFront();
+        }
+
+        _reconcileInspector.SetMaximizedMode(false);
+        _reconcileInspectorWindow = null;
+        _reconcileInspectorHome = null;
+    }
+
     private void ShowActivityPanel()
     {
         if (_activityPanel is null) return;
         _reconcileInspectorLoad?.Cancel();
+
+        if (_reconcileInspectorWindow is { IsDisposed: false } window)
+            window.Close();
+
         _comparisonPanel.Visible = false;
         _reconcileInspector.Visible = false;
         _activityPanel.Visible = true;
@@ -2645,6 +2712,7 @@ public sealed class GuardianForm : Form
         _operation?.Cancel();
         _comparisonLoad?.Cancel();
         _reconcileInspectorLoad?.Cancel();
+        if (_reconcileInspectorWindow is { IsDisposed: false } window) window.Close();
         Hide();
     }
 
@@ -2654,6 +2722,7 @@ public sealed class GuardianForm : Form
         _operation?.Cancel();
         _comparisonLoad?.Cancel();
         _reconcileInspectorLoad?.Cancel();
+        if (_reconcileInspectorWindow is { IsDisposed: false } window) window.Close();
         Close();
     }
 
@@ -2673,6 +2742,7 @@ public sealed class GuardianForm : Form
             _comparisonLoad?.Dispose();
             _reconcileInspectorLoad?.Cancel();
             _reconcileInspectorLoad?.Dispose();
+            if (_reconcileInspectorWindow is { IsDisposed: false } window) window.Close();
             _repositoryBranchMenu?.Dispose();
             _repositoryBranchMenu = null;
             _toolTips.Dispose();

@@ -16,19 +16,19 @@ internal static class ReconcileInspectorSourceRegression
             await MustGit(git, root, ["branch", "-M", "main"]);
 
             var file = Path.Combine(root, "shared.txt");
-            File.WriteAllText(file, "base");
+            File.WriteAllText(file, "alpha\nbeta\ngamma");
             await MustGit(git, root, ["add", "--", "shared.txt"]);
             await MustGit(git, root, ["commit", "-m", "base"]);
             var baseSha = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
 
             await MustGit(git, root, ["switch", "-c", "remote-side"]);
-            File.WriteAllText(file, "remote");
+            File.WriteAllText(file, "alpha\nbeta remote\ngamma");
             await MustGit(git, root, ["add", "--", "shared.txt"]);
             await MustGit(git, root, ["commit", "-m", "remote"]);
             var remoteSha = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
 
             await MustGit(git, root, ["switch", "main"]);
-            File.WriteAllText(file, "local");
+            File.WriteAllText(file, "alpha\nbeta\ngamma local");
             await MustGit(git, root, ["add", "--", "shared.txt"]);
             await MustGit(git, root, ["commit", "-m", "local"]);
             var localSha = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
@@ -49,9 +49,13 @@ internal static class ReconcileInspectorSourceRegression
                 model.Base.CommitSha != baseSha ||
                 model.Local.CommitSha != localSha ||
                 model.Remote.CommitSha != remoteSha ||
-                model.Base.Text != "base" ||
-                model.Local.Text != "local" ||
-                model.Remote.Text != "remote" ||
+                model.Base.Text != "alpha\nbeta\ngamma" ||
+                model.Local.Text != "alpha\nbeta\ngamma local" ||
+                model.Remote.Text != "alpha\nbeta remote\ngamma" ||
+                !model.BaseLocalChanges.BeforeLines.SetEquals([3]) ||
+                !model.BaseLocalChanges.AfterLines.SetEquals([3]) ||
+                !model.BaseRemoteChanges.BeforeLines.SetEquals([2]) ||
+                !model.BaseRemoteChanges.AfterLines.SetEquals([2]) ||
                 model.Base.Locator != "merge-base:shared.txt" ||
                 model.Local.Locator != "HEAD:shared.txt" ||
                 model.Remote.Locator != "origin/main:shared.txt" ||

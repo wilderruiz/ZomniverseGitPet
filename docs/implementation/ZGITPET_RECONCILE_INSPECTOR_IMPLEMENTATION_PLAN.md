@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASE 1 COMPLETE / PHASE 2 CODE COMPLETE, LOCAL BUILD + SOURCE SMOKE PENDING / PHASE 3 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–2 COMPLETE / PHASE 3 CODE COMPLETE, LOCAL BUILD + UI SMOKE PENDING / PHASE 4 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -14,8 +14,8 @@
 
 - ✅ **Phase 0 — Existing File Review Foundation** — current File Review already provides a two-column split, Technical view, scrollable text panes, changed-line highlighting, safe text/binary handling, and Before / Now source loading.
 - ✅ **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **COMPLETE / REAL UI SMOKED.** A real Millenova `BOTH SIDES` row opens the dedicated lower-workspace Reconcile Inspector without starting reconciliation; compact/DPI-safe tab sizing is applied.
-- 🟡 **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **CODE COMPLETE / LOCAL BUILD + REAL SOURCE SMOKE PENDING.** The inspector pins HEAD, origin/current-branch (or MERGE_HEAD during an active reconciliation), resolves the merge-base, and reads the selected path from immutable Git revisions.
-- ❌ **Phase 3 — Two-Column Code Comparison Workspace** — reusable side-by-side code panes, syntax coloring, changed-hunk backgrounds, synchronized scrolling, horizontal scrolling, movable splitter, and maximize/full-screen state.
+- ✅ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **COMPLETE / REAL SOURCE UI SMOKED.** A real Millenova `BOTH SIDES` file loads pinned BASE / LOCAL / REMOTE SHAs and real PHP source side by side without changing repository state.
+- 🟡 **Phase 3 — Two-Column Code Comparison Workspace** — **CODE COMPLETE / LOCAL BUILD + UI SMOKE PENDING.** Shared syntax coloring, BASE-derived change-line backgrounds, linked scrolling, horizontal scrolling, persistent splitter ratio, sticky headers, and maximize/restore are wired.
 - ❌ **Phase 4 — Change-Shape Analysis + Read-Only Merged Preview** — classify independent additions vs. edits to existing structures, detect overlapping hunks, and generate a non-destructive three-way merged candidate.
 - ❌ **Phase 5 — Copy Actions + “Copy Everything” Export** — copy selection, changed block, whole file, comparison, code-only bundle, plain text bundle, and ChatGPT-ready Markdown diagnostic bundle.
 - ❌ **Phase 6 — Edit LOCAL Before Reconcile** — allow deliberate local corrections in the inspector, validate them, write to the working tree, and optionally create a new local correction commit without rewriting existing history.
@@ -609,9 +609,9 @@ Implement:
 
 ---
 
-### 🟡 Phase 2 — Three-Way Source Identity + Loading
+### ✅ Phase 2 — Three-Way Source Identity + Loading
 
-**Status:** CODE COMPLETE / LOCAL BUILD + REAL SOURCE SMOKE PENDING
+**Status:** COMPLETE / REAL SOURCE UI SMOKED
 
 Implemented in this slice:
 
@@ -626,7 +626,7 @@ Implemented in this slice:
 - leave Merged intentionally ungenerated until Phase 4;
 - regression-test a genuinely diverged temporary repository and prove source inspection does not move HEAD, change the remote-tracking ref, or dirty the working tree.
 
-Remaining Phase 2 gate: compile locally, rerun the full regression executable, then open the real Millenova `BOTH SIDES` file and verify BASE / LOCAL / REMOTE source and SHAs.
+Observed smoke: a real Millenova `BOTH SIDES` file displayed pinned LOCAL and REMOTE SHAs with the actual PHP source in both panes and a pinned BASE SHA in the footer. **Phase 2 is accepted as complete.**
 
 Implement:
 
@@ -643,9 +643,26 @@ Implement:
 
 ---
 
-### ❌ Phase 3 — Two-Column Code Workspace
+### 🟡 Phase 3 — Two-Column Code Workspace
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / LOCAL BUILD + UI SMOKE PENDING
+
+Implemented in this slice:
+
+- extracted a shared source renderer used by File Review Technical view and Reconcile Inspector;
+- added language-aware token coloring for PHP, C#, JS/TS, Java, Python, JSON, CSS-family, HTML/XML/SVG, SQL, and PowerShell;
+- source text remains the real backing code; syntax and change colors are presentation-only;
+- added read-only BASE→LOCAL and BASE→REMOTE zero-context changed-line maps without introducing Phase 4 semantic merge analysis;
+- BASE ↔ LOCAL and BASE ↔ REMOTE highlight the exact changed lines on each side;
+- LOCAL ↔ REMOTE highlights each side's changes relative to BASE;
+- linked vertical/horizontal scrolling is on by default and can be toggled off;
+- the splitter preserves the user's left/right ratio through resize and DPI transitions using `SafeSplitContainer`;
+- pane headers remain docked above independently scrollable source panes;
+- Max/Restore moves the same live inspector into a maximized resizable window instead of cloning review state;
+- maximized review retains the selected tab, pinned sources, splitter ratio, and linked-scroll setting;
+- regression coverage checks distinct BASE→LOCAL and BASE→REMOTE changed-line maps plus PHP syntax-role recognition.
+
+Remaining Phase 3 gate: compile/test locally, then smoke syntax colors, changed-line backgrounds, linked/unlinked scrolling, movable splitter, Max/Restore, and state preservation on the real Millenova PHP comparison.
 
 Implement:
 

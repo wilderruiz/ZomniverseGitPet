@@ -346,6 +346,17 @@ public sealed class GitService(AuditLog audit)
             ["show", $"{commit}:{NormalizeGitRelativePath(file)}"],
             path, TimeSpan.FromSeconds(20), token);
 
+    internal Task<CommandResult> GetReconcileDiffAsync(
+        string path,
+        string file,
+        string fromCommit,
+        string toCommit,
+        CancellationToken token) =>
+        RunProcessAsync("git.exe",
+            ["diff", "--no-ext-diff", "--no-textconv", "--unified=0",
+             fromCommit, toCommit, "--", NormalizeGitRelativePath(file)],
+            path, TimeSpan.FromSeconds(20), token);
+
     public Task<CommandResult> GetRecentCommitsAsync(string path, CancellationToken token = default) =>
         RunGitAsync(path, ["log", "-12", "--date=short", "--pretty=format:%h  %ad  %s"], cancellationToken: token);
 

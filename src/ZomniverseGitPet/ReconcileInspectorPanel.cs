@@ -18,7 +18,11 @@ internal sealed class ReconcileInspectorPanel : Panel
     private readonly RichTextBox _leftBody = new();
     private readonly RichTextBox _rightBody = new();
     private readonly Label _footer = new();
+    private readonly SplitContainer _split = new();
     private readonly Dictionary<ReconcileInspectorView, Button> _viewButtons = [];
+    private Button? _scrollLinkButton;
+    private Button? _maximizeButton;
+    private readonly RichTextScrollLink _scrollLink;
     private GuardianWorkboardRow? _selection;
     private ReconcileInspectorSourceModel? _sourceModel;
     private ReconcileInspectorView _selectedView;
@@ -30,7 +34,8 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         var header = BuildHeader();
         var tabs = BuildTabs();
-        var split = BuildSplit();
+        BuildSplit();
+        _scrollLink = new RichTextScrollLink(_leftBody, _rightBody);
 
         _footer.Dock = DockStyle.Bottom;
         _footer.Height = 38;
@@ -40,7 +45,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.Font = new Font("Cascadia Mono", 8f);
         _footer.TextAlign = ContentAlignment.MiddleLeft;
 
-        Controls.Add(split);
+        Controls.Add(_split);
         Controls.Add(_footer);
         Controls.Add(tabs);
         Controls.Add(header);
@@ -49,6 +54,13 @@ internal sealed class ReconcileInspectorPanel : Panel
     }
 
     public event EventHandler? ActivityRequested;
+    public event EventHandler? MaximizeRequested;
+
+    public void SetMaximizedMode(bool maximized)
+    {
+        if (_maximizeButton is not null)
+            _maximizeButton.Text = maximized ? "Restore" : "Max ⛶";
+    }
 
     internal static ReconcileInspectorView DefaultViewForState(string? state) => state switch
     {
@@ -156,12 +168,36 @@ internal sealed class ReconcileInspectorPanel : Panel
         info.Controls.Add(_pathLabel);
         info.Resize += (_, _) => _pathLabel.Width = Math.Max(120, info.ClientSize.Width);
 
+        var actions = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = GuardianTheme.ConsoleHeader,
+            Margin = new Padding(8, 8, 0, 0)
+        };
+
+        _scrollLinkButton = MakeButton("Scroll ✓");
+        _scrollLinkButton.Click += (_, _) =>
+        {
+            _scrollLink.Enabled = !_scrollLink.Enabled;
+            _scrollLinkButton.Text = _scrollLink.Enabled ? "Scroll ✓" : "Scroll off";
+        };
+
+        _maximizeButton = MakeButton("Max ⛶");
+        _maximizeButton.Click += (_, _) => MaximizeRequested?.Invoke(this, EventArgs.Empty);
+
         var activity = MakeButton("Activity");
-        activity.Margin = new Padding(8, 8, 0, 0);
         activity.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
 
+        actions.Controls.Add(_scrollLinkButton);
+        actions.Controls.Add(_maximizeButton);
+        actions.Controls.Add(activity);
+
         header.Controls.Add(info, 0, 0);
-        header.Controls.Add(activity, 1, 0);
+        header.Controls.Add(actions, 1, 0);
         return header;
     }
 
@@ -187,37 +223,18 @@ internal sealed class ReconcileInspectorPanel : Panel
         return tabs;
     }
 
-    private Control BuildSplit()
+    private void BuildSplit()
     {
-        var split = new SplitContainer
-        {
-            Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterWidth = 6,
-            Panel1MinSize = 0,
-            Panel2MinSize = 0,
-            BackColor = GuardianTheme.BorderSoft,
-            BorderStyle = BorderStyle.None
-        };
+        _split.Dock = DockStyle.Fill;
+        _split.Orientation = Orientation.Vertical;
+        _split.SplitterWidth = 6;
+        _split.PreferredRatio = 0.5;
+        _split.PreferredPaneMinimum = 140;
+        _split.BackColor = GuardianTheme.BorderSoft;
+        _split.BorderStyle = BorderStyle.None;
 
-        split.Panel1.Controls.Add(BuildSourcePlaceholder(_leftTitle, _leftBody));
-        split.Panel2.Controls.Add(BuildSourcePlaceholder(_rightTitle, _rightBody));
-
-        split.SizeChanged += (_, _) =>
-        {
-            var available = split.ClientSize.Width - split.SplitterWidth;
-            if (available <= 0) return;
-            var target = available / 2;
-            try
-            {
-                if (split.SplitterDistance != target) split.SplitterDistance = target;
-            }
-            catch (InvalidOperationException)
-            {
-            }
-        };
-
-        return split;
+        _split.Panel1.Controls.Add(BuildSourcePlaceholder(_leftTitle, _leftBody));
+        _split.Panel2.Controls.Add(BuildSourcePlaceholder(_rightTitle, _rightBody));
     }
 
     private static Control BuildSourcePlaceholder(Label title, RichTextBox body)
@@ -306,16 +323,45 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
-        var (leftSource, rightSource) = view switch
-        {
-            ReconcileInspectorView.BaseLocal => (_sourceModel.Base, _sourceModel.Local),
-            ReconcileInspectorView.LocalRemote => (_sourceModel.Local, _sourceModel.Remote),
-            ReconcileInspectorView.BaseRemote => (_sourceModel.Base, _sourceModel.Remote),
-            _ => (_sourceModel.Base, _sourceModel.Local)
-        };
+        var (leftSource, rightSource, leftLines, rightLines, leftBackground, rightBackground) =
+            view switch
+            {
+                ReconcileInspectorView.BaseLocal => (
+                    _sourceModel.Base,
+                    _sourceModel.Local,
+                    _sourceModel.BaseLocalChanges.BeforeLines,
+                    _sourceModel.BaseLocalChanges.AfterLines,
+                    SharedCodeReviewRenderer.BeforeChangeBackground,
+                    SharedCodeReviewRenderer.LocalChangeBackground),
+                ReconcileInspectorView.LocalRemote => (
+                    _sourceModel.Local,
+                    _sourceModel.Remote,
+                    _sourceModel.BaseLocalChanges.AfterLines,
+                    _sourceModel.BaseRemoteChanges.AfterLines,
+                    SharedCodeReviewRenderer.LocalChangeBackground,
+                    SharedCodeReviewRenderer.RemoteChangeBackground),
+                ReconcileInspectorView.BaseRemote => (
+                    _sourceModel.Base,
+                    _sourceModel.Remote,
+                    _sourceModel.BaseRemoteChanges.BeforeLines,
+                    _sourceModel.BaseRemoteChanges.AfterLines,
+                    SharedCodeReviewRenderer.BeforeChangeBackground,
+                    SharedCodeReviewRenderer.RemoteChangeBackground),
+                _ => (
+                    _sourceModel.Base,
+                    _sourceModel.Local,
+                    DiffLineMap.Empty.BeforeLines,
+                    DiffLineMap.Empty.AfterLines,
+                    SharedCodeReviewRenderer.BeforeChangeBackground,
+                    SharedCodeReviewRenderer.LocalChangeBackground)
+            };
 
-        RenderSource(_leftTitle, _leftBody, leftSource, _sourceModel.Branch);
-        RenderSource(_rightTitle, _rightBody, rightSource, _sourceModel.Branch);
+        RenderSource(
+            _leftTitle, _leftBody, leftSource, _sourceModel.Branch,
+            _sourceModel.RelativePath, leftLines, leftBackground);
+        RenderSource(
+            _rightTitle, _rightBody, rightSource, _sourceModel.Branch,
+            _sourceModel.RelativePath, rightLines, rightBackground);
     }
 
     private void RenderSummary()
@@ -332,27 +378,40 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         if (_sourceModel is null)
         {
-            _leftBody.Text = $"Path\r\n{path}\r\n\r\nState\r\n{_selection?.State ?? "—"}";
-            _rightBody.Text = "Loading immutable Git identities…";
+            SharedCodeReviewRenderer.RenderPlain(
+                _leftBody,
+                $"Path\r\n{path}\r\n\r\nState\r\n{_selection?.State ?? "—"}",
+                wordWrap: true);
+            SharedCodeReviewRenderer.RenderPlain(
+                _rightBody,
+                "Loading immutable Git identities…",
+                wordWrap: true);
             return;
         }
 
-        _leftBody.Text =
+        SharedCodeReviewRenderer.RenderPlain(
+            _leftBody,
             $"Path\r\n{_sourceModel.RelativePath}\r\n\r\n" +
             $"State\r\n{_sourceModel.State}\r\n\r\n" +
-            $"Workboard detail\r\n{detail}";
+            $"Workboard detail\r\n{detail}",
+            wordWrap: true);
 
-        _rightBody.Text =
+        SharedCodeReviewRenderer.RenderPlain(
+            _rightBody,
             $"BASE\r\n{_sourceModel.Base.CommitSha}\r\n{_sourceModel.Base.Locator}\r\n\r\n" +
             $"LOCAL\r\n{_sourceModel.Local.CommitSha}\r\n{_sourceModel.Local.Locator}\r\n\r\n" +
-            $"REMOTE\r\n{_sourceModel.Remote.CommitSha}\r\n{_sourceModel.Remote.Locator}";
+            $"REMOTE\r\n{_sourceModel.Remote.CommitSha}\r\n{_sourceModel.Remote.Locator}",
+            wordWrap: true);
     }
 
     private static void RenderSource(
         Label title,
         RichTextBox body,
         ReconcileSourceSnapshot source,
-        string branch)
+        string branch,
+        string path,
+        IReadOnlySet<int> changedLines,
+        Color changeBackground)
     {
         var branchText = source.Role switch
         {
@@ -366,9 +425,12 @@ internal sealed class ReconcileInspectorPanel : Panel
             $"{source.Role}{branchText} @ {source.ShortSha}\r\n" +
             (source.Exists ? source.Locator : source.Locator + " · NOT PRESENT");
 
-        body.WordWrap = false;
-        body.Text = source.Exists ? source.Text : "";
-        body.Select(0, 0);
+        SharedCodeReviewRenderer.RenderCode(
+            body,
+            source.Exists ? source.Text : "",
+            path,
+            changedLines,
+            changeBackground);
     }
 
     private static (string Left, string Right) PaneTitles(ReconcileInspectorView view) => view switch
@@ -379,6 +441,13 @@ internal sealed class ReconcileInspectorPanel : Panel
         ReconcileInspectorView.MergedPreview => ("BEFORE MERGE", "MERGED CANDIDATE"),
         _ => ("SELECTION", "STATUS")
     };
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _scrollLink.Dispose();
+        base.Dispose(disposing);
+    }
 
     private static Button MakeButton(string text)
     {

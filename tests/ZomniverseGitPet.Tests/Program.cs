@@ -378,6 +378,17 @@ Check("project test advisor prefers executable dotnet test runner", () =>
     finally { TryDelete(root); }
 });
 
+Check("shared code renderer recognizes PHP syntax roles", () =>
+{
+    const string php = "<?php function validate($value) { // comment\n return $value === 'ok'; }";
+    var spans = SharedCodeReviewRenderer.GetSyntaxSpans(php, "validator.php");
+    return SharedCodeReviewRenderer.LanguageFor("validator.php") == "php" &&
+           spans.Any(span => span.Kind == CodeSyntaxKind.Keyword) &&
+           spans.Any(span => span.Kind == CodeSyntaxKind.Variable) &&
+           spans.Any(span => span.Kind == CodeSyntaxKind.String) &&
+           spans.Any(span => span.Kind == CodeSyntaxKind.Comment);
+});
+
 Check("zero-context diff maps before and now lines", () =>
 {
     var diff = "@@ -10,2 +10,3 @@\n-old a\n-old b\n+new a\n+new b\n+new c\n";

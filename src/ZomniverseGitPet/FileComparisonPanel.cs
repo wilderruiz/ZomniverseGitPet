@@ -442,14 +442,14 @@ internal sealed class FileComparisonPanel : Panel
         else if (!model.BeforeExists)
             _beforePane.ShowTechnicalMessage(model.BeforeMessage ?? "NEW FILE\r\n\r\nThis item did not exist in the saved version.");
         else if (IsReasonablyText(model.BeforeText))
-            _beforePane.ShowTechnical(model.BeforeText, model.ChangedLines.BeforeLines, isAfter: false);
+            _beforePane.ShowTechnical(model.BeforeText, model.ChangedLines.BeforeLines, isAfter: false, model.RelativePath);
         else
             _beforePane.ShowTechnicalMessage("TECHNICAL TEXT VIEW UNAVAILABLE\r\n\r\nThe saved version does not look like ordinary text.");
 
         if (!model.AfterExists)
             _afterPane.ShowTechnicalMessage(model.AfterMessage ?? "DELETED FROM WORKING TREE");
         else if (IsReasonablyTextPreview(model.AfterText))
-            _afterPane.ShowTechnical(model.AfterText, model.ChangedLines.AfterLines, isAfter: true);
+            _afterPane.ShowTechnical(model.AfterText, model.ChangedLines.AfterLines, isAfter: true, model.RelativePath);
         else
             _afterPane.ShowTechnicalMessage(
                 "TECHNICAL TEXT VIEW UNAVAILABLE\r\n\r\n" +
@@ -759,18 +759,20 @@ internal sealed class FileReviewPane : Panel
         _technical.Select(0, 0);
     }
 
-    public void ShowTechnical(string text, IReadOnlySet<int> changedLines, bool isAfter)
+    public void ShowTechnical(
+        string text,
+        IReadOnlySet<int> changedLines,
+        bool isAfter,
+        string path)
     {
         _summary.Visible = false;
         _technical.Visible = true;
-        _technical.Text = NormalizeLineEndings(text);
-        _technical.SelectAll();
-        _technical.SelectionColor = Color.FromArgb(232, 226, 239);
-        _technical.SelectionBackColor = GuardianTheme.Console;
-        _technical.SelectionFont = new Font("Cascadia Mono", 9.1f);
-
-        ApplyChangedLineBackgrounds(_technical, changedLines, isAfter ? AfterChange : BeforeChange);
-        _technical.Select(0, 0);
+        SharedCodeReviewRenderer.RenderCode(
+            _technical,
+            text,
+            path,
+            changedLines,
+            isAfter ? AfterChange : BeforeChange);
     }
 
     private static void ConfigureTextBox(RichTextBox box, Font font)

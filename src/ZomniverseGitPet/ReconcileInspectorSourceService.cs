@@ -16,7 +16,9 @@ internal sealed record ReconcileInspectorSourceModel(
     bool RemoteFromMergeHead,
     ReconcileSourceSnapshot Base,
     ReconcileSourceSnapshot Local,
-    ReconcileSourceSnapshot Remote);
+    ReconcileSourceSnapshot Remote,
+    DiffLineMap BaseLocalChanges,
+    DiffLineMap BaseRemoteChanges);
 
 internal sealed class ReconcileInspectorSourceService(GitService git)
 {
@@ -74,8 +76,15 @@ internal sealed class ReconcileInspectorSourceService(GitService git)
         var remoteSource = ReadAsync(
             repositoryPath, relativePath, "REMOTE", remoteDisplay, remoteSha,
             $"{remoteDisplay}:{relativePath}", token);
+        var baseLocalDiff = git.GetReconcileDiffAsync(
+            repositoryPath, relativePath, baseSha, localSha, token);
+        var baseRemoteDiff = git.GetReconcileDiffAsync(
+            repositoryPath, relativePath, baseSha, remoteSha, token);
 
-        await Task.WhenAll(baseSource, localSource, remoteSource);
+        await Task.WhenAll(baseSource, localSource, remoteSource, baseLocalDiff, baseRemoteDiff);
+
+        var localDiffResult = await baseLocalDiff;
+        var remoteDiffResult = await baseRemoteDiff;
 
         return new ReconcileInspectorSourceModel(
             relativePath,
@@ -84,7 +93,13 @@ internal sealed class ReconcileInspectorSourceService(GitService git)
             reconciliationPending,
             await baseSource,
             await localSource,
-            await remoteSource);
+            await remoteSource,
+            localDiffResult.Success
+                ? DiffLineMap.ParseUnifiedZeroContext(localDiffResult.Output)
+                : DiffLineMap.Empty,
+            remoteDiffResult.Success
+                ? DiffLineMap.ParseUnifiedZeroContext(remoteDiffResult.Output)
+                : DiffLineMap.Empty);
     }
 
     private async Task<ReconcileSourceSnapshot> ReadAsync(
