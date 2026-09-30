@@ -15,6 +15,10 @@ internal enum CodeSyntaxKind
 
 internal sealed record CodeSyntaxSpan(int Start, int Length, CodeSyntaxKind Kind);
 
+internal sealed record VisualCodeLayout(
+    string Text,
+    IReadOnlyList<int> SourceLineByVisualLine);
+
 internal static class SharedCodeReviewRenderer
 {
     internal static readonly Color BeforeChangeBackground = Color.FromArgb(53, 27, 40);
@@ -31,9 +35,10 @@ internal static class SharedCodeReviewRenderer
         Color? changeBackground = null,
         bool visualIndent = false)
     {
-        var normalized = visualIndent
-            ? ApplyVisualIndentation(text, path)
-            : NormalizeLineEndings(text);
+        var layout = visualIndent
+            ? BuildPrettyLayout(text, path)
+            : BuildExactLayout(text);
+        var normalized = layout.Text;
         box.SuspendLayout();
         try
         {
@@ -56,7 +61,15 @@ internal static class SharedCodeReviewRenderer
             }
 
             if (changedLines is { Count: > 0 } && changeBackground.HasValue)
-                ApplyChangedLineBackgrounds(box, changedLines, changeBackground.Value);
+            {
+                var visualChangedLines = MapChangedLines(
+                    changedLines,
+                    layout.SourceLineByVisualLine);
+                ApplyChangedLineBackgrounds(
+                    box,
+                    visualChangedLines,
+                    changeBackground.Value);
+            }
 
             box.Select(0, 0);
         }
@@ -240,68 +253,117 @@ internal static class SharedCodeReviewRenderer
         }
     }
 
-    internal static string ApplyVisualIndentation(string value, string path)
+    internal static VisualCodeLayout BuildPrettyLayout(string value, string path)
     {
         var normalizedLf = (value ?? "").Replace("\r\n", "\n").Replace("\r", "\n");
-        if (!SupportsVisualIndent(LanguageFor(path)))
-            return normalizedLf.Replace("\n", Environment.NewLine);
+        var language = LanguageFor(path);
+        if (!SupportsPrettyLayout(language))
+            return BuildExactLayout(normalizedLf);
 
-        var lines = normalizedLf.Split('\n');
-        var result = new string[lines.Length];
+        var sourceLines = normalizedLf.Split('\n');
+        var visualLines = new List<string>();
+        var provenance = new List<int>();
         var depth = 0;
         var inBlockComment = false;
 
-        for (var i = 0; i < lines.Length; i++)
+        for (var sourceIndex = 0; sourceIndex < sourceLines.Length; sourceIndex++)
         {
-            var trimmed = lines[i].Trim();
+            var sourceLineNumber = sourceIndex + 1;
+            var raw = sourceLines[sourceIndex];
+            var trimmed = raw.Trim();
 
             if (trimmed.Length == 0)
             {
-                result[i] = "";
+                visualLines.Add("");
+                provenance.Add(sourceLineNumber);
                 continue;
             }
 
-            var leadingClosers = CountLeadingClosers(trimmed);
-            var displayDepth = Math.Max(0, depth - leadingClosers);
-            result[i] = new string(' ', displayDepth * 4) + trimmed;
-
-            depth = Math.Max(
-                0,
-                depth + StructuralDelta(trimmed, LanguageFor(path), ref inBlockComment));
-        }
-
-        return string.Join(Environment.NewLine, result);
-    }
-
-    private static bool SupportsVisualIndent(string language) =>
-        language is "php" or "csharp" or "js" or "ts" or "java" or "css" or "json" or "powershell";
-
-    private static int CountLeadingClosers(string line)
-    {
-        var count = 0;
-        foreach (var ch in line)
-        {
-            if (ch is '}' or ']')
+            var expand = ShouldExpandLine(trimmed, language);
+            if (!expand)
             {
-                count++;
+                var leadingClosers = CountLeadingClosers(trimmed);
+                var displayDepth = Math.Max(0, depth - leadingClosers);
+                visualLines.Add(new string(' ', displayDepth * 4) + trimmed);
+                provenance.Add(sourceLineNumber);
+                depth = Math.Max(
+                    0,
+                    depth + StructuralDelta(trimmed, language, ref inBlockComment));
                 continue;
             }
 
-            if (!char.IsWhiteSpace(ch))
-                break;
+            foreach (var fragment in ExpandStructuralLine(
+                         trimmed,
+                         language,
+                         ref depth,
+                         ref inBlockComment))
+            {
+                visualLines.Add(fragment);
+                provenance.Add(sourceLineNumber);
+            }
         }
 
-        return count;
+        return new VisualCodeLayout(
+            string.Join(Environment.NewLine, visualLines),
+            provenance);
     }
 
-    private static int StructuralDelta(
+    internal static string ApplyVisualIndentation(string value, string path) =>
+        BuildPrettyLayout(value, path).Text;
+
+    private static VisualCodeLayout BuildExactLayout(string value)
+    {
+        var normalized = NormalizeLineEndings(value);
+        var lineCount = normalized.Length == 0
+            ? 1
+            : normalized.Split([Environment.NewLine], StringSplitOptions.None).Length;
+        return new VisualCodeLayout(
+            normalized,
+            Enumerable.Range(1, lineCount).ToArray());
+    }
+
+    private static IReadOnlySet<int> MapChangedLines(
+        IReadOnlySet<int> sourceChangedLines,
+        IReadOnlyList<int> sourceLineByVisualLine)
+    {
+        var mapped = new HashSet<int>();
+        for (var i = 0; i < sourceLineByVisualLine.Count; i++)
+        {
+            if (sourceChangedLines.Contains(sourceLineByVisualLine[i]))
+                mapped.Add(i + 1);
+        }
+        return mapped;
+    }
+
+    private static bool ShouldExpandLine(string line, string language)
+    {
+        if (line.Length < 110) return false;
+        if (language is not ("php" or "csharp" or "js" or "ts" or "java" or "json" or "powershell"))
+            return false;
+
+        return line.Contains(',') &&
+               (line.Contains('[') || line.Contains('{'));
+    }
+
+    private static IReadOnlyList<string> ExpandStructuralLine(
         string line,
         string language,
+        ref int depth,
         ref bool inBlockComment)
     {
-        var delta = 0;
+        var result = new List<string>();
+        var current = new System.Text.StringBuilder();
         var quote = '\0';
         var escaped = false;
+        var localDepth = depth;
+
+        void Flush(bool allowEmpty = false)
+        {
+            var fragment = current.ToString().Trim();
+            current.Clear();
+            if (!allowEmpty && fragment.Length == 0) return;
+            result.Add(new string(' ', Math.Max(0, localDepth) * 4) + fragment);
+        }
 
         for (var i = 0; i < line.Length; i++)
         {
@@ -310,61 +372,103 @@ internal static class SharedCodeReviewRenderer
 
             if (inBlockComment)
             {
+                current.Append(ch);
                 if (ch == '*' && next == '/')
                 {
-                    inBlockComment = false;
+                    current.Append(next);
                     i++;
+                    inBlockComment = false;
                 }
                 continue;
             }
 
             if (quote != '\0')
             {
+                current.Append(ch);
                 if (escaped)
                 {
                     escaped = false;
                     continue;
                 }
-
                 if (ch == '\\')
                 {
                     escaped = true;
                     continue;
                 }
-
                 if (ch == quote)
                     quote = '\0';
-
                 continue;
             }
 
             if (ch is '\'' or '"')
             {
                 quote = ch;
+                current.Append(ch);
                 continue;
             }
 
             if (ch == '/' && next == '*')
             {
-                inBlockComment = true;
+                current.Append(ch);
+                current.Append(next);
                 i++;
+                inBlockComment = true;
                 continue;
             }
 
             if (ch == '/' && next == '/')
+            {
+                current.Append(line.AsSpan(i));
                 break;
+            }
 
             if (language is "php" or "powershell" && ch == '#')
+            {
+                current.Append(line.AsSpan(i));
                 break;
+            }
 
-            if (ch is '{' or '[')
-                delta++;
-            else if (ch is '}' or ']')
-                delta--;
+            if (ch is '[' or '{')
+            {
+                current.Append(ch);
+                Flush();
+                localDepth++;
+                continue;
+            }
+
+            if (ch is ']' or '}')
+            {
+                Flush();
+                localDepth = Math.Max(0, localDepth - 1);
+                current.Append(ch);
+
+                // Keep a trailing semicolon/comma/arrow continuation with the closer.
+                if (next is ';' or ',')
+                {
+                    current.Append(next);
+                    i++;
+                    Flush();
+                }
+                continue;
+            }
+
+            if (ch == ',' && localDepth > 0)
+            {
+                current.Append(ch);
+                Flush();
+                continue;
+            }
+
+            current.Append(ch);
         }
 
-        return delta;
+        Flush();
+        depth = localDepth;
+        return result;
     }
+
+    private static bool SupportsPrettyLayout(string language) =>
+        language is "php" or "csharp" or "js" or "ts" or "java" or "css" or "json" or "powershell";
 
     internal static string NormalizeLineEndings(string value) =>
         (value ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", Environment.NewLine);

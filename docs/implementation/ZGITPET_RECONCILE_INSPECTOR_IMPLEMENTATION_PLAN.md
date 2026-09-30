@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–2 COMPLETE / PHASE 3 CORE UI SMOKED + DISPLAY-INDENT REFINEMENT CODE COMPLETE, SMOKE PENDING / PHASE 4 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–2 COMPLETE / PHASE 3 PRETTY-VIEW REFINEMENT CODE COMPLETE, SMOKE PENDING / PHASE 4 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -15,7 +15,7 @@
 - ✅ **Phase 0 — Existing File Review Foundation** — current File Review already provides a two-column split, Technical view, scrollable text panes, changed-line highlighting, safe text/binary handling, and Before / Now source loading.
 - ✅ **Phase 1 — Reconcile Inspector Shell + Workboard Entry** — **COMPLETE / REAL UI SMOKED.** A real Millenova `BOTH SIDES` row opens the dedicated lower-workspace Reconcile Inspector without starting reconciliation; compact/DPI-safe tab sizing is applied.
 - ✅ **Phase 2 — Three-Way Source Identity + BASE / LOCAL / REMOTE Loading** — **COMPLETE / REAL SOURCE UI SMOKED.** A real Millenova `BOTH SIDES` file loads pinned BASE / LOCAL / REMOTE SHAs and real PHP source side by side without changing repository state.
-- 🟡 **Phase 3 — Two-Column Code Comparison Workspace** — **CORE UI SMOKED / DISPLAY-INDENT REFINEMENT CODE COMPLETE, SMOKE PENDING.** Shared syntax coloring, BASE-derived change-line backgrounds, linked scrolling, horizontal scrolling, persistent splitter ratio, sticky headers, maximize/restore, and a display-only VS Code-style indentation layer are wired.
+- 🟡 **Phase 3 — Two-Column Code Comparison Workspace** — **CORE UI SMOKED / PRETTY-VIEW REFINEMENT CODE COMPLETE, SMOKE PENDING.** Shared syntax coloring, BASE-derived change-line backgrounds, linked scrolling, horizontal scrolling, persistent splitter ratio, sticky headers, maximize/restore, and a display-only Pretty/Exact source layout are wired.
 - ❌ **Phase 4 — Change-Shape Analysis + Read-Only Merged Preview** — classify independent additions vs. edits to existing structures, detect overlapping hunks, and generate a non-destructive three-way merged candidate.
 - ❌ **Phase 5 — Copy Actions + “Copy Everything” Export** — copy selection, changed block, whole file, comparison, code-only bundle, plain text bundle, and ChatGPT-ready Markdown diagnostic bundle.
 - ❌ **Phase 6 — Edit LOCAL Before Reconcile** — allow deliberate local corrections in the inspector, validate them, write to the working tree, and optionally create a new local correction commit without rewriting existing history.
@@ -645,16 +645,17 @@ Implement:
 
 ### 🟡 Phase 3 — Two-Column Code Workspace
 
-**Status:** CORE UI SMOKED / DISPLAY-INDENT REFINEMENT CODE COMPLETE, SMOKE PENDING
+**Status:** CORE UI SMOKED / PRETTY-VIEW REFINEMENT CODE COMPLETE, SMOKE PENDING
 
 Implemented in this slice:
 
 - extracted a shared source renderer used by File Review Technical view and Reconcile Inspector;
 - added language-aware token coloring for PHP, C#, JS/TS, Java, Python, JSON, CSS-family, HTML/XML/SVG, SQL, and PowerShell;
 - source text remains the real backing code; syntax, change colors, and visual indentation are presentation-only;
-- supported brace/array-based languages can render a **display-only structural indentation** layer that preserves the exact source line count and never rewrites the pinned Git text;
-- Reconcile Inspector defaults **Indent ✓** on for readability and exposes **Indent off** to inspect the exact original whitespace;
-- future Copy/Edit/Commit actions must use the backing raw source rather than the visually indented RichTextBox text;
+- supported brace/array-based languages can render a **display-only Pretty layout** that indents normal structures and expands long one-line arrays/objects into virtual display lines without rewriting the pinned Git text;
+- every Pretty display line carries provenance back to its original Git source line so changed-line highlighting remains correct even when one raw line expands into many visual lines;
+- Reconcile Inspector defaults **Pretty ✓** on for readability and exposes **Exact** to inspect the untouched source whitespace;
+- future Copy/Edit/Commit actions must use the backing raw source rather than Pretty-view text;
 - added read-only BASE→LOCAL and BASE→REMOTE zero-context changed-line maps without introducing Phase 4 semantic merge analysis;
 - BASE ↔ LOCAL and BASE ↔ REMOTE highlight the exact changed lines on each side;
 - LOCAL ↔ REMOTE highlights each side's changes relative to BASE;
@@ -665,12 +666,12 @@ Implemented in this slice:
 - maximized review retains the selected tab, pinned sources, splitter ratio, and linked-scroll setting;
 - regression coverage checks distinct BASE→LOCAL and BASE→REMOTE changed-line maps plus PHP syntax-role recognition.
 
-Observed core smoke: the real Millenova PHP comparison rendered syntax colors in maximized two-column mode and Max/Restore + linked-scroll controls were visible. Remaining Phase 3 gate: compile/test the indentation refinement, verify **Indent ✓ / Indent off** on the real PHP file, confirm changed-line highlights still align, and confirm no Git/source content changes.
+Observed core smoke: the real Millenova PHP comparison rendered syntax colors in maximized two-column mode and Max/Restore + linked-scroll controls were visible. The first indentation smoke showed that preserving physical line count was still too cramped for Millenova's long one-line PHP arrays. Remaining Phase 3 gate: compile/test Pretty view, verify **Pretty ✓ / Exact** on the real PHP file, confirm virtual-line expansion is readable, changed-line highlights still map to the correct raw Git lines, and no Git/source content changes.
 
 Implement:
 
 - shared syntax renderer;
-- display-only structural indentation / exact-whitespace toggle;
+- display-only Pretty layout with virtual-line provenance / Exact-whitespace toggle;
 - left/right source panes;
 - diff-hunk background highlighting;
 - synchronized scroll toggle;

@@ -21,10 +21,10 @@ internal sealed class ReconcileInspectorPanel : Panel
     private readonly SplitContainer _split = new();
     private readonly Dictionary<ReconcileInspectorView, Button> _viewButtons = [];
     private Button? _scrollLinkButton;
-    private Button? _indentButton;
+    private Button? _prettyButton;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
-    private bool _visualIndent = true;
+    private bool _prettyView = true;
     private GuardianWorkboardRow? _selection;
     private ReconcileInspectorSourceModel? _sourceModel;
     private ReconcileInspectorView _selectedView;
@@ -89,7 +89,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _footer.ForeColor = GuardianTheme.Healthy;
         _footer.Text =
             $"Pinned read-only snapshots · BASE {model.Base.ShortSha} · LOCAL {model.Local.ShortSha} · " +
-            $"REMOTE {model.Remote.ShortSha} · display indentation does not modify source.";
+            $"REMOTE {model.Remote.ShortSha} · Pretty view is display-only; Exact preserves source whitespace.";
         SelectView(_selectedView);
     }
 
@@ -188,11 +188,11 @@ internal sealed class ReconcileInspectorPanel : Panel
             _scrollLinkButton.Text = _scrollLink.Enabled ? "Scroll ✓" : "Scroll off";
         };
 
-        _indentButton = MakeButton("Indent ✓");
-        _indentButton.Click += (_, _) =>
+        _prettyButton = MakeButton("Pretty ✓");
+        _prettyButton.Click += (_, _) =>
         {
-            _visualIndent = !_visualIndent;
-            _indentButton.Text = _visualIndent ? "Indent ✓" : "Indent off";
+            _prettyView = !_prettyView;
+            _prettyButton.Text = _prettyView ? "Pretty ✓" : "Exact";
             SelectView(_selectedView);
         };
 
@@ -203,7 +203,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         activity.Click += (_, _) => ActivityRequested?.Invoke(this, EventArgs.Empty);
 
         actions.Controls.Add(_scrollLinkButton);
-        actions.Controls.Add(_indentButton);
+        actions.Controls.Add(_prettyButton);
         actions.Controls.Add(_maximizeButton);
         actions.Controls.Add(activity);
 
@@ -369,10 +369,10 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         RenderSource(
             _leftTitle, _leftBody, leftSource, _sourceModel.Branch,
-            _sourceModel.RelativePath, leftLines, leftBackground, _visualIndent);
+            _sourceModel.RelativePath, leftLines, leftBackground, _prettyView);
         RenderSource(
             _rightTitle, _rightBody, rightSource, _sourceModel.Branch,
-            _sourceModel.RelativePath, rightLines, rightBackground, _visualIndent);
+            _sourceModel.RelativePath, rightLines, rightBackground, _prettyView);
     }
 
     private void RenderSummary()
@@ -423,7 +423,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         string path,
         IReadOnlySet<int> changedLines,
         Color changeBackground,
-        bool visualIndent)
+        bool prettyView)
     {
         var branchText = source.Role switch
         {
@@ -443,7 +443,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             path,
             changedLines,
             changeBackground,
-            visualIndent);
+            prettyView);
     }
 
     private static (string Left, string Right) PaneTitles(ReconcileInspectorView view) => view switch

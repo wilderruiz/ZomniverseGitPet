@@ -404,6 +404,21 @@ Check("visual indentation preserves source line mapping", () =>
            raw == "$required = [\n'one' => [\n'value' => 1,\n],\n];";
 });
 
+Check("pretty view expands long PHP arrays with source provenance", () =>
+{
+    const string raw = "$contracts = ['one'=>['a','b','c'],'two'=>['d','e','f'],'three'=>['g','h','i'],'four'=>['j','k','l']];";
+    var layout = SharedCodeReviewRenderer.BuildPrettyLayout(raw, "validator.php");
+    var lines = layout.Text.Replace("\r\n", "\n").Split('\n');
+
+    return lines.Length > 4 &&
+           lines.Any(line => line.Trim() == "'one'=>[") &&
+           lines.Any(line => line.Trim() == "'a',") &&
+           lines.Any(line => line.Trim() == "];") &&
+           layout.SourceLineByVisualLine.Count == lines.Length &&
+           layout.SourceLineByVisualLine.All(line => line == 1) &&
+           raw == "$contracts = ['one'=>['a','b','c'],'two'=>['d','e','f'],'three'=>['g','h','i'],'four'=>['j','k','l']];";
+});
+
 Check("zero-context diff maps before and now lines", () =>
 {
     var diff = "@@ -10,2 +10,3 @@\n-old a\n-old b\n+new a\n+new b\n+new c\n";
