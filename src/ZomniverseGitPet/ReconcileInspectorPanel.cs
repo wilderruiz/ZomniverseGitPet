@@ -35,6 +35,10 @@ internal sealed class ReconcileInspectorPanel : Panel
     private Button? _prepareRemoteButton;
     private Button? _sendRemoteButton;
     private Button? _discardRemoteButton;
+    private Button? _editCandidateButton;
+    private Button? _validateCandidateButton;
+    private Button? _acceptCandidateButton;
+    private Button? _cancelCandidateButton;
     private Button? _activityButton;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
@@ -51,6 +55,11 @@ internal sealed class ReconcileInspectorPanel : Panel
     private string _remoteEditOriginalEditorText = "";
     private string _remoteEditOriginalRawText = "";
     private string _remoteEditPinnedSha = "";
+    private bool _candidateEditMode;
+    private string _candidateGeneratedText = "";
+    private string _candidateOriginalEditorText = "";
+    private string _candidatePinnedLocalSha = "";
+    private string _candidatePinnedRemoteSha = "";
 
     public ReconcileInspectorPanel()
     {
@@ -79,6 +88,8 @@ internal sealed class ReconcileInspectorPanel : Panel
         {
             if (_remoteEditMode && !_remotePrepared)
                 UpdateRemoteEditDirtyState();
+            else if (_candidateEditMode)
+                UpdateCandidateDirtyState();
         };
 
         _summaryPanel.Visible = false;
@@ -100,6 +111,8 @@ internal sealed class ReconcileInspectorPanel : Panel
     public event EventHandler<ReconcileRemoteEditRequestEventArgs>? RemoteEditPrepareRequested;
     public event EventHandler? RemoteEditSendRequested;
     public event EventHandler? RemoteEditDiscardRequested;
+    public event EventHandler<ReconcileMergedCandidateRequestEventArgs>? MergedCandidateValidateRequested;
+    public event EventHandler<ReconcileMergedCandidateRequestEventArgs>? MergedCandidateAcceptRequested;
 
     public void SetMaximizedMode(bool maximized)
     {
@@ -163,6 +176,11 @@ internal sealed class ReconcileInspectorPanel : Panel
         {
             _editRemoteButton.Enabled = false;
             _editRemoteButton.Visible = false;
+        }
+        if (_editCandidateButton is not null)
+        {
+            _editCandidateButton.Enabled = false;
+            _editCandidateButton.Visible = false;
         }
     }
 
@@ -304,6 +322,22 @@ internal sealed class ReconcileInspectorPanel : Panel
         _discardRemoteButton.Visible = false;
         _discardRemoteButton.Click += (_, _) => RemoteEditDiscardRequested?.Invoke(this, EventArgs.Empty);
 
+        _editCandidateButton = MakeButton("Edit candidate");
+        _editCandidateButton.Visible = false;
+        _editCandidateButton.Click += (_, _) => BeginCandidateEdit();
+
+        _validateCandidateButton = MakeButton("Validate candidate");
+        _validateCandidateButton.Visible = false;
+        _validateCandidateButton.Click += (_, _) => RaiseCandidate(MergedCandidateValidateRequested);
+
+        _acceptCandidateButton = MakeButton("Accept + reconcile");
+        _acceptCandidateButton.Visible = false;
+        _acceptCandidateButton.Click += (_, _) => RaiseCandidate(MergedCandidateAcceptRequested);
+
+        _cancelCandidateButton = MakeButton("Cancel candidate");
+        _cancelCandidateButton.Visible = false;
+        _cancelCandidateButton.Click += (_, _) => CancelCandidateEdit();
+
         _maximizeButton = MakeButton("Max ⛶");
         _maximizeButton.Click += (_, _) => MaximizeRequested?.Invoke(this, EventArgs.Empty);
 
@@ -323,6 +357,10 @@ internal sealed class ReconcileInspectorPanel : Panel
         actions.Controls.Add(_prepareRemoteButton);
         actions.Controls.Add(_sendRemoteButton);
         actions.Controls.Add(_discardRemoteButton);
+        actions.Controls.Add(_editCandidateButton);
+        actions.Controls.Add(_validateCandidateButton);
+        actions.Controls.Add(_acceptCandidateButton);
+        actions.Controls.Add(_cancelCandidateButton);
         actions.Controls.Add(_maximizeButton);
         actions.Controls.Add(_activityButton);
 
@@ -423,8 +461,12 @@ internal sealed class ReconcileInspectorPanel : Panel
             button.FlatAppearance.BorderColor = selected ? GuardianTheme.Violet : GuardianTheme.Border;
         }
 
+        RefreshEditActionState();
+
         if ((_localEditMode || _remoteEditMode) &&
             view != ReconcileInspectorView.LocalRemote)
+            return;
+        if (_candidateEditMode && view != ReconcileInspectorView.MergedPreview)
             return;
 
         var summarySelected = view == ReconcileInspectorView.Summary;
@@ -441,6 +483,12 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         if (view == ReconcileInspectorView.MergedPreview)
         {
+            if (_candidateEditMode)
+            {
+                RenderCandidateEditor();
+                return;
+            }
+
             if (_sourceModel is null)
             {
                 _leftTitle.Text = "BEFORE MERGE · LOADING…";
@@ -594,6 +642,187 @@ internal sealed class ReconcileInspectorPanel : Panel
             prettyView);
     }
 
+    private void BeginCandidateEdit()
+    {
+        if (_sourceModel is null ||
+            _selection is null ||
+            _sourceModel.RemoteFromMergeHead ||
+            !_sourceModel.MergePreview.Available ||
+            !_sourceModel.MergePreview.Exists)
+        {
+            SetCandidateFeedback(
+                "An editable generated candidate is not available for this pre-reconcile snapshot.",
+                false);
+            return;
+        }
+
+        _prettyView = false;
+        if (_prettyButton is not null) _prettyButton.Text = "Exact";
+
+        _candidateGeneratedText = _sourceModel.MergePreview.Text;
+        _candidateOriginalEditorText = _candidateGeneratedText;
+        _candidatePinnedLocalSha = _sourceModel.Local.CommitSha;
+        _candidatePinnedRemoteSha = _sourceModel.Remote.CommitSha;
+        _candidateEditMode = true;
+
+        SelectView(ReconcileInspectorView.MergedPreview);
+        SetCandidateEditUi(true);
+        UpdateCandidateDirtyState();
+        _rightBody.Focus();
+    }
+
+    private void RenderCandidateEditor()
+    {
+        if (_sourceModel is null) return;
+
+        _leftTitle.Text =
+            "GENERATED CANDIDATE · " + _sourceModel.MergePreview.Status +
+            "\r\nimmutable preview";
+        SharedCodeReviewRenderer.RenderCode(
+            _leftBody,
+            _candidateGeneratedText,
+            _sourceModel.RelativePath,
+            visualIndent: false);
+        _leftBody.ReadOnly = true;
+
+        _rightTitle.Text =
+            "EDITED CANDIDATE · draft\r\nnot applied · not staged · not committed";
+        SharedCodeReviewRenderer.RenderCode(
+            _rightBody,
+            _candidateOriginalEditorText,
+            _sourceModel.RelativePath,
+            visualIndent: false);
+        _rightBody.ReadOnly = false;
+    }
+
+    private void CancelCandidateEdit()
+    {
+        if (!_candidateEditMode) return;
+
+        if (!string.Equals(
+                _rightBody.Text,
+                _candidateOriginalEditorText,
+                StringComparison.Ordinal))
+        {
+            using var confirm = new GuardianConfirmDialog(
+                "Cancel candidate edit",
+                "DISCARD CANDIDATE DRAFT?",
+                "Discard the edited merged candidate and return to the generated read-only preview?\r\n\r\n" +
+                "Nothing has been reconciled, staged, committed, or sent.",
+                "Discard draft",
+                "Keep editing");
+            if (confirm.ShowDialog(FindForm()) != DialogResult.Yes) return;
+        }
+
+        EndCandidateEditMode();
+        SelectView(ReconcileInspectorView.MergedPreview);
+        _footer.ForeColor = GuardianTheme.FaintInk;
+        _footer.Text = "Candidate edit cancelled. Repository unchanged.";
+    }
+
+    private void RaiseCandidate(
+        EventHandler<ReconcileMergedCandidateRequestEventArgs>? handler)
+    {
+        if (!_candidateEditMode || _sourceModel is null || _selection is null)
+            return;
+
+        handler?.Invoke(
+            this,
+            new ReconcileMergedCandidateRequestEventArgs(
+                _selection,
+                new ReconcileMergedCandidateDraft(
+                    _sourceModel.RelativePath,
+                    _sourceModel.Branch,
+                    _candidatePinnedLocalSha,
+                    _candidatePinnedRemoteSha,
+                    _candidateGeneratedText,
+                    _rightBody.Text)));
+    }
+
+    public void SetCandidateBusy(bool busy, string? message = null)
+    {
+        if (!_candidateEditMode) return;
+
+        if (_validateCandidateButton is not null) _validateCandidateButton.Enabled = !busy;
+        if (_acceptCandidateButton is not null) _acceptCandidateButton.Enabled = !busy;
+        if (_cancelCandidateButton is not null) _cancelCandidateButton.Enabled = !busy;
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            _footer.ForeColor = GuardianTheme.Reconcile;
+            _footer.Text = message;
+        }
+    }
+
+    public void SetCandidateFeedback(string message, bool success)
+    {
+        _footer.ForeColor = success ? GuardianTheme.Healthy : GuardianTheme.Warning;
+        _footer.Text = message;
+        SetCandidateBusy(false);
+    }
+
+    public void EndCandidateAcceptedState(string message)
+    {
+        EndCandidateEditMode();
+        _footer.ForeColor = GuardianTheme.Healthy;
+        _footer.Text = message;
+    }
+
+    private void UpdateCandidateDirtyState()
+    {
+        if (!_candidateEditMode) return;
+
+        var dirty = !string.Equals(
+            _rightBody.Text,
+            _candidateOriginalEditorText,
+            StringComparison.Ordinal);
+
+        if (_validateCandidateButton is not null) _validateCandidateButton.Enabled = true;
+        if (_acceptCandidateButton is not null) _acceptCandidateButton.Enabled = true;
+
+        _footer.ForeColor = dirty ? GuardianTheme.Reconcile : GuardianTheme.FaintInk;
+        _footer.Text = dirty
+            ? "EDITED CANDIDATE MODIFIED · draft only · repository unchanged"
+            : "Candidate matches the generated merge · ready to validate or accept.";
+    }
+
+    private void SetCandidateEditUi(bool editing)
+    {
+        foreach (var (view, button) in _viewButtons)
+            button.Enabled = !editing || view == ReconcileInspectorView.MergedPreview;
+
+        if (_scrollLinkButton is not null) _scrollLinkButton.Visible = true;
+        if (_prettyButton is not null) _prettyButton.Visible = !editing;
+        if (_copyButton is not null) _copyButton.Visible = !editing;
+        if (_copyEverythingButton is not null) _copyEverythingButton.Visible = !editing;
+        if (_editLocalButton is not null) _editLocalButton.Visible = !editing;
+        if (_editRemoteButton is not null) _editRemoteButton.Visible = !editing;
+        if (_editCandidateButton is not null) _editCandidateButton.Visible = !editing && _selectedView == ReconcileInspectorView.MergedPreview;
+        if (_validateCandidateButton is not null) _validateCandidateButton.Visible = editing;
+        if (_acceptCandidateButton is not null) _acceptCandidateButton.Visible = editing;
+        if (_cancelCandidateButton is not null) _cancelCandidateButton.Visible = editing;
+        if (_validateEditButton is not null) _validateEditButton.Visible = false;
+        if (_writeEditButton is not null) _writeEditButton.Visible = false;
+        if (_commitEditButton is not null) _commitEditButton.Visible = false;
+        if (_cancelEditButton is not null) _cancelEditButton.Visible = false;
+        if (_prepareRemoteButton is not null) _prepareRemoteButton.Visible = false;
+        if (_sendRemoteButton is not null) _sendRemoteButton.Visible = false;
+        if (_discardRemoteButton is not null) _discardRemoteButton.Visible = false;
+        if (_activityButton is not null) _activityButton.Enabled = !editing;
+    }
+
+    private void EndCandidateEditMode()
+    {
+        _rightBody.ReadOnly = true;
+        _candidateEditMode = false;
+        _candidateGeneratedText = "";
+        _candidateOriginalEditorText = "";
+        _candidatePinnedLocalSha = "";
+        _candidatePinnedRemoteSha = "";
+        SetCandidateEditUi(false);
+        RefreshEditActionState();
+    }
+
     private void BeginRemoteEdit()
     {
         if (_sourceModel is null || !_sourceModel.Remote.Exists || _selection is null)
@@ -733,6 +962,10 @@ internal sealed class ReconcileInspectorPanel : Panel
         if (_prepareRemoteButton is not null) _prepareRemoteButton.Visible = editing && !prepared;
         if (_sendRemoteButton is not null) _sendRemoteButton.Visible = editing && prepared;
         if (_discardRemoteButton is not null) _discardRemoteButton.Visible = editing && prepared;
+        if (_editCandidateButton is not null) _editCandidateButton.Visible = !editing;
+        if (_validateCandidateButton is not null) _validateCandidateButton.Visible = false;
+        if (_acceptCandidateButton is not null) _acceptCandidateButton.Visible = false;
+        if (_cancelCandidateButton is not null) _cancelCandidateButton.Visible = false;
         if (_activityButton is not null) _activityButton.Enabled = !editing;
     }
 
@@ -879,6 +1112,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         if (_copyButton is not null) _copyButton.Visible = !editing;
         if (_copyEverythingButton is not null) _copyEverythingButton.Visible = !editing;
         if (_editRemoteButton is not null) _editRemoteButton.Visible = !editing;
+        if (_editCandidateButton is not null) _editCandidateButton.Visible = !editing;
         RefreshEditActionState();
 
         if (_validateEditButton is not null) _validateEditButton.Visible = editing;
@@ -893,7 +1127,11 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     private void RefreshEditActionState()
     {
-        var idle = !_localEditMode && !_remoteEditMode && _sourceModel is not null;
+        var idle =
+            !_localEditMode &&
+            !_remoteEditMode &&
+            !_candidateEditMode &&
+            _sourceModel is not null;
 
         if (_editLocalButton is not null)
         {
@@ -907,6 +1145,18 @@ internal sealed class ReconcileInspectorPanel : Panel
             var available = idle && _sourceModel!.Remote.Exists;
             _editRemoteButton.Visible = available;
             _editRemoteButton.Enabled = available;
+        }
+
+        if (_editCandidateButton is not null)
+        {
+            var available =
+                idle &&
+                _selectedView == ReconcileInspectorView.MergedPreview &&
+                !_sourceModel!.RemoteFromMergeHead &&
+                _sourceModel.MergePreview.Available &&
+                _sourceModel.MergePreview.Exists;
+            _editCandidateButton.Visible = available;
+            _editCandidateButton.Enabled = available;
         }
     }
 
@@ -934,8 +1184,14 @@ internal sealed class ReconcileInspectorPanel : Panel
         _remoteEditOriginalEditorText = "";
         _remoteEditOriginalRawText = "";
         _remoteEditPinnedSha = "";
+        _candidateEditMode = false;
+        _candidateGeneratedText = "";
+        _candidateOriginalEditorText = "";
+        _candidatePinnedLocalSha = "";
+        _candidatePinnedRemoteSha = "";
         SetLocalEditUi(editing: false);
         SetRemoteEditUi(editing: false, prepared: false);
+        SetCandidateEditUi(editing: false);
         RefreshEditActionState();
     }
 

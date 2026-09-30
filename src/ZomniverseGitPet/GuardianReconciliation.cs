@@ -557,6 +557,12 @@ internal static class GuardianReconciliation
             MessageBoxIcon.Warning);
     }
 
+    internal static void SuspendAutomaticSavingForInspectorCandidate(Form? owner) =>
+        SuspendAutomaticSaving(owner);
+
+    internal static void RestoreAutomaticSavingAfterInspectorFailure(Form? owner) =>
+        RestoreAutomaticSaving(owner);
+
     private static void SuspendAutomaticSaving(Form? owner)
     {
         var config = GuardianSyncState.Config;

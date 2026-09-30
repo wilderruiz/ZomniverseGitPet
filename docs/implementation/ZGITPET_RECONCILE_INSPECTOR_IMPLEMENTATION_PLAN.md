@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–6 COMPLETE / PHASE 7 CODE COMPLETE, BUILD + ISOLATED REMOTE-EDIT SMOKE PENDING / PHASE 8 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–7 COMPLETE / PHASE 8 CODE COMPLETE, BUILD + MERGED-CANDIDATE SMOKE PENDING / PHASE 9 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -20,8 +20,8 @@
 - ✅ **Phase 4A — Decision-First Reconcile Summary UX** — **COMPLETE / REAL UI SMOKED.** The real Millenova Inspector now surfaces review status, change relationship, overlap, and merged-preview evidence before secondary source/provenance detail.
 - ✅ **Phase 5 — Copy Actions + “Copy Everything” Export** — **COMPLETE / REAL MENU + COPY LIFECYCLE SMOKED.** The Copy menu can be opened/dismissed/reopened safely and exports use raw backing source.
 - ✅ **Phase 6 — Edit LOCAL Before Reconciliation** — **COMPLETE / REAL UI SMOKED.** Edit local is visible on valid LOCAL snapshots and the Exact-mode correction workflow is available without rewriting history.
-- 🟡 **Phase 7 — Edit REMOTE** — **CODE COMPLETE / BUILD + ISOLATED REMOTE-EDIT SMOKE PENDING.** REMOTE edits prepare a one-file correction commit in an isolated temporary worktree/branch, then require a separate live-tip-checked normal push.
-- ❌ **Phase 8 — Editable MERGED CANDIDATE** — keep generated merge output read-only by default, allow an explicit editable candidate, validate it, and apply it only as the final reconciliation result after approval.
+- ✅ **Phase 7 — Edit REMOTE** — **COMPLETE / REAL UI SMOKED.** REMOTE correction preparation, isolated worktree state, explicit Send/Discard flow, and remote-tip safety are exercised.
+- 🟡 **Phase 8 — Editable MERGED CANDIDATE** — **CODE COMPLETE / BUILD + REAL UI SMOKE PENDING.** Generated merge evidence stays immutable on the left while an Exact editable draft on the right can be validated and explicitly accepted into the normal no-commit reconciliation.
 - ❌ **Phase 9 — Validation + Race / Safety Hardening** — syntax/structure checks, configured project tests, remote-moved detection, immutable original snapshots, cancellation, cleanup, audit events, and no-force-push guarantees.
 - ❌ **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — keyboard flow, maximized editor polish, accessibility, large-file safeguards, regression tests, documentation updates, and release readiness.
 
@@ -1023,9 +1023,28 @@ Implement:
 
 ---
 
-### ❌ Phase 8 — Editable MERGED CANDIDATE
+### 🟡 Phase 8 — Editable MERGED CANDIDATE
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / BUILD + REAL MERGED-CANDIDATE SMOKE PENDING
+
+Implemented in this slice:
+
+- **Edit candidate** appears only on the pre-reconcile **Merged** tab when a generated file candidate is available;
+- entering candidate mode forces **Exact** source and locks navigation to the Merged workspace;
+- the two columns become **GENERATED CANDIDATE** (left, immutable) and **EDITED CANDIDATE** (right, editable), preserving the generated merge as evidence instead of replacing it;
+- the draft starts as an exact copy of the generated candidate and may also be accepted unchanged;
+- **Validate candidate** verifies repository/path scope, clean working tree, no existing `MERGE_HEAD`, current branch, pinned LOCAL SHA, pinned `origin/<branch>` SHA, live remote SHA, and a freshly regenerated candidate snapshot;
+- validation rejects NUL text and unresolved Git conflict-marker triplets;
+- **Accept + reconcile** is a separate explicit confirmation and does not commit or send anything;
+- automatic saving is suspended through the same reconciliation safety mechanism used by the established Reconcile flow;
+- acceptance reruns validation, starts `git merge --no-commit --no-ff origin/<branch>`, verifies `MERGE_HEAD` is the pinned REMOTE commit, writes the approved candidate to only the selected path, and stages that path as resolved;
+- if candidate application/staging/verification fails after merge start, GitPet runs `git merge --abort` and restores the pre-reconciliation state;
+- successful acceptance deliberately leaves `MERGE_HEAD` present so the existing **Save reconciliation** action remains the only commit gate;
+- if other files remain unresolved, they are reported and the workboard remains in reconciliation state until those paths are reviewed;
+- nothing in Phase 8 pushes, force-pushes, rewrites LOCAL/REMOTE history, or creates a reconciliation commit;
+- the core regression uses a real bare origin + two working histories, verifies candidate acceptance leaves local HEAD and remote SHA unchanged, verifies the edited candidate is staged with the correct `MERGE_HEAD`, then proves `git merge --abort` restores the original LOCAL file.
+
+Remaining Phase 8 gate: build/test locally and smoke the real Millenova Merged workspace. Safe UI smoke before accepting: **Merged → Edit candidate → modify harmless text → Validate candidate → Cancel candidate**. Testing **Accept + reconcile** intentionally starts a real local no-commit reconciliation; it still does not commit or send, and can be cancelled through the normal reconciliation Cancel flow.
 
 Implement:
 

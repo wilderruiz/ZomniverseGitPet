@@ -706,6 +706,10 @@ public sealed class GuardianForm : Form
             await SendReconcileRemoteEditAsync();
         _reconcileInspector.RemoteEditDiscardRequested += async (_, _) =>
             await DiscardReconcileRemoteEditAsync();
+        _reconcileInspector.MergedCandidateValidateRequested += async (_, e) =>
+            await ValidateMergedCandidateAsync(e);
+        _reconcileInspector.MergedCandidateAcceptRequested += async (_, e) =>
+            await AcceptMergedCandidateAsync(e);
 
         host.Controls.Add(_activityPanel);
         host.Controls.Add(_comparisonPanel);
@@ -2641,6 +2645,139 @@ public sealed class GuardianForm : Form
         }
     }
 
+    private async Task ValidateMergedCandidateAsync(
+        ReconcileMergedCandidateRequestEventArgs e)
+    {
+        if (!HasRepository()) return;
+
+        _reconcileInspector.SetCandidateBusy(true, "Validating generated/edited candidate against pinned histories…");
+        try
+        {
+            var result = await new ReconcileMergedCandidateService(_git).ValidateAsync(
+                _config.RepositoryPath!,
+                e.Draft,
+                CancellationToken.None);
+
+            _reconcileInspector.SetCandidateFeedback(
+                result.Success
+                    ? "Candidate validation passed · LOCAL, REMOTE, live remote, generated preview, and clean working tree still match."
+                    : result.Message,
+                result.Success);
+        }
+        catch (Exception ex)
+        {
+            _reconcileInspector.SetCandidateFeedback(
+                "Candidate validation failed: " + ex.Message,
+                false);
+        }
+    }
+
+    private async Task AcceptMergedCandidateAsync(
+        ReconcileMergedCandidateRequestEventArgs e)
+    {
+        if (!HasRepository()) return;
+
+        using var confirm = new GuardianConfirmDialog(
+            "Accept merged candidate",
+            "ACCEPT CANDIDATE + PREPARE RECONCILIATION?",
+            $"Apply this candidate as the reconciliation result for:\r\n\r\n{e.Draft.RelativePath}\r\n\r\n" +
+            "GitPet will first revalidate the pinned LOCAL and REMOTE histories and live remote tip.\r\n" +
+            "Then it will start the normal no-commit merge, write this approved candidate for the selected file, and stage that file as resolved.\r\n\r\n" +
+            "No reconciliation commit is created here. Nothing is sent online. The existing Save reconciliation action remains the final local commit gate.",
+            "Accept + reconcile",
+            "Cancel",
+            dialogSize: new Size(820, 570),
+            scrollable: true);
+        if (confirm.ShowDialog(this) != DialogResult.Yes) return;
+
+        if (!ConfirmReconcileSensitivePath(
+                e.Draft.RelativePath,
+                "Reconcile Inspector merged candidate"))
+            return;
+
+        GuardianReconciliation.SuspendAutomaticSavingForInspectorCandidate(this);
+        _reconcileInspector.SetCandidateBusy(true, "Revalidating and preparing no-commit reconciliation…");
+
+        var reconciliationStarted = false;
+        try
+        {
+            var service = new ReconcileMergedCandidateService(_git);
+            var result = await service.ApplyAsync(
+                _config.RepositoryPath!,
+                e.Draft,
+                CancellationToken.None);
+            reconciliationStarted = result.ReconciliationStarted;
+
+            if (!result.Success)
+            {
+                GuardianReconciliation.RestoreAutomaticSavingAfterInspectorFailure(this);
+                _reconcileInspector.SetCandidateFeedback(result.Message, false);
+                return;
+            }
+
+            var status = await _git.GetStatusAsync(
+                _config.RepositoryPath!,
+                CancellationToken.None);
+            GuardianSyncState.PublishReconciliationPending(status);
+
+            await _audit.WriteAsync("reconcile_inspector_merged_candidate_accepted", new
+            {
+                file = e.Draft.RelativePath,
+                branch = e.Draft.Branch,
+                localCommit = e.Draft.PinnedLocalCommitSha,
+                remoteCommit = e.Draft.PinnedRemoteCommitSha,
+                edited = !string.Equals(
+                    e.Draft.GeneratedText,
+                    e.Draft.EditedText,
+                    StringComparison.Ordinal),
+                result.RemainingConflicts
+            });
+
+            ReportActivity(
+                $"MERGED candidate accepted ✓\n\n{e.Draft.RelativePath}\n\n" +
+                (result.RemainingConflicts == 0
+                    ? "Reconciliation is prepared and waiting for Save."
+                    : $"{result.RemainingConflicts} other unresolved file{(result.RemainingConflicts == 1 ? "" : "s")} remain before Save.") +
+                "\nNothing was committed or sent online.",
+                GuardianActivityKind.Success);
+
+            _reconcileInspector.EndCandidateAcceptedState(
+                "Candidate accepted · MERGE_HEAD preserved · waiting for normal reconciliation Save.");
+
+            await RefreshRepositoryViewAsync(CancellationToken.None);
+            await GuardianWorkboardRuntime.RefreshNowAsync();
+
+            using var ready = new GuardianConfirmDialog(
+                "Merged candidate accepted",
+                result.RemainingConflicts == 0
+                    ? "RECONCILIATION CANDIDATE READY ✓"
+                    : "CANDIDATE APPLIED — MORE FILES NEED REVIEW",
+                result.RemainingConflicts == 0
+                    ? "The approved merged candidate is now staged inside the normal no-commit reconciliation.\r\n\r\nReview the workboard, then use Save to create the reconciliation commit. Nothing has been sent online."
+                    : $"The approved candidate was applied, but {result.RemainingConflicts} other unresolved file{(result.RemainingConflicts == 1 ? "" : "s")} remain.\r\n\r\nResolve those files before using Save. Nothing has been sent online.",
+                "OK",
+                "",
+                showCancel: false,
+                dialogSize: new Size(760, 500),
+                scrollable: true);
+            ready.ShowDialog(this);
+
+            ShowActivityPanel();
+        }
+        catch (Exception ex)
+        {
+            if (!reconciliationStarted)
+                GuardianReconciliation.RestoreAutomaticSavingAfterInspectorFailure(this);
+
+            _reconcileInspector.SetCandidateFeedback(
+                reconciliationStarted
+                    ? "Candidate was applied, but GitPet could not finish refreshing the UI: " + ex.Message +
+                      " Review the workboard before taking another action."
+                    : "Candidate acceptance failed: " + ex.Message,
+                false);
+        }
+    }
+
     private async Task ValidateReconcileRemoteEditAsync(
         ReconcileRemoteEditRequestEventArgs e)
     {
@@ -2677,7 +2814,7 @@ public sealed class GuardianForm : Form
             "Prepare remote",
             "Cancel");
         if (confirm.ShowDialog(this) != DialogResult.Yes) return;
-        if (!ConfirmReconcileEditSensitivePath(e.Draft.RelativePath)) return;
+        if (!ConfirmReconcileSensitivePath(e.Draft.RelativePath, "Reconcile Inspector source edit")) return;
 
         _reconcileInspector.SetRemoteEditBusy(true, "Preparing isolated REMOTE correction commit…");
         try
@@ -2851,7 +2988,7 @@ public sealed class GuardianForm : Form
         if (confirm.ShowDialog(this) != DialogResult.Yes)
             return;
 
-        if (!ConfirmReconcileEditSensitivePath(e.Draft.RelativePath))
+        if (!ConfirmReconcileSensitivePath(e.Draft.RelativePath, "Reconcile Inspector source edit"))
             return;
 
         _reconcileInspector.SetLocalEditBusy(true, "Writing LOCAL working file…");
@@ -2908,7 +3045,7 @@ public sealed class GuardianForm : Form
         if (confirm.ShowDialog(this) != DialogResult.Yes)
             return;
 
-        if (!ConfirmReconcileEditSensitivePath(e.Draft.RelativePath))
+        if (!ConfirmReconcileSensitivePath(e.Draft.RelativePath, "Reconcile Inspector source edit"))
             return;
 
         _reconcileInspector.SetLocalEditBusy(true, "Validating exact-file correction commit…");
@@ -2991,7 +3128,9 @@ public sealed class GuardianForm : Form
         }
     }
 
-    private bool ConfirmReconcileEditSensitivePath(string relativePath)
+    private bool ConfirmReconcileSensitivePath(
+        string relativePath,
+        string context)
     {
         var matches = GitService.FindSuspiciousPathMatches(
             [new ChangedFile("M", relativePath)],
@@ -3001,7 +3140,7 @@ public sealed class GuardianForm : Form
                SuspiciousPathReview.Confirm(
                    this,
                    matches,
-                   "Reconcile Inspector local edit");
+                   context);
     }
 
     private void ToggleReconcileInspectorMaximized()
