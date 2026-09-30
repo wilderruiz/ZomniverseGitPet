@@ -39,6 +39,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     private Button? _validateCandidateButton;
     private Button? _acceptCandidateButton;
     private Button? _cancelCandidateButton;
+    private Button? _stopValidationButton;
     private Button? _activityButton;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
@@ -104,6 +105,7 @@ internal sealed class ReconcileInspectorPanel : Panel
 
     public event EventHandler? ActivityRequested;
     public event EventHandler? MaximizeRequested;
+    public Func<string, bool>? SensitivePathApproval { get; set; }
     public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditValidateRequested;
     public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditWriteRequested;
     public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditCommitRequested;
@@ -111,6 +113,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     public event EventHandler<ReconcileRemoteEditRequestEventArgs>? RemoteEditPrepareRequested;
     public event EventHandler? RemoteEditSendRequested;
     public event EventHandler? RemoteEditDiscardRequested;
+    public event EventHandler? ValidationCancelRequested;
     public event EventHandler<ReconcileMergedCandidateRequestEventArgs>? MergedCandidateValidateRequested;
     public event EventHandler<ReconcileMergedCandidateRequestEventArgs>? MergedCandidateAcceptRequested;
 
@@ -338,6 +341,16 @@ internal sealed class ReconcileInspectorPanel : Panel
         _cancelCandidateButton.Visible = false;
         _cancelCandidateButton.Click += (_, _) => CancelCandidateEdit();
 
+        _stopValidationButton = MakeButton("Stop check");
+        _stopValidationButton.Visible = false;
+        _stopValidationButton.Click += (_, _) =>
+        {
+            _stopValidationButton.Enabled = false;
+            _footer.ForeColor = GuardianTheme.Reconcile;
+            _footer.Text = "Stopping validation… draft is preserved.";
+            ValidationCancelRequested?.Invoke(this, EventArgs.Empty);
+        };
+
         _maximizeButton = MakeButton("Max ⛶");
         _maximizeButton.Click += (_, _) => MaximizeRequested?.Invoke(this, EventArgs.Empty);
 
@@ -361,6 +374,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         actions.Controls.Add(_validateCandidateButton);
         actions.Controls.Add(_acceptCandidateButton);
         actions.Controls.Add(_cancelCandidateButton);
+        actions.Controls.Add(_stopValidationButton);
         actions.Controls.Add(_maximizeButton);
         actions.Controls.Add(_activityButton);
 
@@ -737,6 +751,21 @@ internal sealed class ReconcileInspectorPanel : Panel
                     _candidatePinnedRemoteSha,
                     _candidateGeneratedText,
                     _rightBody.Text)));
+    }
+
+    public void SetValidationRunning(bool running, string? message = null)
+    {
+        if (_stopValidationButton is not null)
+        {
+            _stopValidationButton.Visible = running;
+            _stopValidationButton.Enabled = running;
+        }
+
+        if (running && !string.IsNullOrWhiteSpace(message))
+        {
+            _footer.ForeColor = GuardianTheme.Reconcile;
+            _footer.Text = message;
+        }
     }
 
     public void SetCandidateBusy(bool busy, string? message = null)
@@ -1241,6 +1270,12 @@ internal sealed class ReconcileInspectorPanel : Panel
         menu.Items.Add(item);
     }
 
+    private bool ConfirmSensitiveCopy()
+    {
+        if (_sourceModel is null) return false;
+        return SensitivePathApproval?.Invoke(_sourceModel.RelativePath) ?? true;
+    }
+
     private void CopySelectedExact()
     {
         if (_sourceModel is null)
@@ -1268,6 +1303,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
+        if (!ConfirmSensitiveCopy()) return;
         SetClipboard(box.SelectedText, "Selected exact source copied.");
     }
 
@@ -1285,6 +1321,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
+        if (!ConfirmSensitiveCopy()) return;
         SetClipboard(text, $"Changed raw source copied from {source.Role}. No Pretty formatting included.");
     }
 
@@ -1299,6 +1336,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
+        if (!ConfirmSensitiveCopy()) return;
         SetClipboard(
             source.Text,
             $"Whole {source.Role} file copied from raw backing source.");
@@ -1312,6 +1350,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
+        if (!ConfirmSensitiveCopy()) return;
         SetClipboard(
             ReconcileCopyExport.BuildCodeOnlyMarkdown(_sourceModel),
             "BASE / LOCAL / REMOTE code-only Markdown copied from raw backing source.");
@@ -1331,6 +1370,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
+        if (!ConfirmSensitiveCopy()) return;
         SetClipboard(
             ReconcileCopyExport.BuildComparison(_sourceModel, _selectedView),
             "Current raw source comparison copied.");
@@ -1344,6 +1384,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
+        if (!ConfirmSensitiveCopy()) return;
         SetClipboard(
             ReconcileCopyExport.BuildEverythingMarkdown(
                 _sourceModel,
@@ -1359,6 +1400,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             return;
         }
 
+        if (!ConfirmSensitiveCopy()) return;
         SetClipboard(
             ReconcileCopyExport.BuildEverythingPlainText(
                 _sourceModel,
