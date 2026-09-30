@@ -1,6 +1,6 @@
 # ZGit Pet — Reconcile Inspector Implementation Plan
 
-**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–5 COMPLETE / PHASE 6 CODE COMPLETE, BUILD + LOCAL-EDIT SMOKE PENDING / PHASE 7 NEXT  
+**Status:** 🟡 IMPLEMENTATION ACTIVE — PHASES 1–6 COMPLETE / PHASE 7 CODE COMPLETE, BUILD + ISOLATED REMOTE-EDIT SMOKE PENDING / PHASE 8 NEXT  
 **Parent workflow:** `docs/user/RECONCILIATION.md`  
 **Related architecture:** `docs/developer/UI_ARCHITECTURE.md`  
 **Safety contract:** `docs/safety/RECONCILIATION_SAFETY.md`  
@@ -19,8 +19,8 @@
 - ✅ **Phase 4 — Change-Shape Analysis + Merged Preview** — **CORE COMPLETE / REAL SUMMARY + CLEAN MERGED PREVIEW SMOKED.** A real Millenova `BOTH SIDES` file reports `INDEPENDENT CHANGES`, `Overlap: NO`, and `CLEAN THREE-WAY MERGE` while preserving pinned BASE / LOCAL / REMOTE identities and leaving repository state untouched.
 - ✅ **Phase 4A — Decision-First Reconcile Summary UX** — **COMPLETE / REAL UI SMOKED.** The real Millenova Inspector now surfaces review status, change relationship, overlap, and merged-preview evidence before secondary source/provenance detail.
 - ✅ **Phase 5 — Copy Actions + “Copy Everything” Export** — **COMPLETE / REAL MENU + COPY LIFECYCLE SMOKED.** The Copy menu can be opened/dismissed/reopened safely and exports use raw backing source.
-- 🟡 **Phase 6 — Edit LOCAL Before Reconciliation** — **CODE COMPLETE / BUILD + REAL LOCAL-EDIT SMOKE PENDING.** LOCAL can be edited in Exact mode, safety-validated, written as a working-tree change, or committed as one exact-path local correction before reconciliation.
-- ❌ **Phase 7 — Edit REMOTE Before Reconcile** — edit an isolated worktree based on the inspected remote commit, validate and commit there, then permit only an explicit fast-forward remote correction when the remote has not moved.
+- ✅ **Phase 6 — Edit LOCAL Before Reconciliation** — **COMPLETE / REAL UI SMOKED.** Edit local is visible on valid LOCAL snapshots and the Exact-mode correction workflow is available without rewriting history.
+- 🟡 **Phase 7 — Edit REMOTE** — **CODE COMPLETE / BUILD + ISOLATED REMOTE-EDIT SMOKE PENDING.** REMOTE edits prepare a one-file correction commit in an isolated temporary worktree/branch, then require a separate live-tip-checked normal push.
 - ❌ **Phase 8 — Editable MERGED CANDIDATE** — keep generated merge output read-only by default, allow an explicit editable candidate, validate it, and apply it only as the final reconciliation result after approval.
 - ❌ **Phase 9 — Validation + Race / Safety Hardening** — syntax/structure checks, configured project tests, remote-moved detection, immutable original snapshots, cancellation, cleanup, audit events, and no-force-push guarantees.
 - ❌ **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — keyboard flow, maximized editor polish, accessibility, large-file safeguards, regression tests, documentation updates, and release readiness.
@@ -980,9 +980,32 @@ Implement:
 
 ---
 
-### ❌ Phase 7 — Edit REMOTE
+### 🟡 Phase 7 — Edit REMOTE
 
-**Status:** NOT STARTED
+**Status:** CODE COMPLETE / BUILD + ISOLATED REMOTE-EDIT SMOKE PENDING
+
+Implemented in this slice:
+
+- added **Edit remote** beside Edit local whenever the pinned REMOTE file exists;
+- REMOTE editing locks the Inspector to LOCAL ↔ REMOTE, forces **Exact**, and makes only the right REMOTE pane editable;
+- draft edits remain memory-only until **Prepare remote** is explicitly confirmed;
+- **Validate edit** checks scope/text/origin/pinned object plus the live online branch tip with `git ls-remote`;
+- if live REMOTE no longer equals the inspected REMOTE SHA, preparation stops before any worktree/commit exists;
+- **Prepare remote** creates a uniquely named OS-temp worktree + temporary local branch rooted at the pinned REMOTE SHA;
+- only the selected file is written/staged and the staged boundary is verified before creating the correction commit;
+- primary working tree, primary branch, local HEAD, and local source remain untouched;
+- prepared state is explicit: correction commit exists locally in isolation but is **NOT SENT**;
+- **Send remote** rechecks the live remote SHA immediately before Send;
+- moved REMOTE blocks Send and preserves the prepared correction for discard/review;
+- the correction must descend from the pinned remote SHA;
+- Send uses a normal `git push origin <correction-sha>:refs/heads/<branch>`; there is no force or force-with-lease path;
+- a race after the explicit tip check is still protected by the remote's normal non-fast-forward rejection;
+- success verifies the online SHA, refreshes `origin/<branch>`, removes the temp worktree, deletes the temp local branch, and reloads the Inspector;
+- **Discard remote** removes only temporary local worktree/branch state and never updates the remote;
+- Guardian shutdown best-effort-cleans any outstanding prepared session;
+- regression coverage uses a real local bare origin and proves prepare/send/cleanup while primary HEAD/file remain unchanged.
+
+Remaining Phase 7 gate: build/test locally. Safe real smoke: **Edit remote → harmless draft → Validate edit → Cancel**, then **Prepare remote → Discard remote**; neither path changes GitHub. Only test **Send remote** with a correction you genuinely want published, because that action intentionally updates the online branch.
 
 Implement:
 

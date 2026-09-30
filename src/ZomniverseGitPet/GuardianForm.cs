@@ -47,6 +47,8 @@ public sealed class GuardianForm : Form
     private Panel? _activityPanel;
     private Form? _reconcileInspectorWindow;
     private Control? _reconcileInspectorHome;
+    private readonly ReconcileRemoteEditService _reconcileRemoteEditService;
+    private ReconcileRemoteEditSession? _reconcileRemoteEditSession;
 
     private readonly ToolTip _toolTips = new()
     {
@@ -87,6 +89,7 @@ public sealed class GuardianForm : Form
         _config = config;
         _configStore = configStore;
         _git = git;
+        _reconcileRemoteEditService = new ReconcileRemoteEditService(_git);
         _audit = audit;
         _chooseRepository = chooseRepository;
 
@@ -695,6 +698,14 @@ public sealed class GuardianForm : Form
             await WriteReconcileLocalEditAsync(e);
         _reconcileInspector.LocalEditCommitRequested += async (_, e) =>
             await CommitReconcileLocalEditAsync(e);
+        _reconcileInspector.RemoteEditValidateRequested += async (_, e) =>
+            await ValidateReconcileRemoteEditAsync(e);
+        _reconcileInspector.RemoteEditPrepareRequested += async (_, e) =>
+            await PrepareReconcileRemoteEditAsync(e);
+        _reconcileInspector.RemoteEditSendRequested += async (_, _) =>
+            await SendReconcileRemoteEditAsync();
+        _reconcileInspector.RemoteEditDiscardRequested += async (_, _) =>
+            await DiscardReconcileRemoteEditAsync();
 
         host.Controls.Add(_activityPanel);
         host.Controls.Add(_comparisonPanel);
@@ -2630,6 +2641,172 @@ public sealed class GuardianForm : Form
         }
     }
 
+    private async Task ValidateReconcileRemoteEditAsync(
+        ReconcileRemoteEditRequestEventArgs e)
+    {
+        if (!HasRepository()) return;
+
+        _reconcileInspector.SetRemoteEditBusy(true, "Validating live REMOTE tip and draft…");
+        try
+        {
+            var result = await _reconcileRemoteEditService.ValidateAsync(
+                _config.RepositoryPath!, e.Draft, CancellationToken.None);
+            _reconcileInspector.SetRemoteEditFeedback(
+                result.Success
+                    ? "REMOTE edit validation passed · live tip still matches the inspected REMOTE SHA."
+                    : result.Message,
+                result.Success);
+        }
+        catch (Exception ex)
+        {
+            _reconcileInspector.SetRemoteEditFeedback("REMOTE validation failed: " + ex.Message, false);
+        }
+    }
+
+    private async Task PrepareReconcileRemoteEditAsync(
+        ReconcileRemoteEditRequestEventArgs e)
+    {
+        if (!HasRepository()) return;
+
+        using var confirm = new GuardianConfirmDialog(
+            "Prepare remote correction",
+            "PREPARE REMOTE CORRECTION?",
+            $"Create an isolated correction commit for:\r\n\r\n{e.Draft.RelativePath}\r\n\r\n" +
+            "GitPet will create a temporary worktree/branch from the inspected REMOTE SHA and commit only this file there.\r\n\r\n" +
+            "Your primary working tree and branch will not change. Nothing is sent until you separately choose Send remote.",
+            "Prepare remote",
+            "Cancel");
+        if (confirm.ShowDialog(this) != DialogResult.Yes) return;
+        if (!ConfirmReconcileEditSensitivePath(e.Draft.RelativePath)) return;
+
+        _reconcileInspector.SetRemoteEditBusy(true, "Preparing isolated REMOTE correction commit…");
+        try
+        {
+            if (!await EnsureGitIdentityAsync(CancellationToken.None))
+            {
+                _reconcileInspector.SetRemoteEditFeedback(
+                    "REMOTE preparation cancelled while Git identity was being configured.", false);
+                return;
+            }
+
+            var result = await _reconcileRemoteEditService.PrepareCommitAsync(
+                _config.RepositoryPath!, e.Draft, CancellationToken.None);
+            if (!result.Success || result.Session is null)
+            {
+                _reconcileInspector.SetRemoteEditFeedback(result.Message, false);
+                return;
+            }
+
+            _reconcileRemoteEditSession = result.Session;
+            await _audit.WriteAsync("reconcile_inspector_remote_edit_prepared", new
+            {
+                file = e.Draft.RelativePath,
+                branch = e.Draft.Branch,
+                pinnedRemoteCommit = e.Draft.PinnedRemoteCommitSha,
+                correctionCommit = result.Session.CorrectionCommitSha
+            });
+            _reconcileInspector.SetRemotePrepared(result.Session.CorrectionCommitSha);
+        }
+        catch (Exception ex)
+        {
+            _reconcileInspector.SetRemoteEditFeedback("REMOTE preparation failed: " + ex.Message, false);
+        }
+    }
+
+    private async Task SendReconcileRemoteEditAsync()
+    {
+        if (_reconcileRemoteEditSession is null)
+        {
+            _reconcileInspector.SetRemoteEditFeedback("No prepared REMOTE correction is available.", false);
+            return;
+        }
+
+        var session = _reconcileRemoteEditSession;
+        using var confirm = new GuardianConfirmDialog(
+            "Send remote correction",
+            "SEND REMOTE CORRECTION?",
+            $"Send the prepared correction to origin/{session.Branch}?\r\n\r\n" +
+            $"Pinned REMOTE: {session.PinnedRemoteCommitSha}\r\n" +
+            $"Correction:    {session.CorrectionCommitSha}\r\n\r\n" +
+            "GitPet will re-read the live remote tip immediately before sending. If REMOTE moved, Send is blocked.\r\n\r\n" +
+            "This uses a normal non-force push.",
+            "Send remote",
+            "Cancel");
+        if (confirm.ShowDialog(this) != DialogResult.Yes) return;
+
+        _reconcileInspector.SetRemoteEditBusy(true, "Rechecking live REMOTE tip before Send…");
+        try
+        {
+            var result = await _reconcileRemoteEditService.SendAsync(session, CancellationToken.None);
+            if (!result.Success)
+            {
+                _reconcileInspector.SetRemoteEditFeedback(result.Message, false);
+                return;
+            }
+
+            _reconcileRemoteEditSession = null;
+            await _audit.WriteAsync("reconcile_inspector_remote_edit_sent", new
+            {
+                file = session.RelativePath,
+                branch = session.Branch,
+                previousRemoteCommit = session.PinnedRemoteCommitSha,
+                commit = session.CorrectionCommitSha,
+                forcePush = false
+            });
+
+            ReportActivity(
+                $"REMOTE correction sent ✓\n\n{session.RelativePath}\n{session.CorrectionCommitSha}\n\n" +
+                "Normal fast-forward push · no force-push · primary working tree untouched.",
+                GuardianActivityKind.Success);
+
+            _reconcileInspector.EndRemotePreparedState(
+                "REMOTE correction sent ✓ · temporary worktree cleaned up · refreshing Inspector.", true);
+
+            await RefreshRepositoryViewAsync(CancellationToken.None);
+            await GuardianWorkboardRuntime.RefreshNowAsync();
+            await ShowReconcileInspectorAsync(
+                new GuardianWorkboardRow("BOTH SIDES", session.RelativePath));
+        }
+        catch (Exception ex)
+        {
+            _reconcileInspector.SetRemoteEditFeedback("REMOTE Send failed: " + ex.Message, false);
+        }
+    }
+
+    private async Task DiscardReconcileRemoteEditAsync()
+    {
+        if (_reconcileRemoteEditSession is null)
+        {
+            _reconcileInspector.EndRemotePreparedState("Prepared REMOTE state cleared.", true);
+            return;
+        }
+
+        var session = _reconcileRemoteEditSession;
+        using var confirm = new GuardianConfirmDialog(
+            "Discard remote correction",
+            "DISCARD PREPARED REMOTE CORRECTION?",
+            "Remove the temporary worktree and temporary local branch?\r\n\r\nNothing has been sent online.",
+            "Discard remote",
+            "Keep");
+        if (confirm.ShowDialog(this) != DialogResult.Yes) return;
+
+        _reconcileInspector.SetRemoteEditBusy(true, "Cleaning isolated REMOTE worktree…");
+        await _reconcileRemoteEditService.CleanupAsync(session, CancellationToken.None);
+        _reconcileRemoteEditSession = null;
+
+        await _audit.WriteAsync("reconcile_inspector_remote_edit_discarded", new
+        {
+            file = session.RelativePath,
+            branch = session.Branch,
+            correctionCommit = session.CorrectionCommitSha
+        });
+
+        _reconcileInspector.EndRemotePreparedState(
+            "Prepared REMOTE correction discarded. Online branch and primary working tree unchanged.", true);
+        await ShowReconcileInspectorAsync(
+            new GuardianWorkboardRow("BOTH SIDES", session.RelativePath));
+    }
+
     private async Task ValidateReconcileLocalEditAsync(
         ReconcileLocalEditRequestEventArgs e)
     {
@@ -2945,6 +3122,18 @@ public sealed class GuardianForm : Form
             _comparisonLoad?.Dispose();
             _reconcileInspectorLoad?.Cancel();
             _reconcileInspectorLoad?.Dispose();
+            if (_reconcileRemoteEditSession is not null)
+            {
+                try
+                {
+                    _reconcileRemoteEditService
+                        .CleanupAsync(_reconcileRemoteEditSession, CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch { }
+                _reconcileRemoteEditSession = null;
+            }
             if (_reconcileInspectorWindow is { IsDisposed: false } window) window.Close();
             _repositoryBranchMenu?.Dispose();
             _repositoryBranchMenu = null;

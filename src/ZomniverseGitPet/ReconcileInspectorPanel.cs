@@ -27,10 +27,14 @@ internal sealed class ReconcileInspectorPanel : Panel
     private Button? _copyEverythingButton;
     private ContextMenuStrip? _copyMenu;
     private Button? _editLocalButton;
+    private Button? _editRemoteButton;
     private Button? _validateEditButton;
     private Button? _writeEditButton;
     private Button? _commitEditButton;
     private Button? _cancelEditButton;
+    private Button? _prepareRemoteButton;
+    private Button? _sendRemoteButton;
+    private Button? _discardRemoteButton;
     private Button? _activityButton;
     private Button? _maximizeButton;
     private readonly RichTextScrollLink _scrollLink;
@@ -42,6 +46,11 @@ internal sealed class ReconcileInspectorPanel : Panel
     private string _localEditOriginalEditorText = "";
     private string _localEditOriginalRawText = "";
     private string _localEditPinnedSha = "";
+    private bool _remoteEditMode;
+    private bool _remotePrepared;
+    private string _remoteEditOriginalEditorText = "";
+    private string _remoteEditOriginalRawText = "";
+    private string _remoteEditPinnedSha = "";
 
     public ReconcileInspectorPanel()
     {
@@ -66,6 +75,11 @@ internal sealed class ReconcileInspectorPanel : Panel
             if (_localEditMode)
                 UpdateLocalEditDirtyState();
         };
+        _rightBody.TextChanged += (_, _) =>
+        {
+            if (_remoteEditMode && !_remotePrepared)
+                UpdateRemoteEditDirtyState();
+        };
 
         _summaryPanel.Visible = false;
         Controls.Add(_split);
@@ -82,6 +96,10 @@ internal sealed class ReconcileInspectorPanel : Panel
     public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditValidateRequested;
     public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditWriteRequested;
     public event EventHandler<ReconcileLocalEditRequestEventArgs>? LocalEditCommitRequested;
+    public event EventHandler<ReconcileRemoteEditRequestEventArgs>? RemoteEditValidateRequested;
+    public event EventHandler<ReconcileRemoteEditRequestEventArgs>? RemoteEditPrepareRequested;
+    public event EventHandler? RemoteEditSendRequested;
+    public event EventHandler? RemoteEditDiscardRequested;
 
     public void SetMaximizedMode(bool maximized)
     {
@@ -118,7 +136,7 @@ internal sealed class ReconcileInspectorPanel : Panel
             $"Pinned read-only snapshots · BASE {model.Base.ShortSha} · LOCAL {model.Local.ShortSha} · " +
             $"REMOTE {model.Remote.ShortSha} · Pretty view is display-only; Exact preserves source whitespace.";
         _summaryPanel.ShowModel(model, WorkboardDetail());
-        RefreshLocalEditActionState();
+        RefreshEditActionState();
         SelectView(_selectedView);
     }
 
@@ -140,6 +158,11 @@ internal sealed class ReconcileInspectorPanel : Panel
         {
             _editLocalButton.Enabled = false;
             _editLocalButton.Visible = false;
+        }
+        if (_editRemoteButton is not null)
+        {
+            _editRemoteButton.Enabled = false;
+            _editRemoteButton.Visible = false;
         }
     }
 
@@ -241,9 +264,17 @@ internal sealed class ReconcileInspectorPanel : Panel
         _editLocalButton.Enabled = false;
         _editLocalButton.Click += (_, _) => BeginLocalEdit();
 
+        _editRemoteButton = MakeButton("Edit remote");
+        _editRemoteButton.Enabled = false;
+        _editRemoteButton.Click += (_, _) => BeginRemoteEdit();
+
         _validateEditButton = MakeButton("Validate edit");
         _validateEditButton.Visible = false;
-        _validateEditButton.Click += (_, _) => RaiseLocalEdit(LocalEditValidateRequested);
+        _validateEditButton.Click += (_, _) =>
+        {
+            if (_remoteEditMode) RaiseRemoteEdit(RemoteEditValidateRequested);
+            else RaiseLocalEdit(LocalEditValidateRequested);
+        };
 
         _writeEditButton = MakeButton("Write local");
         _writeEditButton.Visible = false;
@@ -255,7 +286,23 @@ internal sealed class ReconcileInspectorPanel : Panel
 
         _cancelEditButton = MakeButton("Cancel edit");
         _cancelEditButton.Visible = false;
-        _cancelEditButton.Click += (_, _) => CancelLocalEdit();
+        _cancelEditButton.Click += (_, _) =>
+        {
+            if (_remoteEditMode) CancelRemoteEdit();
+            else CancelLocalEdit();
+        };
+
+        _prepareRemoteButton = MakeButton("Prepare remote");
+        _prepareRemoteButton.Visible = false;
+        _prepareRemoteButton.Click += (_, _) => RaiseRemoteEdit(RemoteEditPrepareRequested);
+
+        _sendRemoteButton = MakeButton("Send remote");
+        _sendRemoteButton.Visible = false;
+        _sendRemoteButton.Click += (_, _) => RemoteEditSendRequested?.Invoke(this, EventArgs.Empty);
+
+        _discardRemoteButton = MakeButton("Discard remote");
+        _discardRemoteButton.Visible = false;
+        _discardRemoteButton.Click += (_, _) => RemoteEditDiscardRequested?.Invoke(this, EventArgs.Empty);
 
         _maximizeButton = MakeButton("Max ⛶");
         _maximizeButton.Click += (_, _) => MaximizeRequested?.Invoke(this, EventArgs.Empty);
@@ -268,10 +315,14 @@ internal sealed class ReconcileInspectorPanel : Panel
         actions.Controls.Add(_copyButton);
         actions.Controls.Add(_copyEverythingButton);
         actions.Controls.Add(_editLocalButton);
+        actions.Controls.Add(_editRemoteButton);
         actions.Controls.Add(_validateEditButton);
         actions.Controls.Add(_writeEditButton);
         actions.Controls.Add(_commitEditButton);
         actions.Controls.Add(_cancelEditButton);
+        actions.Controls.Add(_prepareRemoteButton);
+        actions.Controls.Add(_sendRemoteButton);
+        actions.Controls.Add(_discardRemoteButton);
         actions.Controls.Add(_maximizeButton);
         actions.Controls.Add(_activityButton);
 
@@ -372,7 +423,8 @@ internal sealed class ReconcileInspectorPanel : Panel
             button.FlatAppearance.BorderColor = selected ? GuardianTheme.Violet : GuardianTheme.Border;
         }
 
-        if (_localEditMode && view != ReconcileInspectorView.LocalRemote)
+        if ((_localEditMode || _remoteEditMode) &&
+            view != ReconcileInspectorView.LocalRemote)
             return;
 
         var summarySelected = view == ReconcileInspectorView.Summary;
@@ -542,6 +594,163 @@ internal sealed class ReconcileInspectorPanel : Panel
             prettyView);
     }
 
+    private void BeginRemoteEdit()
+    {
+        if (_sourceModel is null || !_sourceModel.Remote.Exists || _selection is null)
+        {
+            SetRemoteEditFeedback("REMOTE source is not available for editing.", false);
+            return;
+        }
+
+        _prettyView = false;
+        if (_prettyButton is not null) _prettyButton.Text = "Exact";
+        SelectView(ReconcileInspectorView.LocalRemote);
+
+        _remoteEditMode = true;
+        _remotePrepared = false;
+        _remoteEditOriginalRawText = _sourceModel.Remote.Text;
+        _remoteEditPinnedSha = _sourceModel.Remote.CommitSha;
+        _remoteEditOriginalEditorText = _rightBody.Text;
+        _rightBody.ReadOnly = false;
+        _rightTitle.Text = "EDITING REMOTE · " + _rightTitle.Text;
+        SetRemoteEditUi(true, false);
+        UpdateRemoteEditDirtyState();
+        _rightBody.Focus();
+    }
+
+    private void CancelRemoteEdit()
+    {
+        if (!_remoteEditMode || _remotePrepared) return;
+
+        if (!string.Equals(_rightBody.Text, _remoteEditOriginalEditorText, StringComparison.Ordinal))
+        {
+            using var confirm = new GuardianConfirmDialog(
+                "Cancel remote edit",
+                "DISCARD REMOTE DRAFT?",
+                "Discard the in-Inspector REMOTE draft?\r\n\r\nNo worktree, commit, or online change has been created.",
+                "Discard draft",
+                "Keep editing");
+            if (confirm.ShowDialog(FindForm()) != DialogResult.Yes) return;
+        }
+
+        EndRemoteEditMode();
+        SelectView(ReconcileInspectorView.LocalRemote);
+        _footer.ForeColor = GuardianTheme.FaintInk;
+        _footer.Text = "Remote edit cancelled. Primary repository and online branch unchanged.";
+    }
+
+    private void RaiseRemoteEdit(EventHandler<ReconcileRemoteEditRequestEventArgs>? handler)
+    {
+        if (!_remoteEditMode || _remotePrepared || _sourceModel is null || _selection is null) return;
+
+        if (string.Equals(_rightBody.Text, _remoteEditOriginalEditorText, StringComparison.Ordinal))
+        {
+            SetRemoteEditFeedback("No REMOTE source changes are present in the editor.", false);
+            return;
+        }
+
+        handler?.Invoke(
+            this,
+            new ReconcileRemoteEditRequestEventArgs(
+                _selection,
+                new ReconcileRemoteEditDraft(
+                    _sourceModel.RelativePath,
+                    _sourceModel.Branch,
+                    _remoteEditPinnedSha,
+                    _remoteEditOriginalRawText,
+                    _rightBody.Text)));
+    }
+
+    public void SetRemoteEditBusy(bool busy, string? message = null)
+    {
+        if (!_remoteEditMode) return;
+        if (_validateEditButton is not null) _validateEditButton.Enabled = !busy && !_remotePrepared;
+        if (_prepareRemoteButton is not null) _prepareRemoteButton.Enabled = !busy && !_remotePrepared;
+        if (_cancelEditButton is not null) _cancelEditButton.Enabled = !busy && !_remotePrepared;
+        if (_sendRemoteButton is not null) _sendRemoteButton.Enabled = !busy && _remotePrepared;
+        if (_discardRemoteButton is not null) _discardRemoteButton.Enabled = !busy && _remotePrepared;
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            _footer.ForeColor = GuardianTheme.Reconcile;
+            _footer.Text = message;
+        }
+    }
+
+    public void SetRemoteEditFeedback(string message, bool success)
+    {
+        _footer.ForeColor = success ? GuardianTheme.Healthy : GuardianTheme.Warning;
+        _footer.Text = message;
+        SetRemoteEditBusy(false);
+    }
+
+    public void SetRemotePrepared(string correctionCommitSha)
+    {
+        if (!_remoteEditMode) return;
+        _remotePrepared = true;
+        _rightBody.ReadOnly = true;
+        SetRemoteEditUi(true, true);
+        _footer.ForeColor = GuardianTheme.Healthy;
+        _footer.Text =
+            $"REMOTE CORRECTION PREPARED · {ShortSha(correctionCommitSha)} · isolated worktree · NOT SENT";
+    }
+
+    public void EndRemotePreparedState(string message, bool success)
+    {
+        EndRemoteEditMode();
+        _footer.ForeColor = success ? GuardianTheme.Healthy : GuardianTheme.Warning;
+        _footer.Text = message;
+    }
+
+    private void UpdateRemoteEditDirtyState()
+    {
+        if (!_remoteEditMode || _remotePrepared) return;
+        var dirty = !string.Equals(_rightBody.Text, _remoteEditOriginalEditorText, StringComparison.Ordinal);
+        if (_validateEditButton is not null) _validateEditButton.Enabled = dirty;
+        if (_prepareRemoteButton is not null) _prepareRemoteButton.Enabled = dirty;
+
+        _footer.ForeColor = dirty ? GuardianTheme.Reconcile : GuardianTheme.FaintInk;
+        _footer.Text = dirty
+            ? "REMOTE DRAFT MODIFIED · memory only · no worktree · no commit · not sent"
+            : "Editing pinned REMOTE source · no draft changes yet.";
+    }
+
+    private void SetRemoteEditUi(bool editing, bool prepared)
+    {
+        foreach (var (view, button) in _viewButtons)
+            button.Enabled = !editing || view == ReconcileInspectorView.LocalRemote;
+
+        if (_scrollLinkButton is not null) _scrollLinkButton.Visible = !editing;
+        if (_prettyButton is not null) _prettyButton.Visible = !editing;
+        if (_copyButton is not null) _copyButton.Visible = !editing;
+        if (_copyEverythingButton is not null) _copyEverythingButton.Visible = !editing;
+        if (_editLocalButton is not null) _editLocalButton.Visible = !editing;
+        if (_editRemoteButton is not null) _editRemoteButton.Visible = !editing;
+        if (_validateEditButton is not null) _validateEditButton.Visible = editing && !prepared;
+        if (_writeEditButton is not null) _writeEditButton.Visible = false;
+        if (_commitEditButton is not null) _commitEditButton.Visible = false;
+        if (_cancelEditButton is not null) _cancelEditButton.Visible = editing && !prepared;
+        if (_prepareRemoteButton is not null) _prepareRemoteButton.Visible = editing && !prepared;
+        if (_sendRemoteButton is not null) _sendRemoteButton.Visible = editing && prepared;
+        if (_discardRemoteButton is not null) _discardRemoteButton.Visible = editing && prepared;
+        if (_activityButton is not null) _activityButton.Enabled = !editing;
+    }
+
+    private void EndRemoteEditMode()
+    {
+        _rightBody.ReadOnly = true;
+        _remoteEditMode = false;
+        _remotePrepared = false;
+        _remoteEditOriginalEditorText = "";
+        _remoteEditOriginalRawText = "";
+        _remoteEditPinnedSha = "";
+        SetRemoteEditUi(false, false);
+        RefreshEditActionState();
+    }
+
+    private static string ShortSha(string sha) =>
+        string.IsNullOrWhiteSpace(sha) ? "?" : sha[..Math.Min(8, sha.Length)];
+
     private void BeginLocalEdit()
     {
         if (_sourceModel is null || !_sourceModel.Local.Exists || _selection is null)
@@ -669,27 +878,36 @@ internal sealed class ReconcileInspectorPanel : Panel
         if (_prettyButton is not null) _prettyButton.Visible = !editing;
         if (_copyButton is not null) _copyButton.Visible = !editing;
         if (_copyEverythingButton is not null) _copyEverythingButton.Visible = !editing;
-        RefreshLocalEditActionState();
+        if (_editRemoteButton is not null) _editRemoteButton.Visible = !editing;
+        RefreshEditActionState();
 
         if (_validateEditButton is not null) _validateEditButton.Visible = editing;
         if (_writeEditButton is not null) _writeEditButton.Visible = editing;
         if (_commitEditButton is not null) _commitEditButton.Visible = editing;
         if (_cancelEditButton is not null) _cancelEditButton.Visible = editing;
+        if (_prepareRemoteButton is not null) _prepareRemoteButton.Visible = false;
+        if (_sendRemoteButton is not null) _sendRemoteButton.Visible = false;
+        if (_discardRemoteButton is not null) _discardRemoteButton.Visible = false;
         if (_activityButton is not null) _activityButton.Enabled = !editing;
     }
 
-    private void RefreshLocalEditActionState()
+    private void RefreshEditActionState()
     {
-        if (_editLocalButton is null) return;
+        var idle = !_localEditMode && !_remoteEditMode && _sourceModel is not null;
 
-        var available =
-            !_localEditMode &&
-            _sourceModel is not null &&
-            _sourceModel.Local.Exists;
+        if (_editLocalButton is not null)
+        {
+            var available = idle && _sourceModel!.Local.Exists;
+            _editLocalButton.Visible = available;
+            _editLocalButton.Enabled = available;
+        }
 
-        _editLocalButton.Visible = available;
-        _editLocalButton.Enabled = available;
-
+        if (_editRemoteButton is not null)
+        {
+            var available = idle && _sourceModel!.Remote.Exists;
+            _editRemoteButton.Visible = available;
+            _editRemoteButton.Enabled = available;
+        }
     }
 
     private void EndLocalEditMode()
@@ -700,7 +918,7 @@ internal sealed class ReconcileInspectorPanel : Panel
         _localEditOriginalRawText = "";
         _localEditPinnedSha = "";
         SetLocalEditUi(editing: false);
-        RefreshLocalEditActionState();
+        RefreshEditActionState();
     }
 
     private void ResetLocalEditState()
@@ -710,8 +928,15 @@ internal sealed class ReconcileInspectorPanel : Panel
         _localEditOriginalEditorText = "";
         _localEditOriginalRawText = "";
         _localEditPinnedSha = "";
+        _rightBody.ReadOnly = true;
+        _remoteEditMode = false;
+        _remotePrepared = false;
+        _remoteEditOriginalEditorText = "";
+        _remoteEditOriginalRawText = "";
+        _remoteEditPinnedSha = "";
         SetLocalEditUi(editing: false);
-        RefreshLocalEditActionState();
+        SetRemoteEditUi(editing: false, prepared: false);
+        RefreshEditActionState();
     }
 
     private void ShowCopyMenu(Control anchor)

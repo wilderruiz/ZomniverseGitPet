@@ -1064,6 +1064,7 @@ await SavePreflightBatchRegression.RunAsync();
 await FileReviewRegression.RunAsync();
 await ReconcileInspectorSourceRegression.RunAsync();
 await ReconcileLocalEditRegression.RunAsync();
+await ReconcileRemoteEditRegression.RunAsync();
 await LongPathRegression.RunAsync();
 await WindowsFileLockRegression.RunAsync();
 
