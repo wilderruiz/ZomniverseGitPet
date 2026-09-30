@@ -2,6 +2,12 @@ using System.Runtime.InteropServices;
 
 namespace ZomniverseGitPet;
 
+internal readonly record struct RichTextScrollPosition(int X, int Y);
+
+internal readonly record struct RichTextScrollSnapshot(
+    RichTextScrollPosition Left,
+    RichTextScrollPosition Right);
+
 internal sealed class RichTextScrollLink : IDisposable
 {
     private const int WmUser = 0x0400;
@@ -24,6 +30,58 @@ internal sealed class RichTextScrollLink : IDisposable
     }
 
     public bool Enabled { get; set; } = true;
+
+    public RichTextScrollSnapshot Capture()
+    {
+        if (_disposed)
+            return default;
+
+        return new RichTextScrollSnapshot(
+            ReadPosition(_left),
+            ReadPosition(_right));
+    }
+
+    public void Restore(RichTextScrollSnapshot snapshot)
+    {
+        if (_disposed) return;
+
+        try
+        {
+            _syncing = true;
+            WritePosition(_left, snapshot.Left);
+            WritePosition(_right, snapshot.Right);
+        }
+        finally
+        {
+            _syncing = false;
+        }
+    }
+
+    private static RichTextScrollPosition ReadPosition(RichTextBox box)
+    {
+        if (!box.IsHandleCreated || box.IsDisposed)
+            return default;
+
+        var point = new NativePoint();
+        SendMessage(box.Handle, EmGetScrollPos, IntPtr.Zero, ref point);
+        return new RichTextScrollPosition(point.X, point.Y);
+    }
+
+    private static void WritePosition(
+        RichTextBox box,
+        RichTextScrollPosition position)
+    {
+        if (!box.IsHandleCreated || box.IsDisposed)
+            return;
+
+        var point = new NativePoint
+        {
+            X = Math.Max(0, position.X),
+            Y = Math.Max(0, position.Y)
+        };
+        SendMessage(box.Handle, EmSetScrollPos, IntPtr.Zero, ref point);
+        box.Invalidate();
+    }
 
     public void Dispose()
     {
