@@ -733,7 +733,7 @@ internal sealed class ReconcileInspectorPanel : Panel
     {
         try
         {
-            Clipboard.SetText(text ?? "");
+            Clipboard.SetDataObject(text ?? "", copy: true);
             _footer.ForeColor = GuardianTheme.Healthy;
             _footer.Text = success + " Clipboard uses raw source, not display decoration.";
         }

@@ -395,6 +395,48 @@ Check("reconcile changed-block copy uses raw requested lines only", () =>
     return copied == $"two{Environment.NewLine}four";
 });
 
+Check("reconcile copy everything Markdown is self-contained and raw", () =>
+{
+    var model = new ReconcileInspectorSourceModel(
+        "validator.php",
+        "BOTH SIDES",
+        "main",
+        false,
+        new ReconcileSourceSnapshot("BASE", "merge-base", "base123", "base123", "merge-base:validator.php", true, "<?php\n$base = 1;"),
+        new ReconcileSourceSnapshot("LOCAL", "HEAD", "local123", "local123", "HEAD:validator.php", true, "<?php\n$local = 2;"),
+        new ReconcileSourceSnapshot("REMOTE", "origin/main", "remote123", "remote12", "origin/main:validator.php", true, "<?php\n$remote = 3;"),
+        DiffLineMap.Empty,
+        DiffLineMap.Empty,
+        new ReconcileChangeAnalysis(
+            "INDEPENDENT CHANGES",
+            "MODIFIED EXISTING BLOCK — LOCAL",
+            "MODIFIED EXISTING BLOCK — REMOTE",
+            false,
+            1,
+            1,
+            "Different BASE locations."),
+        new ReconcileMergePreview(
+            true,
+            true,
+            false,
+            "<?php\n$local = 2;\n$remote = 3;",
+            "CLEAN THREE-WAY MERGE"));
+
+    var text = ReconcileCopyExport.BuildEverythingMarkdown(model, "Local and remote changed.");
+    var phpFence = new string('`', 3) + "php";
+    return text.Contains("# ZGit Pet Reconcile Inspector", StringComparison.Ordinal) &&
+           text.Contains("**Status:** REVIEW READY", StringComparison.Ordinal) &&
+           text.Contains("**Overlap:** NO OVERLAP DETECTED", StringComparison.Ordinal) &&
+           text.Contains("base123", StringComparison.Ordinal) &&
+           text.Contains("local123", StringComparison.Ordinal) &&
+           text.Contains("remote123", StringComparison.Ordinal) &&
+           text.Contains(phpFence, StringComparison.Ordinal) &&
+           text.Contains("$local = 2;", StringComparison.Ordinal) &&
+           text.Contains("$remote = 3;", StringComparison.Ordinal) &&
+           text.Contains("CLEAN THREE-WAY MERGE", StringComparison.Ordinal) &&
+           text.Contains("raw pinned Git source", StringComparison.Ordinal);
+});
+
 Check("reconcile summary promotes independent clean evidence", () =>
 {
     var analysis = new ReconcileChangeAnalysis(
