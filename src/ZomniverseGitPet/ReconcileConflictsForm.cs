@@ -3,28 +3,40 @@ namespace ZomniverseGitPet;
 internal enum ReconcileChoice
 {
     Local,
-    Online
+    Online,
+    Merged
 }
 
 internal sealed class ReconcileConflictsForm : Form
 {
     private const string LocalChoice = "Keep my local version";
     private const string OnlineChoice = "Keep online version";
+    private const string MergedChoice = "Use merged version";
+
     private readonly DataGridView _grid = new();
+    private readonly IReadOnlyDictionary<string, string> _mergedCandidates;
+    private readonly Dictionary<string, string> _resolvedMerged =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyDictionary<string, ReconcileChoice> Choices { get; private set; } =
         new Dictionary<string, ReconcileChoice>(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyDictionary<string, string> MergedContents => _resolvedMerged;
 
     public ReconcileConflictsForm(
         IReadOnlyList<string> conflicts,
         string? title = null,
         string? introText = null,
-        string? fileHeader = null)
+        string? fileHeader = null,
+        IReadOnlyDictionary<string, string>? mergedCandidates = null)
     {
+        _mergedCandidates = mergedCandidates ??
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         Text = title ?? "Reconcile changed files";
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(820, 560);
-        MinimumSize = new Size(680, 440);
+        Size = new Size(860, 580);
+        MinimumSize = new Size(700, 460);
         BackColor = GuardianTheme.Window;
         ForeColor = GuardianTheme.Ink;
         Font = new Font("Segoe UI", 9);
@@ -38,24 +50,28 @@ internal sealed class ReconcileConflictsForm : Form
             Padding = new Padding(18),
             BackColor = GuardianTheme.Window
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+
+        var defaultIntro =
+            "LOCAL + ONLINE CHANGED\r\n\r\n" +
+            "These files were changed differently in both places. Choose which complete file version GitPet should keep. " +
+            "When a text merge candidate is available you can also choose Use merged version; GitPet will open an editor and require all conflict markers to be resolved. " +
+            "Nothing will be sent online.";
 
         var intro = new Label
         {
             Dock = DockStyle.Fill,
-            Text = introText ??
-                   ("LOCAL + ONLINE CHANGED\r\n\r\n" +
-                    "These files were changed differently in both places. Choose which complete file version GitPet should keep. " +
-                    "Non-conflicting files are already being combined. Nothing will be sent online."),
+            Text = introText ?? defaultIntro,
             ForeColor = GuardianTheme.MutedInk,
             Font = new Font("Segoe UI", 9.5f),
             TextAlign = ContentAlignment.MiddleLeft
         };
 
         ConfigureGrid(fileHeader);
-        foreach (var conflict in conflicts) _grid.Rows.Add(conflict, null);
+        foreach (var conflict in conflicts)
+            AddConflictRow(conflict);
 
         var buttons = new FlowLayoutPanel
         {
@@ -140,40 +156,95 @@ internal sealed class ReconcileConflictsForm : Form
             FlatStyle = FlatStyle.Flat,
             DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton
         };
-        choiceColumn.Items.AddRange(LocalChoice, OnlineChoice);
 
         _grid.Columns.Add(fileColumn);
         _grid.Columns.Add(choiceColumn);
     }
 
+    private void AddConflictRow(string conflict)
+    {
+        var rowIndex = _grid.Rows.Add();
+        var row = _grid.Rows[rowIndex];
+        row.Cells["File"].Value = conflict;
+
+        var choice = new DataGridViewComboBoxCell
+        {
+            FlatStyle = FlatStyle.Flat,
+            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton
+        };
+        choice.Items.Add(LocalChoice);
+        choice.Items.Add(OnlineChoice);
+        if (_mergedCandidates.ContainsKey(conflict))
+            choice.Items.Add(MergedChoice);
+
+        row.Cells["Choice"] = choice;
+    }
+
     private void AcceptChoices()
     {
         var result = new Dictionary<string, ReconcileChoice>(StringComparer.OrdinalIgnoreCase);
+
         foreach (DataGridViewRow row in _grid.Rows)
         {
             var path = Convert.ToString(row.Cells["File"].Value) ?? "";
             var selected = Convert.ToString(row.Cells["Choice"].Value) ?? "";
             if (string.IsNullOrWhiteSpace(selected))
             {
-                using var choiceRequired = new GuardianConfirmDialog(
-                    "Choice required",
-                    "CHOOSE A VERSION TO KEEP",
-                    $"Select either your local version or the online version for:\r\n\r\n{path}",
-                    confirmText: "OK",
-                    cancelText: "",
-                    showCancel: false,
-                    dialogSize: new Size(640, 340));
-                choiceRequired.ShowDialog(this);
+                ShowChoiceRequired(path);
                 return;
             }
 
-            result[path] = selected == LocalChoice
-                ? ReconcileChoice.Local
-                : ReconcileChoice.Online;
+            if (selected == LocalChoice)
+            {
+                result[path] = ReconcileChoice.Local;
+                continue;
+            }
+
+            if (selected == OnlineChoice)
+            {
+                result[path] = ReconcileChoice.Online;
+                continue;
+            }
+
+            if (selected != MergedChoice ||
+                !_mergedCandidates.TryGetValue(path, out var generated))
+            {
+                ShowChoiceRequired(path);
+                return;
+            }
+
+            if (!_resolvedMerged.ContainsKey(path))
+            {
+                using var resolver = new ReconcileMergedConflictForm(path, generated);
+                if (resolver.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                _resolvedMerged[path] = resolver.MergedText;
+            }
+
+            result[path] = ReconcileChoice.Merged;
         }
 
         Choices = result;
         DialogResult = DialogResult.OK;
         Close();
+    }
+
+    private void ShowChoiceRequired(string path)
+    {
+        var mergedAvailable = _mergedCandidates.ContainsKey(path);
+        var allowed = mergedAvailable
+            ? "Select your local version, the online version, or Use merged version for:"
+            : "Select either your local version or the online version for:";
+
+        using var choiceRequired = new GuardianConfirmDialog(
+            "Choice required",
+            "CHOOSE A VERSION TO KEEP",
+            allowed + "\r\n\r\n" + path,
+            confirmText: "OK",
+            cancelText: "",
+            showCancel: false,
+            dialogSize: new Size(660, 360));
+        choiceRequired.ShowDialog(this);
     }
 }
