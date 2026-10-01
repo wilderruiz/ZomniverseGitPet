@@ -276,8 +276,11 @@ internal static class GuardianReconciliation
                     continue;
 
                 var text = File.ReadAllText(fullPath);
-                if (text.IndexOf('\0') >= 0)
+                if (text.IndexOf('\0') >= 0 ||
+                    !ReconcileMergedCandidateService.HasConflictMarkers(text))
+                {
                     continue;
+                }
 
                 result[relativePath] = text;
             }
