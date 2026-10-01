@@ -85,7 +85,7 @@ internal static class GuardianReconciliation
             $"Online updates: {snapshot.Behind}\r\n\r\n" +
             "GitPet will combine them on this PC and stop before creating the reconciliation save.\r\n" +
             "Nothing will be sent online.\r\n\r\n" +
-            "If the same file was changed differently in both places, GitPet will ask which complete file version to keep.",
+            "If the same text file was changed differently in both places, GitPet can keep LOCAL, keep ONLINE, or let you resolve the merged Git candidate before Save.",
             confirmText: "Reconcile",
             cancelText: "Not now");
 
