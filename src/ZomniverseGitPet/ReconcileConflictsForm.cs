@@ -167,17 +167,14 @@ internal sealed class ReconcileConflictsForm : Form
         var row = _grid.Rows[rowIndex];
         row.Cells["File"].Value = conflict;
 
-        var choice = new DataGridViewComboBoxCell
-        {
-            FlatStyle = FlatStyle.Flat,
-            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton
-        };
+        if (row.Cells["Choice"] is not DataGridViewComboBoxCell choice)
+            return;
+
+        choice.Items.Clear();
         choice.Items.Add(LocalChoice);
         choice.Items.Add(OnlineChoice);
         if (_mergedCandidates.ContainsKey(conflict))
             choice.Items.Add(MergedChoice);
-
-        row.Cells["Choice"] = choice;
     }
 
     private void AcceptChoices()
