@@ -1112,6 +1112,7 @@ await ReconcileInspectorSourceRegression.RunAsync();
 await ReconcileLocalEditRegression.RunAsync();
 await ReconcileRemoteEditRegression.RunAsync();
 await ReconcileMergedCandidateRegression.RunAsync();
+await ReconcileActiveMergedConflictRegression.RunAsync();
 await ReconcileValidationRegression.RunAsync();
 await LongPathRegression.RunAsync();
 await WindowsFileLockRegression.RunAsync();
