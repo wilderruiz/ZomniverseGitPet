@@ -119,7 +119,17 @@ The top-level Reconcile action remains explicit. GitPet uses:
 git merge --no-commit --no-ff origin/<branch>
 ```
 
-If unresolved files remain, the established per-file **Keep my local version / Keep online version** resolver is still available. The Inspector adds a more precise option for files you reviewed and edited before or during that process; it does not silently resolve the rest.
+If unresolved files remain, the per-file resolver now offers the choices that are actually safe for that path:
+
+- **Keep my local version**;
+- **Keep online version**;
+- **Use merged version** when GitPet can load a textual Git conflict candidate.
+
+Choosing **Use merged version** opens a dedicated side-by-side resolver. The generated Git candidate remains immutable on the left; the right side is editable. GitPet refuses to use that merged version until all `<<<<<<< / ======= / >>>>>>>` conflict blocks are removed. Accepting the resolved merged file writes and stages only that path inside the already-active `--no-commit` reconciliation. It does not create the reconciliation commit and does not Send anything.
+
+Binary/inaccessible/very-large conflict candidates do not expose the merged-text option and continue to use the established Local/Online whole-file choices.
+
+Standalone logical-project reconciliation remains intentionally Local/Online-only because it reconciles independent project histories by complete-file copy rather than by a Git merge.
 
 When the reconciliation is ready, GitPet still waits for **Save**. Save creates the reconciliation commit locally. Nothing is uploaded until you separately choose **Send**.
 
