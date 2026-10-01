@@ -17,6 +17,7 @@
 - Added Reconcile Inspector Phase 8 editable merged candidates: immutable generated-vs-edited side-by-side review, pinned/live-history validation, conflict-marker rejection, and explicit candidate acceptance into the existing no-commit reconciliation/Save workflow.
 - Added Reconcile Inspector Phase 9 validation hardening: deterministic JSON/XML/CSS checks, optional local PHP/JavaScript/Python/PowerShell parsers, saved project tests in disposable validation worktrees, cancellable checks, cleanup/audit coverage, explicit failed-test override, and sensitive-path review before source copy/export.
 - Added Reconcile Inspector Phase 10 UX/release hardening: keyboard navigation, accessible control naming, per-tab scroll restoration, large-source Exact performance fallback, moved-REMOTE race regression coverage, and a full reconciliation user/developer/safety/command documentation refresh.
+- Added active-conflict **Use merged version** reconciliation: standard Git merge conflicts can now open a two-column generated-vs-resolved editor, reject unresolved conflict markers, stage only the resolved path, preserve `MERGE_HEAD`, and still stop for the normal Save gate; standalone project reconciliation remains Local/Online-only.
 
 - Fixed suspicious-path false positives such as `Styles/tokens.css` by migrating the legacy bare `token` substring rule to filename-aware secret patterns. Manual Save and reconciliation now show the matching rule and allow an explicit **Save anyway** decision, while automatic Save continues to block suspicious paths without human review.
 
