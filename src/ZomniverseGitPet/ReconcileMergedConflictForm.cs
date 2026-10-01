@@ -124,11 +124,9 @@ internal sealed class ReconcileMergedConflictForm : Form
         _edited.TextChanged += (_, _) => RefreshState();
         Shown += (_, _) =>
         {
-            split.ApplyPreferredRatio();
             _edited.Focus();
             RefreshState();
         };
-        Resize += (_, _) => split.ApplyPreferredRatio();
 
         AcceptButton = _accept;
         CancelButton = cancel;
