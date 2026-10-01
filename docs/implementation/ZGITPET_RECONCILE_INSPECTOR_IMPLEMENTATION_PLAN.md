@@ -24,6 +24,7 @@
 - ✅ **Phase 8 — Editable MERGED CANDIDATE** — **COMPLETE / REAL UI SMOKED.** Generated-vs-edited candidate review, validation, cancellation, and explicit Accept + reconcile UI are exercised.
 - ✅ **Phase 9 — Validation + Race / Safety Hardening** — **COMPLETE / REAL VALIDATION SMOKED.** Deterministic language checks, isolated saved Test Commands, explicit cancellation, stale/race gates, cleanup, audit, failure recovery, and sensitive-copy warnings are exercised.
 - ✅ **Phase 10 — UX Polish + Regression Coverage + Documentation Rollout** — **CODE + DOCS COMPLETE / FINAL SMOKE PENDING.** Keyboard navigation, accessibility names, per-tab scroll persistence, large-source exact performance mode, moved-REMOTE regression coverage, and the user/developer/safety/command docs are wired.
+- 🟡 **Phase 10A — Active conflict resolver merged choice** — **CODE + REGRESSION + DOCS COMPLETE / BUILD + REAL MILLENOVA SMOKE PENDING.** The post-merge conflict dialog can now resolve a textual conflict as a merged file instead of forcing whole-file LOCAL/ONLINE.
 
 > **Maintenance rule:** update this compact overview and the detailed phase status in the same commit as every Reconcile Inspector implementation update. The checklist must always show what is complete, what is next, and what has not started. Never mark planned behavior as current before it is wired and covered by appropriate regression tests.
 
@@ -1129,6 +1130,85 @@ Implemented in this slice:
 Final Phase 10 gate: run the Release solution build, complete test executable, publish-local script, and a short real Inspector keyboard/scroll/maximize/large-file-accessibility smoke. After that passes, change this phase and the top-level status from 🟡 to ✅ and the Reconcile Inspector implementation plan is closed.
 
 **Exit gate:** implementation, regression tests, safety docs, user docs, and this plan all agree.
+
+---
+
+### 🟡 Phase 10A — Active conflict resolver merged choice
+
+**Status:** CODE + REGRESSION + DOCS COMPLETE / BUILD + REAL MILLENOVA SMOKE PENDING
+
+Problem found in real Millenova reconciliation:
+
+- the Inspector correctly showed a generated **Merged** candidate;
+- the active `git merge --no-commit --no-ff` conflict resolver still exposed only
+  **Keep my local version** / **Keep online version**;
+- therefore a user who wanted the final file to contain legitimate parts from
+  both histories had no direct choice in the actual conflict dialog.
+
+Implemented correction:
+
+- `ReconcileChoice` now includes `Merged` for standard Git-history reconciliation;
+- `GuardianReconciliation` loads the actual textual Git conflict candidate from
+  each unresolved working-tree path after the no-commit merge begins;
+- only repository-contained text candidates that:
+  - exist;
+  - are <= 4 MiB;
+  - contain no binary NUL;
+  - actually contain Git conflict-marker blocks;
+  receive a third **Use merged version** choice;
+- selecting that choice opens `ReconcileMergedConflictForm`:
+  - generated Git candidate left / immutable;
+  - resolved merged version right / editable;
+  - Exact text only;
+  - conflict-marker presence keeps **Use merged version** disabled;
+  - accepted text preserves the candidate's newline convention;
+- applying a resolved merged choice:
+  - rejects NUL text;
+  - rejects remaining `<<<<<<< / ======= / >>>>>>>` blocks;
+  - path-resolves inside the active repository only;
+  - writes only the selected path;
+  - stages only the selected path;
+  - verifies Git no longer reports that path as unresolved;
+  - leaves `MERGE_HEAD` present for the existing Save reconciliation gate;
+- any write/stage/verification failure uses the existing safe merge-abort path;
+- no commit and no Send are performed by this choice;
+- standalone logical-project reconciliation is explicitly guarded to remain
+  Local/Online-only because it reconciles independent histories by complete-file
+  copy rather than an active Git merge candidate;
+- `ReconcileActiveMergedConflictRegression` creates a real conflicting merge,
+  proves the active candidate is loaded, applies a combined resolved file,
+  verifies the path is staged/resolved while `MERGE_HEAD` remains, and proves
+  unresolved conflict-marker text is rejected.
+
+#### Real smoke — use the current Millenova conflict
+
+1. Reopen the Millenova reconciliation that produced
+   `Styles/floating-playlist.css` as **BOTH SIDES**.
+2. Start Reconcile and reach **Reconcile changed files**.
+3. In the KEEP dropdown for `Styles/floating-playlist.css`, confirm:
+   - Keep my local version;
+   - Keep online version;
+   - **Use merged version**.
+4. Choose **Use merged version** and press **Use selected versions**.
+5. PASS if a two-column resolver opens:
+   - left = generated candidate with LOCAL/REMOTE markers;
+   - right = editable copy.
+6. Resolve the conflict by preserving both independent CSS blocks and deleting
+   only the Git marker lines.
+7. PASS if **Use merged version** stays disabled while any full conflict-marker
+   block remains and becomes enabled after all marker blocks are resolved.
+8. Accept the merged version.
+9. PASS if reconciliation becomes **READY** rather than forcing LOCAL or ONLINE.
+10. Before Save, inspect `Styles/floating-playlist.css`:
+    - both the Mini-player Up Next block and the Phase 10 NEXT FROM
+      context-column block are present;
+    - no `<<<<<<<`, `=======`, or `>>>>>>>` markers remain.
+11. PASS if **Save reconciliation** is still a separate action.
+12. Cancel instead of Save if you do not want this particular reconciliation
+    committed yet; `git merge --abort` must restore the pre-reconcile state.
+
+**Exit gate:** the active conflict dialog can preserve legitimate work from both
+histories without weakening the existing no-commit / no-Send safety boundary.
 
 ---
 
