@@ -61,6 +61,26 @@ Acceptance starts the normal no-commit merge, verifies `MERGE_HEAD` is the pinne
 
 If application fails after merge start, GitPet attempts `git merge --abort`.
 
+## Active conflict merged-resolution safety
+
+When the real no-commit merge has already started and Git reports an unresolved text file, GitPet may offer **Use merged version** in the per-file conflict resolver.
+
+That path is deliberately narrower than pre-reconcile Inspector candidate acceptance:
+
+- the source is the actual Git conflict candidate currently present in the working tree;
+- the generated candidate is shown read-only beside an editable resolved draft;
+- binary/NUL candidates are not accepted;
+- files larger than the active text-resolution limit are not offered through this editor;
+- Git conflict-marker blocks must be completely removed before acceptance;
+- the resolved text is written only to the selected repository-relative path;
+- GitPet stages only that path and immediately verifies Git no longer reports it as unresolved;
+- \`MERGE_HEAD\` remains present;
+- no reconciliation commit is created;
+- nothing is sent online;
+- failure to write/stage/verify triggers the existing safe reconciliation-abort path.
+
+The active conflict resolver never makes **Merged** available to standalone logical-project reconciliation, because that workflow copies whole files between independent Git histories and does not have an active Git merge candidate.
+
 ## Validation is isolated
 
 Language checks and saved Test Commands run against the proposed source in a disposable Git worktree. Candidate validation can reproduce the LOCAL+REMOTE merge in that disposable worktree before inserting the proposed candidate.
