@@ -142,7 +142,10 @@ internal static class GuardianReconciliation
             return;
         }
 
-        using var choices = new ReconcileConflictsForm(conflicts);
+        var mergedCandidates = LoadMergedConflictCandidates(repositoryPath, conflicts);
+        using var choices = new ReconcileConflictsForm(
+            conflicts,
+            mergedCandidates: mergedCandidates);
         if (choices.ShowDialog(owner) != DialogResult.OK)
         {
             await AbortAfterCancelledAsync(repositoryPath, owner);
@@ -155,6 +158,35 @@ internal static class GuardianReconciliation
             {
                 await AbortAfterCancelledAsync(repositoryPath, owner);
                 return;
+            }
+
+            if (choice == ReconcileChoice.Merged)
+            {
+                if (!choices.MergedContents.TryGetValue(conflict, out var mergedText))
+                {
+                    await AbortAfterFailureAsync(
+                        repositoryPath,
+                        owner,
+                        "GitPet did not receive a resolved merged version for this file. The reconciliation was cancelled safely.");
+                    return;
+                }
+
+                var mergedApply = await ApplyResolvedMergedTextAsync(
+                    git,
+                    repositoryPath,
+                    conflict,
+                    mergedText);
+                if (!mergedApply.Success)
+                {
+                    await AbortAfterFailureAsync(
+                        repositoryPath,
+                        owner,
+                        "GitPet could not apply the resolved merged version. The reconciliation was cancelled safely.\r\n\r\n" +
+                        mergedApply.Output);
+                    return;
+                }
+
+                continue;
             }
 
             var side = choice == ReconcileChoice.Local ? "--ours" : "--theirs";
@@ -215,6 +247,123 @@ internal static class GuardianReconciliation
         }
 
         await MarkReadyAsync(owner);
+    }
+
+    internal static IReadOnlyDictionary<string, string> LoadMergedConflictCandidates(
+        string repositoryPath,
+        IReadOnlyList<string> conflicts)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var repositoryRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath)) +
+                             Path.DirectorySeparatorChar;
+
+        foreach (var relativePath in conflicts)
+        {
+            try
+            {
+                var fullPath = Path.GetFullPath(Path.Combine(
+                    repositoryPath,
+                    relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+                if (!fullPath.StartsWith(repositoryRoot, StringComparison.OrdinalIgnoreCase) ||
+                    !File.Exists(fullPath))
+                {
+                    continue;
+                }
+
+                var info = new FileInfo(fullPath);
+                if (info.Length > 4 * 1024 * 1024)
+                    continue;
+
+                var text = File.ReadAllText(fullPath);
+                if (text.IndexOf('\0') >= 0)
+                    continue;
+
+                result[relativePath] = text;
+            }
+            catch
+            {
+                // Binary, inaccessible, or path-invalid conflicts remain safely
+                // resolvable through the established LOCAL / ONLINE choices.
+            }
+        }
+
+        return result;
+    }
+
+    internal static async Task<CommandResult> ApplyResolvedMergedTextAsync(
+        GitService git,
+        string repositoryPath,
+        string relativePath,
+        string resolvedText,
+        CancellationToken token = default)
+    {
+        if (resolvedText.IndexOf('\0') >= 0)
+            return new CommandResult(1, "Resolved merged text contains a binary NUL character.");
+
+        if (ReconcileMergedCandidateService.HasConflictMarkers(resolvedText))
+        {
+            return new CommandResult(
+                1,
+                "Resolved merged text still contains Git conflict markers. Remove <<<<<<< / ======= / >>>>>>> first.");
+        }
+
+        string fullPath;
+        try
+        {
+            var repositoryRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryPath)) +
+                                 Path.DirectorySeparatorChar;
+            fullPath = Path.GetFullPath(Path.Combine(
+                repositoryPath,
+                relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+            if (!fullPath.StartsWith(repositoryRoot, StringComparison.OrdinalIgnoreCase))
+                return new CommandResult(1, "The resolved path is outside the active repository.");
+        }
+        catch (Exception ex)
+        {
+            return new CommandResult(1, "GitPet could not resolve the merged file path. " + ex.Message);
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            await File.WriteAllTextAsync(
+                fullPath,
+                resolvedText,
+                new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                token);
+        }
+        catch (Exception ex)
+        {
+            return new CommandResult(1, "GitPet could not write the resolved merged file. " + ex.Message);
+        }
+
+        var add = await git.RunGitAsync(
+            repositoryPath,
+            ["add", "--", relativePath],
+            TimeSpan.FromSeconds(30),
+            token);
+        if (!add.Success)
+            return add;
+
+        var unresolved = await git.RunGitAsync(
+            repositoryPath,
+            ["diff", "--name-only", "--diff-filter=U", "--", relativePath],
+            TimeSpan.FromSeconds(20),
+            token);
+
+        if (!unresolved.Success)
+            return unresolved;
+
+        if (!string.IsNullOrWhiteSpace(unresolved.Output))
+        {
+            return new CommandResult(
+                1,
+                "Git still reports this merged file as unresolved after staging.");
+        }
+
+        return new CommandResult(0, "");
     }
 
     private static async Task BeginStandaloneFileReconciliationAsync(
