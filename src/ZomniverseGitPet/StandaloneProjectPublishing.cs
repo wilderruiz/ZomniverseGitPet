@@ -969,6 +969,13 @@ internal static class StandaloneProjectPublishing
         IReadOnlyDictionary<string, ReconcileChoice> choices,
         CancellationToken token = default)
     {
+        if (choices.Values.Any(choice =>
+                choice is not ReconcileChoice.Local and not ReconcileChoice.Online))
+        {
+            return new(false,
+                "Standalone project reconciliation supports complete LOCAL or ONLINE file versions only.");
+        }
+
         var project = config.GetActiveProject();
         var repositoryRoot = config.RepositoryPath;
         if (project is null || string.IsNullOrWhiteSpace(repositoryRoot) || !Directory.Exists(repositoryRoot))
