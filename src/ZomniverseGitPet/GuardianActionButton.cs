@@ -156,6 +156,9 @@ internal sealed class GuardianActionButton : Button
 
             if (snapshot.Diverged)
             {
+                if (await BlockUnrelatedHistoryReconciliationAsync(snapshot, owner))
+                    return;
+
                 await GuardianReconciliation.BeginAsync(owner);
                 return;
             }
@@ -168,6 +171,52 @@ internal sealed class GuardianActionButton : Button
 
         base.OnClick(e);
         if (_syncRole != SyncRole.None) _ = RefreshAfterOperationAsync();
+    }
+
+    private static async Task<bool> BlockUnrelatedHistoryReconciliationAsync(
+        GuardianSyncSnapshot snapshot,
+        Form? owner)
+    {
+        var config = GuardianSyncState.Config;
+        var git = GuardianSyncState.Git;
+        var repositoryPath = config?.RepositoryPath;
+
+        if (config is null || git is null || string.IsNullOrWhiteSpace(repositoryPath))
+            return false;
+
+        // Standalone logical projects intentionally have independent histories and
+        // already use file-level reconciliation instead of the normal Git merge path.
+        if (StandaloneProjectPublishing.IsLogicalProject(config, repositoryPath))
+            return false;
+
+        var mergeBase = await git.RunGitAsync(
+            repositoryPath,
+            ["merge-base", "HEAD", $"origin/{snapshot.Branch}"],
+            TimeSpan.FromSeconds(20));
+
+        if (mergeBase.Success && !string.IsNullOrWhiteSpace(mergeBase.Output))
+            return false;
+
+        // git merge-base returns exit code 1 with no output when both refs exist but
+        // have no common ancestor. Other failures can contain useful diagnostics and
+        // are left to the established reconciliation path rather than misclassified.
+        if (!string.IsNullOrWhiteSpace(mergeBase.Output))
+            return false;
+
+        using var warning = new GuardianConfirmDialog(
+            "Reconciliation needs migration",
+            "UNRELATED HISTORIES",
+            "GitPet checked the local and online branches before starting reconciliation and found that they do not share a common Git ancestor.\r\n\r\n" +
+            "This usually means one side was created independently, republished from another repository, or migrated from a standalone project history.\r\n\r\n" +
+            "GitPet will NOT use --allow-unrelated-histories and will not create an artificial merge between the two repositories.\r\n\r\n" +
+            "Choose which history should become authoritative, preserve the other one on a backup branch, then align main with a guarded force-with-lease migration.",
+            "OK",
+            showCancel: false,
+            dialogSize: new Size(780, 500),
+            resizable: true,
+            scrollable: true);
+        warning.ShowDialog(owner);
+        return true;
     }
 
     private async Task RefreshAfterOperationAsync()
