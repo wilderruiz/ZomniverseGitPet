@@ -15,6 +15,10 @@ internal static class StandaloneProjectPublishingUiRuntime
     private static readonly Dictionary<GuardianForm, GuardianActionButton> SendButtons = [];
     private static readonly Dictionary<GuardianForm, GuardianActionButton> GetButtons = [];
     private static readonly Dictionary<GuardianForm, GuardianActionButton> BranchButtons = [];
+    private static readonly System.Reflection.MethodInfo? SetRepositoryWebAddressMethod =
+        typeof(GuardianForm).GetMethod(
+            "SetRepositoryWebAddress",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
 
     public static void Initialize(AppConfig config, GitService git, AuditLog audit)
     {
@@ -196,6 +200,7 @@ internal static class StandaloneProjectPublishingUiRuntime
 
         var snapshot = GuardianSyncState.Current;
         var link = StandaloneProjectPublishing.GetLink(_config);
+        UpdateStandaloneRepositoryWebAddress(guardian, link?.RemoteUrl);
         var linked = link is not null;
         var noLocalBaseline = link is not null && string.IsNullOrWhiteSpace(link.LastPublishedFingerprint);
         var onlineMode = _config.ConnectionMode != GitPetConnectionModes.LocalGitOnly;
@@ -242,6 +247,37 @@ internal static class StandaloneProjectPublishingUiRuntime
                                  snapshot.Behind == 0 &&
                                  !operationRunning;
         standaloneSend.Cursor = standaloneSend.Enabled ? Cursors.Hand : Cursors.Default;
+    }
+
+    private static void UpdateStandaloneRepositoryWebAddress(GuardianForm guardian, string? remoteUrl)
+    {
+        if (SetRepositoryWebAddressMethod is null) return;
+
+        string? webUrl = null;
+        if (!string.IsNullOrWhiteSpace(remoteUrl))
+        {
+            webUrl = MajorUpdateCoordinator.TryGetGitHubWebUrl(remoteUrl);
+            if (string.IsNullOrWhiteSpace(webUrl))
+            {
+                var value = remoteUrl.Trim();
+                if (Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+                    (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                {
+                    webUrl = value.EndsWith(".git", StringComparison.OrdinalIgnoreCase)
+                        ? value[..^4]
+                        : value;
+                }
+            }
+        }
+
+        try
+        {
+            SetRepositoryWebAddressMethod.Invoke(guardian, [webUrl]);
+        }
+        catch
+        {
+            // Header decoration must never interfere with standalone Get/Send safety.
+        }
     }
 
     internal static bool ShouldOfferReconcile(
