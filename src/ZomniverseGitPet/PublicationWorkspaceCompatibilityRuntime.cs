@@ -10,26 +10,27 @@ namespace ZomniverseGitPet;
    PATCH: REVIEW-FIRST PUBLICATION WORKSPACE COMPATIBILITY
    DATE.TIME: 2026-10-09 13:23 +03:00
 
-   WHY THIS EXISTS
-   ---------------
-   Standalone logical-project publishing was intentionally built as a scoped mirror:
+   RUNTIME CORRECTION
+   DATE.TIME: 2026-10-09 13:52 +03:00
 
-       private parent scope <-> isolated publishing workspace <-> standalone remote
+   OWNER DECISION (Wilder Ruiz, 2026-10-09)
+   -----------------------------------------
+   The public Zomniverse project is an independently curated, review-first
+   publication surface. It is not a mirror of the private Zomniverse project.
 
-   Zomniverse now uses a different model for its public project repository:
+   Two important consequences are enforced here:
 
-       private Zomniverse source --review--> public publication repository
+   1. The scoped-mirror Get/Send runtime must not race this publication runtime.
+      While ZOMNIVERSE-PROJECT is active, the legacy standalone UI timer is
+      suspended instead of allowing two timers to alternately show/hide buttons.
+      It is resumed when the user leaves publication mode.
 
-   The public repository is an independently curated publication surface. Remote-only
-   files such as WHAT_IS_PUBLISHED_HERE.md, publication notes and future public assets
-   MUST NOT be copied back into the private parent repository merely because Get was
-   pressed.
+   2. GitPet must not silently choose Documents/OneDrive as the checkout location.
+      On first Public Get, the user chooses where the independent checkout lives.
+      The selected workspace is remembered locally under LocalApplicationData and
+      is never written into either Git repository.
 
-   This compatibility runtime changes only the ZOMNIVERSE-PROJECT standalone link.
-   Existing scoped-mirror projects keep the original Get/Send behavior unchanged.
-
-   OWNER DECISION (Wilder Ruiz, 2026-10-09): publication is review-first; automatic
-   mirroring from the private Zomniverse repository is not appropriate.
+   Existing scoped-mirror projects retain their original behavior unchanged.
    ========================================================================== */
 internal static class PublicationWorkspaceCompatibilityRuntime
 {
@@ -41,10 +42,13 @@ internal static class PublicationWorkspaceCompatibilityRuntime
     private static System.Windows.Forms.Timer? _timer;
     private static bool _tickRunning;
     private static bool _operationRunning;
+    private static bool _legacyTimerSuppressed;
     private static AppConfig? _config;
 
     private static readonly Dictionary<GuardianForm, GuardianActionButton> GetButtons = [];
     private static readonly Dictionary<GuardianForm, GuardianActionButton> OpenButtons = [];
+
+    private sealed record GitRunResult(bool Success, int ExitCode, string Output);
 
     [ModuleInitializer]
     internal static void InitializeModule()
@@ -69,6 +73,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
 
         Application.ApplicationExit += (_, _) =>
         {
+            ResumeLegacyStandaloneTimer();
             _timer?.Stop();
             _timer?.Dispose();
             _timer = null;
@@ -83,6 +88,14 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         _tickRunning = true;
         try
         {
+            var project = _config.GetActiveProject();
+            var link = StandaloneProjectPublishing.GetLink(_config);
+            var publicationMode = project is not null &&
+                                  link is not null &&
+                                  IsTargetPublicationRemote(link.RemoteUrl);
+
+            SetLegacyStandaloneTimerSuppressed(publicationMode);
+
             var guardians = Application.OpenForms
                 .OfType<GuardianForm>()
                 .Where(form => !form.IsDisposed)
@@ -94,7 +107,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
                 OpenButtons.Remove(stale);
 
             foreach (var guardian in guardians)
-                UpdateGuardian(guardian);
+                UpdateGuardian(guardian, project, link, publicationMode);
         }
         finally
         {
@@ -104,13 +117,18 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         return Task.CompletedTask;
     }
 
-    private static void UpdateGuardian(GuardianForm guardian)
+    private static void UpdateGuardian(
+        GuardianForm guardian,
+        RecentRepositoryEntry? project = null,
+        StandaloneProjectPublishingEntry? link = null,
+        bool? publicationModeOverride = null)
     {
         if (_config is null) return;
 
-        var project = _config.GetActiveProject();
-        var link = StandaloneProjectPublishing.GetLink(_config);
-        var publicationMode = project is not null && link is not null && IsTargetPublicationRemote(link.RemoteUrl);
+        project ??= _config.GetActiveProject();
+        link ??= StandaloneProjectPublishing.GetLink(_config);
+        var publicationMode = publicationModeOverride ??
+                              (project is not null && link is not null && IsTargetPublicationRemote(link.RemoteUrl));
 
         var oldGet = FindControl(guardian, "StandaloneProjectGetButton") as GuardianActionButton;
         var oldSend = FindControl(guardian, "StandaloneProjectSendButton") as GuardianActionButton;
@@ -123,6 +141,8 @@ internal static class PublicationWorkspaceCompatibilityRuntime
             return;
         }
 
+        SetLegacyStandaloneTimerSuppressed(true);
+
         if (oldGet is null || oldSend is null || oldGet.Parent is null) return;
         EnsureButtons(guardian, oldGet);
 
@@ -133,7 +153,11 @@ internal static class PublicationWorkspaceCompatibilityRuntime
 
         if (branch is not null) branch.Visible = true;
 
-        var workspaceExists = Directory.Exists(Path.Combine(GetWorkspacePath(project!, link!.Branch), ".git"));
+        var workspace = project is null || link is null
+            ? null
+            : GetSavedWorkspacePath(link.Branch);
+        var workspaceExists = !string.IsNullOrWhiteSpace(workspace) &&
+                              Directory.Exists(Path.Combine(workspace, ".git"));
 
         var publicGet = GetButtons[guardian];
         publicGet.Visible = true;
@@ -199,7 +223,14 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         var link = StandaloneProjectPublishing.GetLink(_config);
         if (project is null || link is null || !IsTargetPublicationRemote(link.RemoteUrl)) return;
 
-        var workspace = GetWorkspacePath(project, link.Branch);
+        SetLegacyStandaloneTimerSuppressed(true);
+
+        var workspace = GetSavedWorkspacePath(link.Branch);
+        if (string.IsNullOrWhiteSpace(workspace))
+        {
+            workspace = ChooseWorkspacePath(guardian);
+            if (string.IsNullOrWhiteSpace(workspace)) return;
+        }
 
         using var confirmation = new GuardianConfirmDialog(
             "Get public publication workspace",
@@ -207,7 +238,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
             $"Update the independent public checkout from:\r\n{link.RepositoryLabel} / {link.Branch}\r\n\r\n" +
             $"Local publication workspace:\r\n{workspace}\r\n\r\n" +
             "This does NOT copy public-only files into the private Zomniverse repository and does NOT publish anything automatically. " +
-            "Local/remote agents may work in this checkout, then you can review its normal Git history before publication.",
+            "The chosen workspace remains independent and can be used by local coding agents for reviewed public work.",
             "Get public ↓",
             "Cancel",
             confirmWidth: 150,
@@ -219,7 +250,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
 
         _operationRunning = true;
         guardian.UseWaitCursor = true;
-        UpdateGuardian(guardian);
+        UpdateGuardian(guardian, project, link, true);
         try
         {
             var result = await EnsurePublicationWorkspaceAsync(link.RemoteUrl, link.Branch, workspace);
@@ -238,6 +269,8 @@ internal static class PublicationWorkspaceCompatibilityRuntime
                 return;
             }
 
+            SaveWorkspacePath(link.Branch, workspace);
+
             var marker = Path.Combine(workspace, PublicBoundaryMarker);
             var markerNote = File.Exists(marker)
                 ? $"\r\n\r\nPublication boundary marker verified: {PublicBoundaryMarker}"
@@ -246,9 +279,9 @@ internal static class PublicationWorkspaceCompatibilityRuntime
             using var ready = new GuardianConfirmDialog(
                 "Public publication workspace",
                 "PUBLIC WORKSPACE READY  ✓",
-                $"The public repository is synchronized in its own independent checkout.\r\n\r\n{workspace}" +
+                $"The public repository is synchronized in the location you selected:\r\n\r\n{workspace}" +
                 markerNote +
-                "\r\n\r\nThe private Zomniverse working tree was not modified.",
+                "\r\n\r\nThe private Zomniverse working tree was not modified. GitPet will remember this local publication-workspace location for the selected branch.",
                 "Open folder",
                 "Close",
                 confirmWidth: 140,
@@ -263,24 +296,47 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         {
             guardian.UseWaitCursor = false;
             _operationRunning = false;
-            UpdateGuardian(guardian);
+            UpdateGuardian(guardian, project, link, true);
         }
+    }
+
+    private static string? ChooseWorkspacePath(IWin32Window owner)
+    {
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        using var picker = new FolderBrowserDialog
+        {
+            Description =
+                "Choose where ZGitPet should keep the PUBLIC zomniverse-project checkout. " +
+                "Choose a parent folder and GitPet will use/create a zomniverse-project folder inside it. " +
+                "You may also select an existing zomniverse-project Git checkout directly.",
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = true,
+            InitialDirectory = Directory.Exists(userProfile) ? userProfile : string.Empty
+        };
+
+        if (picker.ShowDialog(owner) != DialogResult.OK || string.IsNullOrWhiteSpace(picker.SelectedPath))
+            return null;
+
+        var selected = Path.GetFullPath(picker.SelectedPath);
+        if (Directory.Exists(Path.Combine(selected, ".git")))
+            return selected;
+
+        return Path.Combine(selected, TargetRepository);
     }
 
     private static void OpenPublicationWorkspace(GuardianForm guardian)
     {
         if (_config is null || _operationRunning) return;
-        var project = _config.GetActiveProject();
         var link = StandaloneProjectPublishing.GetLink(_config);
-        if (project is null || link is null || !IsTargetPublicationRemote(link.RemoteUrl)) return;
+        if (link is null || !IsTargetPublicationRemote(link.RemoteUrl)) return;
 
-        var workspace = GetWorkspacePath(project, link.Branch);
-        if (!Directory.Exists(Path.Combine(workspace, ".git")))
+        var workspace = GetSavedWorkspacePath(link.Branch);
+        if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(Path.Combine(workspace, ".git")))
         {
             using var missing = new GuardianConfirmDialog(
                 "Public publication workspace",
-                "GET PUBLIC WORKSPACE FIRST",
-                "The independent public checkout has not been created on this PC yet. Use Public Get first.",
+                "CHOOSE PUBLIC WORKSPACE FIRST",
+                "No explicit local publication-workspace location is configured yet. Use Public Get and choose where the public checkout should live.",
                 "OK",
                 showCancel: false);
             missing.ShowDialog(guardian);
@@ -295,15 +351,25 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         string branch,
         string workspace)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(workspace)!);
+        workspace = Path.GetFullPath(workspace);
+        var parent = Path.GetDirectoryName(workspace);
+        if (string.IsNullOrWhiteSpace(parent))
+            return (false, "The selected publication-workspace path is not valid.");
+
+        Directory.CreateDirectory(parent);
 
         if (!Directory.Exists(Path.Combine(workspace, ".git")))
         {
             if (Directory.Exists(workspace) && Directory.EnumerateFileSystemEntries(workspace).Any())
-                return (false, "The publication workspace path already contains files but is not a Git checkout. GitPet left it untouched:\r\n" + workspace);
+            {
+                return (false,
+                    "The selected publication-workspace folder already contains files but is not a Git checkout. GitPet left it untouched:\r\n\r\n" +
+                    workspace +
+                    "\r\n\r\nChoose a different parent folder, an empty folder, or the existing zomniverse-project Git checkout.");
+            }
 
             var clone = await RunGitAsync(
-                Path.GetDirectoryName(workspace)!,
+                parent,
                 ["clone", "--branch", branch, "--single-branch", remoteUrl, workspace],
                 TimeSpan.FromMinutes(5));
             if (!clone.Success)
@@ -352,18 +418,66 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         return (true, "Public publication workspace synchronized.");
     }
 
-    private static string GetWorkspacePath(RecentRepositoryEntry project, string branch)
+    private static void SetLegacyStandaloneTimerSuppressed(bool suppress)
     {
-        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        if (string.IsNullOrWhiteSpace(documents))
-            documents = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (suppress)
+        {
+            if (_legacyTimerSuppressed) return;
+            var timer = GetLegacyStandaloneTimer();
+            if (timer is null) return;
+            timer.Stop();
+            _legacyTimerSuppressed = true;
+            return;
+        }
 
-        var repo = TargetRepository;
-        var branchSuffix = branch.Equals("main", StringComparison.OrdinalIgnoreCase)
-            ? ""
-            : "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(branch))).ToLowerInvariant()[..8];
+        ResumeLegacyStandaloneTimer();
+    }
 
-        return Path.Combine(documents, "ZomniverseGitPet", "PublicationWorkspaces", repo + branchSuffix);
+    private static void ResumeLegacyStandaloneTimer()
+    {
+        if (!_legacyTimerSuppressed) return;
+        var timer = GetLegacyStandaloneTimer();
+        timer?.Start();
+        _legacyTimerSuppressed = false;
+    }
+
+    private static System.Windows.Forms.Timer? GetLegacyStandaloneTimer() =>
+        typeof(StandaloneProjectPublishingUiRuntime)
+            .GetField("_timer", StaticPrivate)?
+            .GetValue(null) as System.Windows.Forms.Timer;
+
+    private static string? GetSavedWorkspacePath(string branch)
+    {
+        try
+        {
+            var file = GetWorkspacePreferenceFile(branch);
+            if (!File.Exists(file)) return null;
+            var value = File.ReadAllText(file, Encoding.UTF8).Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : Path.GetFullPath(value);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void SaveWorkspacePath(string branch, string workspace)
+    {
+        var file = GetWorkspacePreferenceFile(branch);
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, Path.GetFullPath(workspace), Encoding.UTF8);
+    }
+
+    private static string GetWorkspacePreferenceFile(string branch)
+    {
+        var root = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ZomniverseGitPet",
+            "PublicationWorkspaces");
+        var branchKey = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(branch.Trim().ToLowerInvariant())))
+            .ToLowerInvariant()[..12];
+        return Path.Combine(root, $"{TargetRepository}-{branchKey}.path.txt");
     }
 
     internal static bool IsTargetPublicationRemote(string? remoteUrl)
@@ -412,57 +526,53 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         }
         catch
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
-            }
-            catch
-            {
-            }
+            // Opening Explorer is convenience only. It must never affect repository state.
         }
     }
 
-    private static async Task<(bool Success, int ExitCode, string Output)> RunGitAsync(
+    private static async Task<GitRunResult> RunGitAsync(
         string workingDirectory,
         IReadOnlyList<string> arguments,
         TimeSpan timeout)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "git",
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
-
-        using var process = new Process { StartInfo = startInfo };
         try
         {
-            process.Start();
+            var start = new ProcessStartInfo
+            {
+                FileName = "git",
+                WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var argument in arguments) start.ArgumentList.Add(argument);
+
+            using var process = new Process { StartInfo = start };
+            if (!process.Start()) return new(false, -1, "Git could not be started.");
+
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            using var timeoutCts = new CancellationTokenSource(timeout);
+
+            try
+            {
+                await process.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { if (!process.HasExited) process.Kill(true); } catch { }
+                var timedOutOut = await stdout;
+                var timedOutErr = await stderr;
+                return new(false, -1, (timedOutOut + "\r\n" + timedOutErr).Trim() + "\r\nGit operation timed out.");
+            }
+
+            var output = ((await stdout) + "\r\n" + (await stderr)).Trim();
+            return new(process.ExitCode == 0, process.ExitCode, output);
         }
         catch (Exception ex)
         {
-            return (false, -1, ex.Message);
+            return new(false, -1, ex.Message);
         }
-
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        using var cts = new CancellationTokenSource(timeout);
-
-        try
-        {
-            await process.WaitForExitAsync(cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            try { process.Kill(entireProcessTree: true); } catch { }
-            return (false, -1, $"Git command timed out after {timeout.TotalSeconds:0} seconds.");
-        }
-
-        var output = ((await stdout) + Environment.NewLine + (await stderr)).Trim();
-        return (process.ExitCode == 0, process.ExitCode, output);
     }
 }
