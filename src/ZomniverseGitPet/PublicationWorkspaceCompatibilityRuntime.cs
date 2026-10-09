@@ -39,7 +39,8 @@ internal static class PublicationWorkspaceCompatibilityRuntime
 
     private static readonly BindingFlags StaticPrivate = BindingFlags.Static | BindingFlags.NonPublic;
     private static System.Windows.Forms.Timer? _timer;
-    private static bool _busy;
+    private static bool _tickRunning;
+    private static bool _operationRunning;
     private static AppConfig? _config;
 
     private static readonly Dictionary<GuardianForm, GuardianActionButton> GetButtons = [];
@@ -48,9 +49,6 @@ internal static class PublicationWorkspaceCompatibilityRuntime
     [ModuleInitializer]
     internal static void InitializeModule()
     {
-        // Module initialization happens before the application context has finished
-        // wiring its runtime services. Application.Idle gives the normal GitPet
-        // initialization path time to populate StandaloneProjectPublishingUiRuntime.
         Application.Idle += StartWhenReady;
     }
 
@@ -81,8 +79,8 @@ internal static class PublicationWorkspaceCompatibilityRuntime
 
     private static Task TickAsync()
     {
-        if (_busy || _config is null) return Task.CompletedTask;
-        _busy = true;
+        if (_tickRunning || _config is null) return Task.CompletedTask;
+        _tickRunning = true;
         try
         {
             var guardians = Application.OpenForms
@@ -100,7 +98,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         }
         finally
         {
-            _busy = false;
+            _tickRunning = false;
         }
 
         return Task.CompletedTask;
@@ -128,30 +126,24 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         if (oldGet is null || oldSend is null || oldGet.Parent is null) return;
         EnsureButtons(guardian, oldGet);
 
-        // The legacy scoped-mirror actions are intentionally unavailable for this
-        // publication repository. In particular, the old Send would rebuild the public
-        // repository from the private parent scope, which conflicts with review-first
-        // publication and could retire public-only documentation.
         oldGet.Visible = false;
         oldGet.Enabled = false;
         oldSend.Visible = false;
         oldSend.Enabled = false;
 
-        // Branch selection remains useful because the publication checkout itself can
-        // follow a deliberate public branch.
         if (branch is not null) branch.Visible = true;
 
         var workspaceExists = Directory.Exists(Path.Combine(GetWorkspacePath(project!, link!.Branch), ".git"));
 
         var publicGet = GetButtons[guardian];
         publicGet.Visible = true;
-        publicGet.Enabled = !_busy;
-        publicGet.Text = "Public Get ↓";
+        publicGet.Enabled = !_operationRunning;
+        publicGet.Text = _operationRunning ? "Public Get…" : "Public Get ↓";
         publicGet.Cursor = publicGet.Enabled ? Cursors.Hand : Cursors.Default;
 
         var publicOpen = OpenButtons[guardian];
         publicOpen.Visible = true;
-        publicOpen.Enabled = workspaceExists && !_busy;
+        publicOpen.Enabled = workspaceExists && !_operationRunning;
         publicOpen.Text = "Open public";
         publicOpen.Cursor = publicOpen.Enabled ? Cursors.Hand : Cursors.Default;
     }
@@ -202,7 +194,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
 
     private static async Task GetPublicationWorkspaceAsync(GuardianForm guardian)
     {
-        if (_config is null) return;
+        if (_config is null || _operationRunning) return;
         var project = _config.GetActiveProject();
         var link = StandaloneProjectPublishing.GetLink(_config);
         if (project is null || link is null || !IsTargetPublicationRemote(link.RemoteUrl)) return;
@@ -225,7 +217,9 @@ internal static class PublicationWorkspaceCompatibilityRuntime
 
         if (confirmation.ShowDialog(guardian) != DialogResult.Yes) return;
 
+        _operationRunning = true;
         guardian.UseWaitCursor = true;
+        UpdateGuardian(guardian);
         try
         {
             var result = await EnsurePublicationWorkspaceAsync(link.RemoteUrl, link.Branch, workspace);
@@ -268,12 +262,14 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         finally
         {
             guardian.UseWaitCursor = false;
+            _operationRunning = false;
+            UpdateGuardian(guardian);
         }
     }
 
     private static void OpenPublicationWorkspace(GuardianForm guardian)
     {
-        if (_config is null) return;
+        if (_config is null || _operationRunning) return;
         var project = _config.GetActiveProject();
         var link = StandaloneProjectPublishing.GetLink(_config);
         if (project is null || link is null || !IsTargetPublicationRemote(link.RemoteUrl)) return;
@@ -370,7 +366,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
         return Path.Combine(documents, "ZomniverseGitPet", "PublicationWorkspaces", repo + branchSuffix);
     }
 
-    private static bool IsTargetPublicationRemote(string? remoteUrl)
+    internal static bool IsTargetPublicationRemote(string? remoteUrl)
     {
         if (string.IsNullOrWhiteSpace(remoteUrl)) return false;
         var value = remoteUrl.Trim().TrimEnd('/');
@@ -380,7 +376,7 @@ internal static class PublicationWorkspaceCompatibilityRuntime
                value.EndsWith($":{TargetOwner}/{TargetRepository}", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool RemoteEquals(string left, string right)
+    internal static bool RemoteEquals(string left, string right)
     {
         static string Normalize(string value)
         {
@@ -422,7 +418,6 @@ internal static class PublicationWorkspaceCompatibilityRuntime
             }
             catch
             {
-                // Opening Explorer is convenience only; the workspace remains usable.
             }
         }
     }
