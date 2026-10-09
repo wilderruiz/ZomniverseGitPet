@@ -8,24 +8,11 @@ namespace ZomniverseGitPet;
    FEATURE: SAFE CROSS-DRIVE REPOSITORY MOVE
    DATE.TIME: 2026-10-09
 
-   WHY
-   ----
-   The original repository relocation path deliberately used Directory.Move, which is
-   atomic on one volume but cannot move a directory from (for example) I:\ to H:\.
-   Users therefore hit "CROSS-DRIVE MOVE IS NOT ENABLED" and had to copy the
-   repository manually.
+   The original repository relocation path uses Directory.Move, which cannot move a
+   directory between volumes. This runtime adds a Guardian command dedicated to that
+   missing case and uses a copy -> verify -> reassign -> remove-old-copy transaction.
 
-   This runtime adds an explicit Guardian command for cross-drive relocation.  It uses
-   a copy -> verify -> delete-source transaction instead of pretending a cross-volume
-   rename is atomic:
-
-       source repository
-           -> robocopy to empty destination
-           -> verify Git root + HEAD + complete porcelain status
-           -> delete source only after verification
-           -> rebase every GitPet project registration sharing the repository
-
-   GitHub is never contacted for mutation; no commit, pull, push or reset is performed.
+   Nothing here commits, pulls, pushes or mutates GitHub.
    ========================================================================== */
 internal static class CrossDriveRepositoryMoveRuntime
 {
@@ -69,7 +56,7 @@ internal static class CrossDriveRepositoryMoveRuntime
             var move = new ToolStripMenuItem("Move repository…")
             {
                 Name = MenuName,
-                ToolTipText = "Move the whole active local Git repository, including across drives. GitPet copies, verifies, then removes the old copy and updates all linked project registrations."
+                ToolTipText = "Move the whole active local Git repository to another drive. GitPet copies it, verifies Git state, updates linked project registrations, then removes the old copy."
             };
             move.Click += async (_, _) => await MoveActiveRepositoryAsync(guardian);
 
@@ -106,12 +93,10 @@ internal static class CrossDriveRepositoryMoveRuntime
         var oldRoot = Normalize(active.RepositoryRoot);
         using var folder = new FolderBrowserDialog
         {
-            Description = "Choose an EMPTY destination folder for the whole repository. Cross-drive destinations are supported.",
+            Description = "Choose an EMPTY destination folder on another drive for the whole repository.",
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true,
-            SelectedPath = Directory.Exists(Path.GetPathRoot(oldRoot))
-                ? Path.GetPathRoot(oldRoot)!
-                : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            SelectedPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
         };
         if (folder.ShowDialog(guardian) != DialogResult.OK) return;
 
@@ -130,6 +115,17 @@ internal static class CrossDriveRepositoryMoveRuntime
             return;
         }
 
+        var oldDrive = Path.GetPathRoot(oldRoot) ?? string.Empty;
+        var newDrive = Path.GetPathRoot(destination) ?? string.Empty;
+        if (string.Equals(oldDrive, newDrive, StringComparison.OrdinalIgnoreCase))
+        {
+            ShowProblem(guardian, "THIS COMMAND IS FOR ANOTHER DRIVE",
+                $"Current drive: {oldDrive}\r\nDestination drive: {newDrive}\r\n\r\n" +
+                "For a move on the same drive, use Projects → Manage projects → Reassign / move folder. " +
+                "This command exists specifically for the cross-drive case that Directory.Move cannot perform.");
+            return;
+        }
+
         if (!Directory.Exists(destination)) Directory.CreateDirectory(destination);
         if (Directory.EnumerateFileSystemEntries(destination).Any())
         {
@@ -137,10 +133,6 @@ internal static class CrossDriveRepositoryMoveRuntime
                 $"GitPet will not merge a repository into existing content.\r\n\r\nSelected destination:\r\n{destination}");
             return;
         }
-
-        var oldDrive = Path.GetPathRoot(oldRoot) ?? string.Empty;
-        var newDrive = Path.GetPathRoot(destination) ?? string.Empty;
-        var crossDrive = !string.Equals(oldDrive, newDrive, StringComparison.OrdinalIgnoreCase);
 
         var affected = config.RecentRepositories
             .Where(item => PathEquals(item.RepositoryRoot, oldRoot))
@@ -183,13 +175,11 @@ internal static class CrossDriveRepositoryMoveRuntime
 
         using var confirm = new GuardianConfirmDialog(
             "Move project repository",
-            crossDrive ? "MOVE REPOSITORY ACROSS DRIVES" : "MOVE THE LOCAL GIT REPOSITORY",
+            "MOVE REPOSITORY ACROSS DRIVES",
             $"Repository:\r\n{oldRoot}\r\n\r\n" +
             $"Move to:\r\n{destination}\r\n\r\n" +
             $"GitPet projects that will be updated: {affected.Length}\r\n\r\n" +
-            (crossDrive
-                ? "Because the destination is on another drive, GitPet will COPY the complete repository first, verify the copied Git history and working-tree state, and only then remove the old folder. "
-                : "GitPet will relocate the repository and verify it before updating registrations. ") +
+            "GitPet will copy the complete repository first, verify the copied Git root, HEAD and exact porcelain working-tree state, update the GitPet registrations, and only then remove the old folder. " +
             "The .git directory, branches, remotes, local commits, uncommitted changes and untracked files are included. Nothing is committed, pulled, pushed, or deleted from GitHub.",
             confirmText: "Move repository",
             cancelText: "Cancel",
@@ -202,21 +192,13 @@ internal static class CrossDriveRepositoryMoveRuntime
         guardian.UseWaitCursor = true;
         try
         {
-            if (crossDrive)
+            var copy = await CopyAcrossDrivesAsync(oldRoot, destination);
+            if (!copy.Success)
             {
-                var copy = await CopyAcrossDrivesAsync(oldRoot, destination);
-                if (!copy.Success)
-                {
-                    TryDeleteDestination(destination);
-                    ShowProblem(guardian, "CROSS-DRIVE COPY FAILED",
-                        "GitPet could not copy the complete repository. The source repository was left untouched.\r\n\r\n" + copy.Message);
-                    return;
-                }
-            }
-            else
-            {
-                Directory.Delete(destination, false);
-                Directory.Move(oldRoot, destination);
+                TryDeleteDestination(destination);
+                ShowProblem(guardian, "CROSS-DRIVE COPY FAILED",
+                    "GitPet could not copy the complete repository. The source repository was left untouched.\r\n\r\n" + copy.Message);
+                return;
             }
 
             var rootCheck = await git.GetRepositoryRootAsync(destination);
@@ -238,41 +220,53 @@ internal static class CrossDriveRepositoryMoveRuntime
                 throw new InvalidOperationException(
                     "The destination repository HEAD does not match the source repository. The source folder will not be removed.");
 
-            if (crossDrive)
-            {
-                try
-                {
-                    ClearReadOnlyAttributes(oldRoot);
-                    Directory.Delete(oldRoot, true);
-                }
-                catch (Exception deleteEx)
-                {
-                    ShowProblem(guardian, "COPY VERIFIED — SOURCE COULD NOT BE REMOVED",
-                        $"GitPet verified the repository copy at:\r\n{destination}\r\n\r\n" +
-                        $"but could not remove the old repository:\r\n{oldRoot}\r\n\r\n" +
-                        "Project registrations were NOT changed, so GitPet still points to the original location. The verified destination copy was left in place.\r\n\r\n" +
-                        deleteEx.Message);
-                    return;
-                }
-            }
-
+            // Update and persist GitPet first. If persistence fails, the original source is still intact.
             foreach (var item in rebased)
             {
-                config.ReassignProjectFolder(
-                    item.Project.Id,
-                    item.NewPath,
-                    destination,
-                    item.Project.TrackEverything,
-                    item.Project.ScopeEntries.Select(scope =>
-                        new ProjectScopeEntry(scope.RelativePath, scope.IsDirectory)));
+                if (!config.ReassignProjectFolder(
+                        item.Project.Id,
+                        item.NewPath,
+                        destination,
+                        item.Project.TrackEverything,
+                        item.Project.ScopeEntries.Select(scope =>
+                            new ProjectScopeEntry(scope.RelativePath, scope.IsDirectory))))
+                    throw new InvalidOperationException($"GitPet could not reassign project '{item.Project.DisplayName}'. The source repository has not been removed.");
             }
             configStore.Save(config);
+
+            var sourceRemoved = false;
+            try
+            {
+                ClearReadOnlyAttributes(oldRoot);
+                Directory.Delete(oldRoot, true);
+                sourceRemoved = true;
+            }
+            catch (Exception deleteEx)
+            {
+                await audit.WriteAsync("git_repository_cross_drive_copy_verified_source_retained", new
+                {
+                    oldRoot,
+                    newRoot = destination,
+                    error = deleteEx.Message
+                });
+
+                try { await GuardianSyncState.RefreshAsync(true); } catch { }
+                try { await guardian.RefreshAsync(); } catch { }
+                try { await GuardianWorkboardRuntime.RefreshNowAsync(); } catch { }
+
+                ShowProblem(guardian, "MOVE COMPLETE — OLD COPY COULD NOT BE REMOVED",
+                    $"GitPet verified the repository at:\r\n{destination}\r\n\r\n" +
+                    "Project registrations now point to the new location, so normal work can continue there. " +
+                    $"The old folder could not be deleted and was left as an extra backup copy:\r\n{oldRoot}\r\n\r\n" +
+                    deleteEx.Message);
+                return;
+            }
 
             await audit.WriteAsync("git_repository_moved_cross_drive", new
             {
                 oldRoot,
                 newRoot = destination,
-                crossDrive,
+                sourceRemoved,
                 projectsUpdated = affected.Select(item => new { item.Id, item.DisplayName }).ToArray()
             });
 
@@ -286,24 +280,21 @@ internal static class CrossDriveRepositoryMoveRuntime
                 $"Old location:\r\n{oldRoot}\r\n\r\n" +
                 $"New location:\r\n{destination}\r\n\r\n" +
                 $"GitPet verified the destination repository and updated {affected.Length} project registration{(affected.Length == 1 ? "" : "s")}.\r\n\r\n" +
-                "Git history, branches, remotes and the pre-move working-tree state were preserved.",
+                "Git history, branches, remotes and the exact pre-move working-tree state were preserved. The old repository folder was removed only after verification and configuration persistence succeeded.",
                 confirmText: "OK",
                 cancelText: "",
                 showCancel: false,
-                dialogSize: new Size(800, 540));
+                dialogSize: new Size(800, 560));
             ready.ShowDialog(guardian);
         }
         catch (Exception ex)
         {
-            var sourceStillExists = Directory.Exists(oldRoot);
             using var failed = new GuardianConfirmDialog(
                 "Move project repository",
                 "REPOSITORY MOVE NEEDS ATTENTION",
-                "GitPet stopped the move because verification did not complete safely. No commit, pull or push was attempted.\r\n\r\n" +
+                "GitPet stopped the move because verification or project reassignment did not complete safely. No commit, pull or push was attempted.\r\n\r\n" +
                 ex.Message +
-                (sourceStillExists
-                    ? "\r\n\r\nThe original source repository is still present and project registrations were not changed."
-                    : "\r\n\r\nThe source folder is no longer at the old path; inspect the destination before continuing."),
+                "\r\n\r\nThe original source repository has not been deliberately removed by this failed path. Inspect the destination copy before retrying.",
                 confirmText: "OK",
                 cancelText: "",
                 showCancel: false,
@@ -359,7 +350,7 @@ internal static class CrossDriveRepositoryMoveRuntime
         }
 
         var output = ((await stdout) + Environment.NewLine + (await stderr)).Trim();
-        // Robocopy uses 0-7 for successful/no-op/warning outcomes; 8+ means a copy failure.
+        // Robocopy exit codes 0-7 are success/no-op/warning outcomes; 8+ means failure.
         return process.ExitCode <= 7
             ? (true, output)
             : (false, $"Robocopy exit code {process.ExitCode}.\r\n\r\n{output}");
