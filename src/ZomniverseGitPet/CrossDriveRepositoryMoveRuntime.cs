@@ -5,18 +5,40 @@ using System.Runtime.CompilerServices;
 namespace ZomniverseGitPet;
 
 /* ========================================================================== 
-   FEATURE: SAFE CROSS-DRIVE REPOSITORY MOVE
+   FEATURE: UNIFIED REASSIGN / MOVE REPOSITORY WORKFLOW
    DATE.TIME: 2026-10-09
 
-   The original repository relocation path uses Directory.Move, which cannot move a
-   directory between volumes. This runtime adds a Guardian command dedicated to that
-   missing case and uses a copy -> verify -> reassign -> remove-old-copy transaction.
+   OWNER DECISION (Wilder Ruiz, 2026-10-09)
+   ------------------------------------------
+   GitPet previously exposed two overlapping repository-location workflows:
 
-   Nothing here commits, pulls, pushes or mutates GitHub.
+       Projects > Manage projects > <project> > Reassign / move folder...
+       top-level Move repository...
+
+   The older flow could reassign an existing checkout and perform an atomic same-drive
+   Directory.Move, but explicitly rejected cross-drive moves.  The later top-level
+   command solved cross-drive relocation, but duplicated the UI and still left the
+   same-drive path on a separate implementation.
+
+   This runtime now replaces the legacy submenu action at runtime with ONE command:
+
+       Reassign / move folder...
+
+   Selection semantics are intentionally simple:
+
+       existing Git folder -> reassign this GitPet project only
+       empty normal folder -> move the whole local Git repository there
+
+   Repository moves use one copy -> verify -> persist -> remove-old transaction on
+   BOTH same-drive and cross-drive destinations.  This removes the old dependency on
+   Directory.Move and gives both cases the same verification and recovery behavior.
+
+   Nothing here commits, pulls, pushes, resets, or mutates GitHub.
    ========================================================================== */
 internal static class CrossDriveRepositoryMoveRuntime
 {
-    private const string MenuName = "CrossDriveRepositoryMoveMenu";
+    private const string LegacyActionText = "Reassign / move folder…";
+    private const string UnifiedActionPrefix = "UnifiedReassignMove:";
     private static readonly BindingFlags InstancePrivate = BindingFlags.Instance | BindingFlags.NonPublic;
     private static System.Windows.Forms.Timer? _timer;
     private static bool _operationRunning;
@@ -32,10 +54,10 @@ internal static class CrossDriveRepositoryMoveRuntime
         if (_timer is not null) return;
         Application.Idle -= StartWhenReady;
 
-        _timer = new System.Windows.Forms.Timer { Interval = 700 };
-        _timer.Tick += (_, _) => AttachToOpenGuardians();
+        _timer = new System.Windows.Forms.Timer { Interval = 350 };
+        _timer.Tick += (_, _) => PatchOpenProjectMenus();
         _timer.Start();
-        AttachToOpenGuardians();
+        PatchOpenProjectMenus();
 
         Application.ApplicationExit += (_, _) =>
         {
@@ -45,29 +67,66 @@ internal static class CrossDriveRepositoryMoveRuntime
         };
     }
 
-    private static void AttachToOpenGuardians()
+    private static void PatchOpenProjectMenus()
     {
         foreach (var guardian in Application.OpenForms.OfType<GuardianForm>())
         {
-            if (guardian.IsDisposed || guardian.MainMenuStrip is null) continue;
-            var menu = guardian.MainMenuStrip;
-            if (menu.Items.Cast<ToolStripItem>().Any(item => item.Name == MenuName)) continue;
+            if (guardian.IsDisposed) continue;
 
-            var move = new ToolStripMenuItem("Move repository…")
-            {
-                Name = MenuName,
-                ToolTipText = "Move the whole active local Git repository to another drive. GitPet copies it, verifies Git state, updates linked project registrations, then removes the old copy."
-            };
-            move.Click += async (_, _) => await MoveActiveRepositoryAsync(guardian);
+            var config = GetField<AppConfig>(guardian, "_config");
+            var chooser = GetField<Delegate>(guardian, "_chooseRepository");
+            var context = chooser?.Target;
+            var projectsMenu = context is null
+                ? null
+                : GetField<ContextMenuStrip>(context, "_projectsMenu");
 
-            var projectSetupIndex = menu.Items.Cast<ToolStripItem>()
-                .Select((item, index) => new { item, index })
-                .FirstOrDefault(x => x.item.Name == "ProjectSetupMenu")?.index ?? -1;
-            menu.Items.Insert(Math.Min(projectSetupIndex + 1, menu.Items.Count), move);
+            if (config is null || projectsMenu is null || projectsMenu.IsDisposed) continue;
+            PatchProjectsMenu(guardian, projectsMenu, config);
         }
     }
 
-    private static async Task MoveActiveRepositoryAsync(GuardianForm guardian)
+    private static void PatchProjectsMenu(
+        GuardianForm guardian,
+        ContextMenuStrip projectsMenu,
+        AppConfig config)
+    {
+        var manage = projectsMenu.Items
+            .OfType<ToolStripMenuItem>()
+            .FirstOrDefault(item => item.Text.Equals("Manage projects", StringComparison.OrdinalIgnoreCase));
+        if (manage is null) return;
+
+        foreach (var projectMenu in manage.DropDownItems.OfType<ToolStripMenuItem>())
+        {
+            var project = config.RecentRepositories.FirstOrDefault(item =>
+                item.DisplayName.Equals(projectMenu.Text, StringComparison.Ordinal));
+            if (project is null) continue;
+
+            var replacementName = UnifiedActionPrefix + project.Id;
+            if (projectMenu.DropDownItems.Cast<ToolStripItem>()
+                .Any(item => item.Name.Equals(replacementName, StringComparison.Ordinal)))
+                continue;
+
+            var legacy = projectMenu.DropDownItems
+                .OfType<ToolStripMenuItem>()
+                .FirstOrDefault(item => item.Text.Equals(LegacyActionText, StringComparison.Ordinal));
+            if (legacy is null) continue;
+
+            var legacyIndex = projectMenu.DropDownItems.IndexOf(legacy);
+            legacy.Visible = false;
+            legacy.Enabled = false;
+
+            var projectId = project.Id;
+            var unified = new ToolStripMenuItem(LegacyActionText)
+            {
+                Name = replacementName,
+                ToolTipText = "Choose an existing Git folder to reassign this GitPet project, or choose an empty folder to safely move the whole repository on the same or another drive."
+            };
+            unified.Click += async (_, _) => await ReassignOrMoveAsync(guardian, projectId);
+            projectMenu.DropDownItems.Insert(legacyIndex, unified);
+        }
+    }
+
+    private static async Task ReassignOrMoveAsync(GuardianForm guardian, string projectId)
     {
         if (_operationRunning || ProjectSwitchRuntime.IsSwitching) return;
 
@@ -77,30 +136,173 @@ internal static class CrossDriveRepositoryMoveRuntime
         var audit = GetField<AuditLog>(guardian, "_audit");
         if (config is null || configStore is null || git is null || audit is null)
         {
-            ShowProblem(guardian, "MOVE IS NOT AVAILABLE",
-                "GitPet could not access the active Guardian repository services. Nothing was changed.");
+            ShowProblem(guardian, "LOCATION CHANGE IS NOT AVAILABLE",
+                "GitPet could not access the Guardian repository services. Nothing was changed.");
             return;
         }
 
-        var active = config.GetActiveProject();
-        if (active is null || !Directory.Exists(active.RepositoryRoot))
+        var project = config.FindProject(projectId);
+        if (project is null || !Directory.Exists(project.RepositoryRoot))
         {
-            ShowProblem(guardian, "NO ACTIVE REPOSITORY",
-                "Open a GitPet project with an available local Git repository first.");
+            ShowProblem(guardian, "PROJECT IS NOT AVAILABLE",
+                "GitPet could not find an available local repository for this project.");
             return;
         }
 
-        var oldRoot = Normalize(active.RepositoryRoot);
         using var folder = new FolderBrowserDialog
         {
-            Description = "Choose an EMPTY destination folder on another drive for the whole repository.",
+            Description = $"Choose the folder for '{project.DisplayName}'. Select an existing Git folder to reassign only, or an empty folder to move the whole local repository there.",
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true,
-            SelectedPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            SelectedPath = Directory.Exists(project.Path)
+                ? project.Path
+                : project.RepositoryRoot
         };
         if (folder.ShowDialog(guardian) != DialogResult.OK) return;
 
-        var destination = Normalize(folder.SelectedPath);
+        var selected = Normalize(folder.SelectedPath);
+        var rootProbe = await git.GetRepositoryRootAsync(selected);
+        if (rootProbe.Success && !string.IsNullOrWhiteSpace(rootProbe.Output))
+        {
+            await ReassignExistingCheckoutAsync(
+                guardian,
+                config,
+                configStore,
+                git,
+                audit,
+                project,
+                selected,
+                Normalize(rootProbe.Output.Trim()));
+            return;
+        }
+
+        if (!Directory.Exists(selected)) Directory.CreateDirectory(selected);
+        if (Directory.EnumerateFileSystemEntries(selected).Any())
+        {
+            ShowProblem(guardian, "THAT FOLDER CANNOT BE USED",
+                $"Selected folder:\r\n{selected}\r\n\r\n" +
+                "The folder is not a readable Git checkout and it is not empty. GitPet will not merge repository files into existing content. " +
+                "Choose an existing Git folder to reassign, or an empty folder to move the repository.");
+            return;
+        }
+
+        await MoveWholeRepositoryAsync(
+            guardian,
+            config,
+            configStore,
+            git,
+            audit,
+            project,
+            selected);
+    }
+
+    private static async Task ReassignExistingCheckoutAsync(
+        GuardianForm guardian,
+        AppConfig config,
+        ConfigStore configStore,
+        GitService git,
+        AuditLog audit,
+        RecentRepositoryEntry project,
+        string newProjectPath,
+        string newRepositoryRoot)
+    {
+        if (PathEquals(project.Path, newProjectPath) &&
+            PathEquals(project.RepositoryRoot, newRepositoryRoot))
+        {
+            ShowProblem(guardian, "PROJECT FOLDER UNCHANGED",
+                $"'{project.DisplayName}' is already assigned to:\r\n{newProjectPath}");
+            return;
+        }
+
+        var duplicate = config.FindProjectByPath(newProjectPath);
+        if (duplicate is not null &&
+            !string.Equals(duplicate.Id, project.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            ShowProblem(guardian, "THAT FOLDER IS ALREADY A GITPET PROJECT",
+                $"The selected folder is already assigned to:\r\n{duplicate.DisplayName}\r\n\r\n" +
+                "GitPet will not silently make two project registrations point at the same folder.");
+            return;
+        }
+
+        var wholeRepository = PathEquals(newProjectPath, newRepositoryRoot);
+        var newScope = wholeRepository
+            ? Array.Empty<ProjectScopeEntry>()
+            : BuildDefaultNestedScope(newRepositoryRoot, newProjectPath);
+
+        using var confirm = new GuardianConfirmDialog(
+            "Reassign project folder",
+            "REASSIGN PROJECT FOLDER",
+            $"Project: {project.DisplayName}\r\n\r\n" +
+            $"Current folder:\r\n{project.Path}\r\n\r\n" +
+            $"New folder:\r\n{newProjectPath}\r\n\r\n" +
+            $"Repository root:\r\n{newRepositoryRoot}\r\n\r\n" +
+            "Only the GitPet registration changes. No files are moved, renamed, deleted, committed, pulled, or pushed.",
+            confirmText: "Reassign",
+            cancelText: "Cancel",
+            confirmWidth: 140,
+            dialogSize: new Size(800, 570),
+            scrollable: true);
+        if (confirm.ShowDialog(guardian) != DialogResult.Yes) return;
+
+        var oldProjectPath = project.Path;
+        var oldRepositoryRoot = project.RepositoryRoot;
+        var wasActive = string.Equals(project.Id, config.ActiveProjectId, StringComparison.OrdinalIgnoreCase);
+
+        if (!config.ReassignProjectFolder(
+                project.Id,
+                newProjectPath,
+                newRepositoryRoot,
+                trackEverything: wholeRepository,
+                scopeEntries: newScope))
+        {
+            ShowProblem(guardian, "PROJECT FOLDER WAS NOT CHANGED",
+                "GitPet could not update this project registration. Nothing on disk was changed.");
+            return;
+        }
+
+        configStore.Save(config);
+        await audit.WriteAsync("logical_project_folder_reassigned_unified", new
+        {
+            projectId = project.Id,
+            project = project.DisplayName,
+            oldProjectPath,
+            oldRepositoryRoot,
+            newProjectPath,
+            newRepositoryRoot,
+            wholeRepository
+        });
+
+        try { await GuardianSyncState.RefreshAsync(true); } catch { }
+        if (wasActive)
+        {
+            try { await guardian.RefreshAsync(); } catch { }
+            try { await GuardianWorkboardRuntime.RefreshNowAsync(); } catch { }
+        }
+
+        using var ready = new GuardianConfirmDialog(
+            "Reassign project folder",
+            "PROJECT FOLDER UPDATED  ✓",
+            $"GitPet now points '{project.DisplayName}' to:\r\n{newProjectPath}\r\n\r\n" +
+            "The existing checkout was not moved or modified.",
+            confirmText: "OK",
+            cancelText: "",
+            showCancel: false,
+            dialogSize: new Size(760, 490));
+        ready.ShowDialog(guardian);
+    }
+
+    private static async Task MoveWholeRepositoryAsync(
+        GuardianForm guardian,
+        AppConfig config,
+        ConfigStore configStore,
+        GitService git,
+        AuditLog audit,
+        RecentRepositoryEntry selectedProject,
+        string destination)
+    {
+        var oldRoot = Normalize(selectedProject.RepositoryRoot);
+        destination = Normalize(destination);
+
         if (PathEquals(oldRoot, destination))
         {
             ShowProblem(guardian, "REPOSITORY LOCATION UNCHANGED",
@@ -111,18 +313,8 @@ internal static class CrossDriveRepositoryMoveRuntime
         if (destination.StartsWith(oldRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
             ShowProblem(guardian, "DESTINATION IS INSIDE THE CURRENT REPOSITORY",
-                $"Current repository:\r\n{oldRoot}\r\n\r\nDestination:\r\n{destination}\r\n\r\nChoose a folder outside the repository.");
-            return;
-        }
-
-        var oldDrive = Path.GetPathRoot(oldRoot) ?? string.Empty;
-        var newDrive = Path.GetPathRoot(destination) ?? string.Empty;
-        if (string.Equals(oldDrive, newDrive, StringComparison.OrdinalIgnoreCase))
-        {
-            ShowProblem(guardian, "THIS COMMAND IS FOR ANOTHER DRIVE",
-                $"Current drive: {oldDrive}\r\nDestination drive: {newDrive}\r\n\r\n" +
-                "For a move on the same drive, use Projects → Manage projects → Reassign / move folder. " +
-                "This command exists specifically for the cross-drive case that Directory.Move cannot perform.");
+                $"Current repository:\r\n{oldRoot}\r\n\r\nDestination:\r\n{destination}\r\n\r\n" +
+                "Choose an empty folder outside the current repository.");
             return;
         }
 
@@ -130,9 +322,13 @@ internal static class CrossDriveRepositoryMoveRuntime
         if (Directory.EnumerateFileSystemEntries(destination).Any())
         {
             ShowProblem(guardian, "DESTINATION MUST BE EMPTY",
-                $"GitPet will not merge a repository into existing content.\r\n\r\nSelected destination:\r\n{destination}");
+                $"Selected destination:\r\n{destination}\r\n\r\nGitPet will not merge a repository into existing content.");
             return;
         }
+
+        var oldDrive = Path.GetPathRoot(oldRoot) ?? string.Empty;
+        var newDrive = Path.GetPathRoot(destination) ?? string.Empty;
+        var crossDrive = !string.Equals(oldDrive, newDrive, StringComparison.OrdinalIgnoreCase);
 
         var affected = config.RecentRepositories
             .Where(item => PathEquals(item.RepositoryRoot, oldRoot))
@@ -140,7 +336,7 @@ internal static class CrossDriveRepositoryMoveRuntime
         if (affected.Length == 0)
         {
             ShowProblem(guardian, "PROJECT REGISTRATION NOT FOUND",
-                "GitPet could not find a project registration for the active repository. Nothing was moved.");
+                "GitPet could not find project registrations for the current repository. Nothing was moved.");
             return;
         }
 
@@ -175,16 +371,16 @@ internal static class CrossDriveRepositoryMoveRuntime
 
         using var confirm = new GuardianConfirmDialog(
             "Move project repository",
-            "MOVE REPOSITORY ACROSS DRIVES",
+            crossDrive ? "MOVE REPOSITORY ACROSS DRIVES" : "MOVE THE LOCAL GIT REPOSITORY",
             $"Repository:\r\n{oldRoot}\r\n\r\n" +
             $"Move to:\r\n{destination}\r\n\r\n" +
             $"GitPet projects that will be updated: {affected.Length}\r\n\r\n" +
-            "GitPet will copy the complete repository first, verify the copied Git root, HEAD and exact porcelain working-tree state, update the GitPet registrations, and only then remove the old folder. " +
-            "The .git directory, branches, remotes, local commits, uncommitted changes and untracked files are included. Nothing is committed, pulled, pushed, or deleted from GitHub.",
+            "GitPet will copy the complete repository, verify the copied Git root, HEAD and exact working-tree state, persist all affected GitPet registrations, and only then remove the old folder. " +
+            "This same verified transaction is used whether the destination is on the same drive or another drive. Nothing is committed, pulled, pushed, reset, or deleted from GitHub.",
             confirmText: "Move repository",
             cancelText: "Cancel",
             confirmWidth: 170,
-            dialogSize: new Size(840, 610),
+            dialogSize: new Size(850, 620),
             scrollable: true);
         if (confirm.ShowDialog(guardian) != DialogResult.Yes) return;
 
@@ -192,11 +388,11 @@ internal static class CrossDriveRepositoryMoveRuntime
         guardian.UseWaitCursor = true;
         try
         {
-            var copy = await CopyAcrossDrivesAsync(oldRoot, destination);
+            var copy = await CopyRepositoryAsync(oldRoot, destination);
             if (!copy.Success)
             {
                 TryDeleteDestination(destination);
-                ShowProblem(guardian, "CROSS-DRIVE COPY FAILED",
+                ShowProblem(guardian, "REPOSITORY COPY FAILED",
                     "GitPet could not copy the complete repository. The source repository was left untouched.\r\n\r\n" + copy.Message);
                 return;
             }
@@ -220,7 +416,6 @@ internal static class CrossDriveRepositoryMoveRuntime
                 throw new InvalidOperationException(
                     "The destination repository HEAD does not match the source repository. The source folder will not be removed.");
 
-            // Update and persist GitPet first. If persistence fails, the original source is still intact.
             foreach (var item in rebased)
             {
                 if (!config.ReassignProjectFolder(
@@ -234,19 +429,18 @@ internal static class CrossDriveRepositoryMoveRuntime
             }
             configStore.Save(config);
 
-            var sourceRemoved = false;
             try
             {
                 ClearReadOnlyAttributes(oldRoot);
                 Directory.Delete(oldRoot, true);
-                sourceRemoved = true;
             }
             catch (Exception deleteEx)
             {
-                await audit.WriteAsync("git_repository_cross_drive_copy_verified_source_retained", new
+                await audit.WriteAsync("git_repository_move_verified_source_retained", new
                 {
                     oldRoot,
                     newRoot = destination,
+                    crossDrive,
                     error = deleteEx.Message
                 });
 
@@ -256,17 +450,16 @@ internal static class CrossDriveRepositoryMoveRuntime
 
                 ShowProblem(guardian, "MOVE COMPLETE — OLD COPY COULD NOT BE REMOVED",
                     $"GitPet verified the repository at:\r\n{destination}\r\n\r\n" +
-                    "Project registrations now point to the new location, so normal work can continue there. " +
-                    $"The old folder could not be deleted and was left as an extra backup copy:\r\n{oldRoot}\r\n\r\n" +
-                    deleteEx.Message);
+                    "Project registrations now point to the new location. The old repository could not be deleted, so it was left as an extra backup copy:\r\n" +
+                    oldRoot + "\r\n\r\n" + deleteEx.Message);
                 return;
             }
 
-            await audit.WriteAsync("git_repository_moved_cross_drive", new
+            await audit.WriteAsync("git_repository_moved_unified", new
             {
                 oldRoot,
                 newRoot = destination,
-                sourceRemoved,
+                crossDrive,
                 projectsUpdated = affected.Select(item => new { item.Id, item.DisplayName }).ToArray()
             });
 
@@ -280,27 +473,19 @@ internal static class CrossDriveRepositoryMoveRuntime
                 $"Old location:\r\n{oldRoot}\r\n\r\n" +
                 $"New location:\r\n{destination}\r\n\r\n" +
                 $"GitPet verified the destination repository and updated {affected.Length} project registration{(affected.Length == 1 ? "" : "s")}.\r\n\r\n" +
-                "Git history, branches, remotes and the exact pre-move working-tree state were preserved. The old repository folder was removed only after verification and configuration persistence succeeded.",
+                "Git history, branches, remotes and the exact pre-move working-tree state were preserved.",
                 confirmText: "OK",
                 cancelText: "",
                 showCancel: false,
-                dialogSize: new Size(800, 560));
+                dialogSize: new Size(800, 550));
             ready.ShowDialog(guardian);
         }
         catch (Exception ex)
         {
-            using var failed = new GuardianConfirmDialog(
-                "Move project repository",
-                "REPOSITORY MOVE NEEDS ATTENTION",
-                "GitPet stopped the move because verification or project reassignment did not complete safely. No commit, pull or push was attempted.\r\n\r\n" +
+            ShowProblem(guardian, "REPOSITORY MOVE NEEDS ATTENTION",
+                "GitPet stopped the move because copying, verification, or project reassignment did not complete safely. No commit, pull, push, or reset was attempted.\r\n\r\n" +
                 ex.Message +
-                "\r\n\r\nThe original source repository has not been deliberately removed by this failed path. Inspect the destination copy before retrying.",
-                confirmText: "OK",
-                cancelText: "",
-                showCancel: false,
-                dialogSize: new Size(840, 580),
-                scrollable: true);
-            failed.ShowDialog(guardian);
+                "\r\n\r\nThe source repository was not deliberately removed by this failed path. Inspect any destination copy before retrying.");
         }
         finally
         {
@@ -309,7 +494,7 @@ internal static class CrossDriveRepositoryMoveRuntime
         }
     }
 
-    private static async Task<(bool Success, string Message)> CopyAcrossDrivesAsync(string source, string destination)
+    private static async Task<(bool Success, string Message)> CopyRepositoryAsync(string source, string destination)
     {
         var start = new ProcessStartInfo
         {
@@ -350,10 +535,20 @@ internal static class CrossDriveRepositoryMoveRuntime
         }
 
         var output = ((await stdout) + Environment.NewLine + (await stderr)).Trim();
-        // Robocopy exit codes 0-7 are success/no-op/warning outcomes; 8+ means failure.
+        // Robocopy exit codes 0-7 are successful/no-op/warning outcomes; 8+ is a copy failure.
         return process.ExitCode <= 7
             ? (true, output)
             : (false, $"Robocopy exit code {process.ExitCode}.\r\n\r\n{output}");
+    }
+
+    private static IReadOnlyList<ProjectScopeEntry> BuildDefaultNestedScope(
+        string repositoryRoot,
+        string projectPath)
+    {
+        var relative = LogicalProjectScopeRuntime.TryGetRelativePath(repositoryRoot, projectPath);
+        return string.IsNullOrWhiteSpace(relative)
+            ? []
+            : [new ProjectScopeEntry(relative, IsDirectory: true)];
     }
 
     private static void ClearReadOnlyAttributes(string root)
@@ -396,13 +591,13 @@ internal static class CrossDriveRepositoryMoveRuntime
     private static void ShowProblem(IWin32Window owner, string heading, string message)
     {
         using var dialog = new GuardianConfirmDialog(
-            "Move project repository",
+            "Project repository location",
             heading,
             message,
             confirmText: "OK",
             cancelText: "",
             showCancel: false,
-            dialogSize: new Size(820, 540),
+            dialogSize: new Size(830, 550),
             scrollable: true);
         dialog.ShowDialog(owner);
     }
