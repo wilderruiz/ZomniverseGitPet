@@ -92,23 +92,23 @@ internal static class CrossDriveRepositoryMoveRuntime
     {
         var manage = projectsMenu.Items
             .OfType<ToolStripMenuItem>()
-            .FirstOrDefault(item => item.Text.Equals("Manage projects", StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(item => string.Equals(item.Text, "Manage projects", StringComparison.OrdinalIgnoreCase));
         if (manage is null) return;
 
         foreach (var projectMenu in manage.DropDownItems.OfType<ToolStripMenuItem>())
         {
             var project = config.RecentRepositories.FirstOrDefault(item =>
-                item.DisplayName.Equals(projectMenu.Text, StringComparison.Ordinal));
+                string.Equals(item.DisplayName, projectMenu.Text, StringComparison.Ordinal));
             if (project is null) continue;
 
             var replacementName = UnifiedActionPrefix + project.Id;
             if (projectMenu.DropDownItems.Cast<ToolStripItem>()
-                .Any(item => item.Name.Equals(replacementName, StringComparison.Ordinal)))
+                .Any(item => string.Equals(item.Name, replacementName, StringComparison.Ordinal)))
                 continue;
 
             var legacy = projectMenu.DropDownItems
                 .OfType<ToolStripMenuItem>()
-                .FirstOrDefault(item => item.Text.Equals(LegacyActionText, StringComparison.Ordinal));
+                .FirstOrDefault(item => string.Equals(item.Text, LegacyActionText, StringComparison.Ordinal));
             if (legacy is null) continue;
 
             var legacyIndex = projectMenu.DropDownItems.IndexOf(legacy);
