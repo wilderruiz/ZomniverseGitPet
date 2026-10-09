@@ -101,4 +101,6 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 
 # Small updates
 
+```powershell
 powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
+```
