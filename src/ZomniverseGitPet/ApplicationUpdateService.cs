@@ -13,12 +13,19 @@ internal sealed record ApplicationUpdateInfo(
     string InstallerFileName,
     string InstallerDownloadUrl,
     string InstallerSha256,
-    string ReleaseNotes);
+    string ReleaseNotes,
+    string VetVisitSummary,
+    string DewormingReportUrl,
+    string VetPassportUrl);
 
 internal sealed class ApplicationUpdateService
 {
     private const string LatestManifestUrl =
         "https://github.com/wilderruiz/ZomniverseGitPet/releases/latest/download/release-manifest.json";
+    private const string RepositoryWebRoot =
+        "https://github.com/wilderruiz/ZomniverseGitPet";
+    private const string RepositoryRawRoot =
+        "https://raw.githubusercontent.com/wilderruiz/ZomniverseGitPet";
 
     private static readonly HttpClient Client = CreateClient();
 
@@ -60,7 +67,13 @@ internal sealed class ApplicationUpdateService
         if (!IsSha256(manifest.Installer.Sha256))
             throw new InvalidDataException("The GitPet installer checksum is invalid.");
 
-        var releaseNotes = await TryGetReleaseNotesAsync(manifest.ReleaseTag, cancellationToken);
+        var vetVisitSummary = await TryGetVetVisitSummaryAsync(
+            manifest.ReleaseTag,
+            cancellationToken);
+        var releaseNotes = string.IsNullOrWhiteSpace(vetVisitSummary)
+            ? await TryGetReleaseNotesAsync(manifest.ReleaseTag, cancellationToken)
+            : string.Empty;
+        var resolvedSummary = ResolveVetVisitSummary(vetVisitSummary, releaseNotes);
 
         return new ApplicationUpdateInfo(
             current.ToString(3),
@@ -70,7 +83,10 @@ internal sealed class ApplicationUpdateService
             manifest.Installer.FileName,
             manifest.Installer.DownloadUrl,
             manifest.Installer.Sha256.ToLowerInvariant(),
-            releaseNotes);
+            releaseNotes,
+            resolvedSummary,
+            BuildDewormingReportUrl(manifest.ReleaseTag),
+            BuildVetPassportUrl(manifest.ReleaseTag));
     }
 
     public async Task<string> DownloadAndVerifyInstallerAsync(
@@ -168,7 +184,62 @@ internal sealed class ApplicationUpdateService
         return string.Equals(hash, expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task<string> TryGetReleaseNotesAsync(string releaseTag, CancellationToken cancellationToken)
+    internal static string ResolveVetVisitSummary(
+        string? vetVisitSummary,
+        string? releaseNotes)
+    {
+        if (!string.IsNullOrWhiteSpace(vetVisitSummary))
+            return vetVisitSummary.Trim();
+        if (!string.IsNullOrWhiteSpace(releaseNotes))
+            return releaseNotes.Trim();
+
+        return
+            "This GitPet update has completed its release checks. " +
+            "Open the release page for the full treatment record.";
+    }
+
+    internal static string BuildDewormingReportUrl(string releaseTag)
+    {
+        var tag = NormalizeReleaseTag(releaseTag);
+        return string.IsNullOrWhiteSpace(tag)
+            ? string.Empty
+            : $"{RepositoryWebRoot}/blob/{Uri.EscapeDataString(tag)}/release/{Uri.EscapeDataString(tag)}/DEWORMING_REPORT.md";
+    }
+
+    internal static string BuildVetPassportUrl(string releaseTag)
+    {
+        var tag = NormalizeReleaseTag(releaseTag);
+        return string.IsNullOrWhiteSpace(tag)
+            ? string.Empty
+            : $"{RepositoryWebRoot}/blob/{Uri.EscapeDataString(tag)}/release/VET_PASSPORT.md";
+    }
+
+    private static async Task<string> TryGetVetVisitSummaryAsync(
+        string releaseTag,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tag = NormalizeReleaseTag(releaseTag);
+            if (string.IsNullOrWhiteSpace(tag)) return string.Empty;
+
+            var encodedTag = Uri.EscapeDataString(tag);
+            var url =
+                $"{RepositoryRawRoot}/{encodedTag}/release/{encodedTag}/UPDATE_SUMMARY.md";
+            using var response = await Client.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode) return string.Empty;
+
+            return (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static async Task<string> TryGetReleaseNotesAsync(
+        string releaseTag,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -227,6 +298,9 @@ internal sealed class ApplicationUpdateService
     {
         return value.Length == 64 && value.All(Uri.IsHexDigit);
     }
+
+    private static string NormalizeReleaseTag(string releaseTag) =>
+        (releaseTag ?? string.Empty).Trim();
 
     private sealed class ReleaseManifest
     {
