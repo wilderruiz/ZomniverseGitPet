@@ -7,11 +7,16 @@ internal static class ReconcileLocalEditRegression
         var root = Path.Combine(
             Path.GetTempPath(),
             "GitPet-local-edit-" + Guid.NewGuid().ToString("N"));
+        var auditPath = root + ".audit.jsonl";
         Directory.CreateDirectory(root);
 
         try
         {
-            var git = new GitService(new AuditLog(Path.Combine(root, "audit.jsonl")));
+            // Keep the audit log outside the temporary Git repository. The regression
+            // asserts that the repository is completely clean after the exact-file
+            // correction commit, so test instrumentation must not create an untracked
+            // file inside the worktree.
+            var git = new GitService(new AuditLog(auditPath));
             await MustGit(git, root, ["init"]);
             await MustGit(git, root, ["config", "user.name", "Local Edit Test"]);
             await MustGit(git, root, ["config", "user.email", "local-edit@example.invalid"]);
@@ -92,6 +97,17 @@ internal static class ReconcileLocalEditRegression
                 foreach (var item in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
                     File.SetAttributes(item, FileAttributes.Normal);
                 Directory.Delete(root, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            try
+            {
+                if (File.Exists(auditPath))
+                {
+                    File.SetAttributes(auditPath, FileAttributes.Normal);
+                    File.Delete(auditPath);
+                }
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
