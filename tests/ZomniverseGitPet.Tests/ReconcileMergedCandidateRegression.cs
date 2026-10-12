@@ -22,6 +22,7 @@ internal static class ReconcileMergedCandidateRegression
             await MustGit(git, source, ["init"]);
             await MustGit(git, source, ["config", "user.name", "Candidate Test"]);
             await MustGit(git, source, ["config", "user.email", "candidate@example.invalid"]);
+            await MustGit(git, source, ["config", "core.autocrlf", "false"]);
             await MustGit(git, source, ["branch", "-M", "main"]);
 
             var file = Path.Combine(source, "shared.txt");
@@ -37,6 +38,7 @@ internal static class ReconcileMergedCandidateRegression
             await MustGit(git, root, ["clone", remote, peer]);
             await MustGit(git, peer, ["config", "user.name", "Remote Candidate Test"]);
             await MustGit(git, peer, ["config", "user.email", "remote-candidate@example.invalid"]);
+            await MustGit(git, peer, ["config", "core.autocrlf", "false"]);
             var peerFile = Path.Combine(peer, "shared.txt");
             await File.WriteAllTextAsync(
                 peerFile,
@@ -46,9 +48,9 @@ internal static class ReconcileMergedCandidateRegression
             await MustGit(git, peer, ["push", "origin", "main"]);
             var remoteSha = (await MustGit(git, peer, ["rev-parse", "HEAD"])).Trim();
 
-            await File.WriteAllTextAsync(
-                file,
-                "alpha\nbeta\nmiddle one\nmiddle two\ngamma local\n");
+            const string localText =
+                "alpha\nbeta\nmiddle one\nmiddle two\ngamma local\n";
+            await File.WriteAllTextAsync(file, localText);
             await MustGit(git, source, ["add", "--", "shared.txt"]);
             await MustGit(git, source, ["commit", "-m", "local"]);
             var localSha = (await MustGit(git, source, ["rev-parse", "HEAD"])).Trim();
@@ -114,11 +116,20 @@ internal static class ReconcileMergedCandidateRegression
 
             await MustGit(git, source, ["merge", "--abort"]);
             var restoredHead = (await MustGit(git, source, ["rev-parse", "HEAD"])).Trim();
-            var restoredText = await File.ReadAllTextAsync(file);
+            var restoredBlob = await MustGit(git, source, ["show", "HEAD:shared.txt"]);
+            var restoredPathStatus = await MustGit(
+                git, source, ["status", "--porcelain", "--", "shared.txt"]);
+            var restoredIndex = await MustGit(
+                git, source, ["diff", "--cached", "--name-only"]);
+
             if (restoredHead != localSha ||
-                restoredText != "alpha\nbeta\nmiddle one\nmiddle two\ngamma local\n")
+                !string.Equals(restoredBlob, localText, StringComparison.Ordinal) ||
+                !string.IsNullOrWhiteSpace(restoredPathStatus) ||
+                !string.IsNullOrWhiteSpace(restoredIndex))
+            {
                 throw new InvalidOperationException(
-                    "Merge abort did not restore the pre-candidate local state.");
+                    "Merge abort did not restore the pinned LOCAL commit / clean selected path.");
+            }
 
             if (!ReconcileMergedCandidateService.HasConflictMarkers(
                     "<<<<<<< HEAD\na\n=======\nb\n>>>>>>> origin/main\n"))
