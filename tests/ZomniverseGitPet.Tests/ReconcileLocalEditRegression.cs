@@ -12,14 +12,15 @@ internal static class ReconcileLocalEditRegression
 
         try
         {
-            // Keep the audit log outside the temporary Git repository. The regression
-            // asserts that the repository is completely clean after the exact-file
-            // correction commit, so test instrumentation must not create an untracked
-            // file inside the worktree.
+            // Keep test instrumentation outside the disposable Git worktree.
             var git = new GitService(new AuditLog(auditPath));
             await MustGit(git, root, ["init"]);
             await MustGit(git, root, ["config", "user.name", "Local Edit Test"]);
             await MustGit(git, root, ["config", "user.email", "local-edit@example.invalid"]);
+            // Keep the fixture independent of the developer machine's Windows Git
+            // line-ending policy. ReconcileLocalEditService itself owns the source
+            // newline-preservation behavior under test.
+            await MustGit(git, root, ["config", "core.autocrlf", "false"]);
             await MustGit(git, root, ["branch", "-M", "main"]);
 
             var path = Path.Combine(root, "sample.txt");
@@ -73,10 +74,24 @@ internal static class ReconcileLocalEditRegression
                 throw new InvalidOperationException(checkpoint.Message);
 
             var newHead = (await MustGit(git, root, ["rev-parse", "HEAD"])).Trim();
-            var clean = await MustGit(git, root, ["status", "--porcelain"]);
-            if (newHead == pinned || !string.IsNullOrWhiteSpace(clean))
+            var targetStatus = await MustGit(
+                git,
+                root,
+                ["status", "--porcelain", "--", "sample.txt"]);
+            var stagedAfter = await MustGit(
+                git,
+                root,
+                ["diff", "--cached", "--name-only"]);
+            if (newHead == pinned ||
+                !string.IsNullOrWhiteSpace(targetStatus) ||
+                !string.IsNullOrWhiteSpace(stagedAfter))
+            {
                 throw new InvalidOperationException(
-                    "Local correction commit did not produce a clean new HEAD.");
+                    "Local correction commit did not satisfy the exact-file contract.\r\n" +
+                    $"HEAD moved: {newHead != pinned}\r\n" +
+                    $"Selected path status: {(string.IsNullOrWhiteSpace(targetStatus) ? "clean" : targetStatus.Trim())}\r\n" +
+                    $"Staged after commit: {(string.IsNullOrWhiteSpace(stagedAfter) ? "none" : stagedAfter.Trim())}");
+            }
 
             var stale = await service.ValidateAsync(
                 root,
