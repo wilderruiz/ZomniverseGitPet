@@ -11,7 +11,7 @@ internal sealed class ApplicationUpdateForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = true;
-        ClientSize = new Size(760, 570);
+        ClientSize = new Size(840, 650);
         BackColor = GuardianTheme.Window;
         ForeColor = GuardianTheme.Ink;
         Font = new Font("Segoe UI", 9.5f);
@@ -26,7 +26,7 @@ internal sealed class ApplicationUpdateForm : Form
             BackColor = GuardianTheme.Window
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
@@ -34,30 +34,32 @@ internal sealed class ApplicationUpdateForm : Form
         var heading = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "🦊  NEW GITPET AVAILABLE",
+            Text = "🐾  GITPET IS BACK FROM THE VET",
             ForeColor = GuardianTheme.HotPinkSoft,
             BackColor = GuardianTheme.Window,
             Font = new Font("Segoe UI", 14f, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleLeft,
+            AccessibleName = "GitPet update available"
         };
 
         var summary = new Label
         {
             Dock = DockStyle.Fill,
             Text =
-                $"ZomniverseGitPet {update.AvailableVersion} is ready.\r\n" +
+                $"ZomniverseGitPet {update.AvailableVersion} completed its latest release clinic visit and is ready.\r\n" +
                 $"You currently have {update.CurrentVersion} installed.",
             ForeColor = GuardianTheme.Ink,
             BackColor = GuardianTheme.Window,
             Font = new Font("Segoe UI", 10.5f),
             TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(4, 4, 4, 4)
+            Padding = new Padding(4, 4, 4, 4),
+            AccessibleName = "Update version summary"
         };
 
         var notesHeading = new Label
         {
             Dock = DockStyle.Fill,
-            Text = "WHAT CHANGED",
+            Text = "VET VISIT — WHAT CHANGED",
             ForeColor = GuardianTheme.MutedInk,
             BackColor = GuardianTheme.SurfaceRaised,
             Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
@@ -74,24 +76,13 @@ internal sealed class ApplicationUpdateForm : Form
             ForeColor = GuardianTheme.Ink,
             Font = new Font("Segoe UI", 9.5f),
             DetectUrls = true,
-            Text = string.IsNullOrWhiteSpace(update.ReleaseNotes)
-                ? "Release notes are available on the GitHub release page."
-                : update.ReleaseNotes,
-            Margin = new Padding(0, 8, 0, 8)
+            Text = update.VetVisitSummary,
+            Margin = new Padding(0, 8, 0, 8),
+            AccessibleName = "Vet visit update summary",
+            AccessibleDescription =
+                "Summary of new features, fixes and safety treatments in this GitPet release."
         };
-        notes.LinkClicked += (_, e) =>
-        {
-            if (string.IsNullOrWhiteSpace(e.LinkText)) return;
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = e.LinkText,
-                    UseShellExecute = true
-                });
-            }
-            catch { }
-        };
+        notes.LinkClicked += (_, e) => OpenLink(e.LinkText);
 
         var buttons = new FlowLayoutPanel
         {
@@ -116,39 +107,25 @@ internal sealed class ApplicationUpdateForm : Form
         var later = new GuardianActionButton
         {
             Text = "Later",
-            Width = 110,
+            Width = 90,
             Height = 38,
             Kind = GuardianActionKind.Standard,
             SyncStateAware = false,
             DialogResult = DialogResult.Cancel,
-            Margin = new Padding(10, 0, 0, 0)
+            Margin = new Padding(8, 0, 0, 0)
         };
 
-        var releasePage = new GuardianActionButton
-        {
-            Text = "Release page",
-            Width = 130,
-            Height = 38,
-            Kind = GuardianActionKind.Standard,
-            SyncStateAware = false,
-            Margin = new Padding(10, 0, 0, 0)
-        };
-        releasePage.Click += (_, _) =>
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = update.ReleasePage,
-                    UseShellExecute = true
-                });
-            }
-            catch { }
-        };
+        var releasePage = MakeLinkButton("Release page", 116, update.ReleasePage);
+        var vetRecord = MakeLinkButton("Vet record", 108, update.DewormingReportUrl);
+        var passport = MakeLinkButton("Vet passport", 112, update.VetPassportUrl);
 
         buttons.Controls.Add(install);
         buttons.Controls.Add(later);
         buttons.Controls.Add(releasePage);
+        if (!string.IsNullOrWhiteSpace(update.DewormingReportUrl))
+            buttons.Controls.Add(vetRecord);
+        if (!string.IsNullOrWhiteSpace(update.VetPassportUrl))
+            buttons.Controls.Add(passport);
 
         root.Controls.Add(heading, 0, 0);
         root.Controls.Add(summary, 0, 1);
@@ -159,6 +136,39 @@ internal sealed class ApplicationUpdateForm : Form
 
         AcceptButton = install;
         CancelButton = later;
+    }
+
+    private static GuardianActionButton MakeLinkButton(
+        string text,
+        int width,
+        string url)
+    {
+        var button = new GuardianActionButton
+        {
+            Text = text,
+            Width = width,
+            Height = 38,
+            Kind = GuardianActionKind.Standard,
+            SyncStateAware = false,
+            Margin = new Padding(8, 0, 0, 0),
+            Enabled = !string.IsNullOrWhiteSpace(url)
+        };
+        button.Click += (_, _) => OpenLink(url);
+        return button;
+    }
+
+    private static void OpenLink(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch { }
     }
 }
 
