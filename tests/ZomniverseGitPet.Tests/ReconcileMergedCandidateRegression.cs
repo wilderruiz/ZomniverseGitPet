@@ -116,19 +116,28 @@ internal static class ReconcileMergedCandidateRegression
 
             await MustGit(git, source, ["merge", "--abort"]);
             var restoredHead = (await MustGit(git, source, ["rev-parse", "HEAD"])).Trim();
-            var restoredBlob = await MustGit(git, source, ["show", "HEAD:shared.txt"]);
+            var restoredHeadBlob = (await MustGit(
+                git, source, ["rev-parse", "HEAD:shared.txt"])).Trim();
+            var restoredWorkingBlob = (await MustGit(
+                git, source, ["hash-object", "shared.txt"])).Trim();
             var restoredPathStatus = await MustGit(
                 git, source, ["status", "--porcelain", "--", "shared.txt"]);
             var restoredIndex = await MustGit(
                 git, source, ["diff", "--cached", "--name-only"]);
 
             if (restoredHead != localSha ||
-                !string.Equals(restoredBlob, localText, StringComparison.Ordinal) ||
+                !string.Equals(restoredWorkingBlob, restoredHeadBlob, StringComparison.OrdinalIgnoreCase) ||
                 !string.IsNullOrWhiteSpace(restoredPathStatus) ||
                 !string.IsNullOrWhiteSpace(restoredIndex))
             {
                 throw new InvalidOperationException(
-                    "Merge abort did not restore the pinned LOCAL commit / clean selected path.");
+                    "Merge abort diagnostics failed:\r\n" +
+                    $"expected HEAD: {localSha}\r\n" +
+                    $"actual HEAD:   {restoredHead}\r\n" +
+                    $"HEAD blob:     {restoredHeadBlob}\r\n" +
+                    $"working blob:  {restoredWorkingBlob}\r\n" +
+                    $"path status:   {(string.IsNullOrWhiteSpace(restoredPathStatus) ? "<clean>" : restoredPathStatus)}\r\n" +
+                    $"staged paths:  {(string.IsNullOrWhiteSpace(restoredIndex) ? "<clean>" : restoredIndex)}");
             }
 
             if (!ReconcileMergedCandidateService.HasConflictMarkers(
