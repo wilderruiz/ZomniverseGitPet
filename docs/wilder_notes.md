@@ -93,9 +93,11 @@ Stop-Process -Name 'DEV-ZomniverseGitPet','ZomniverseGitPet' -Force -ErrorAction
 powershell -ExecutionPolicy Bypass -File scripts\publish-local.ps1
 # For a public release, use:
 
+```powershell
 dotnet build ZomniverseGitPet.sln -c Release
 dotnet run --project tests\ZomniverseGitPet.Tests\ZomniverseGitPet.Tests.csproj -c Release
 powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
+```
 
 * Then run the newly generated installer to update the installed release.
 
