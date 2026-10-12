@@ -345,11 +345,33 @@ internal sealed class ApplicationReleaseForm : Form
             : "Package and source provenance verified. GitPet is checking GitHub CLI authentication before enabling publication.";
     }
 
-    private string BuildDefaultNotes()
+    private string BuildDefaultNotes() => BuildDefaultReleaseNotes(_package);
+
+    internal static string BuildDefaultReleaseNotes(ApplicationReleasePackage package)
     {
-        if (!_package.Ready) return string.Empty;
+        if (!package.Ready) return string.Empty;
+
+        try
+        {
+            var notesPath = Path.Combine(
+                package.RepositoryPath,
+                "release",
+                package.ReleaseTag,
+                "GITHUB_RELEASE_NOTES.md");
+            if (File.Exists(notesPath))
+            {
+                var notes = File.ReadAllText(notesPath).Trim();
+                if (!string.IsNullOrWhiteSpace(notes)) return notes;
+            }
+        }
+        catch
+        {
+            // A missing or unreadable veterinary record must never block release
+            // inspection. Fall back to the long-standing generic package notes.
+        }
+
         return
-            $"ZomniverseGitPet {_package.Version}\r\n\r\n" +
+            $"ZomniverseGitPet {package.Version}\r\n\r\n" +
             "Windows release package containing the recommended installer, a portable build, the automatic-update manifest, and SHA-256 checksums.\r\n\r\n" +
             "The Setup EXE is the recommended download for normal Windows use.";
     }
