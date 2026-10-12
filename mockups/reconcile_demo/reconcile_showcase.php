@@ -35,8 +35,8 @@ final class ReconcileShowcase
     {
         return [
             'side' => 'REMOTE',
-            'message' => 'Baseline remote story',
-            'review' => 'waiting',
+            'message' => 'Remote agent added publication safeguards',
+            'review' => 'ready',
         ];
     }
 
