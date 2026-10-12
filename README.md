@@ -26,7 +26,7 @@ The application combines a dark **Guardian Command Center** with a small live pu
 
 GitPet is especially useful when several humans or AI coding agents are touching the same codebase: work can arrive remotely, be reviewed locally, tested, saved as an ordinary Git commit, and explicitly sent only after you decide it is ready.
 
-> Current application version: **0.5.0** · Native .NET 8 WinForms · Windows x64 · Git for Windows  
+> Current application version: **0.6.0** · Native .NET 8 WinForms · Windows x64 · Git for Windows  
 > Installer and portable builds are published through this repository's [GitHub Releases](../../releases) page.
 
 ---
