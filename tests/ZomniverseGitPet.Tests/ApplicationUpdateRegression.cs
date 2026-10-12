@@ -18,6 +18,39 @@ internal static class ApplicationUpdateRegression
         if (ApplicationUpdateService.IsNewerVersion("0.4.1", "0.4.2"))
             throw new InvalidOperationException("Updater regression: an older release must not trigger an update.");
 
+        var vetSummary = ApplicationUpdateService.ResolveVetVisitSummary(
+            "  Vet visit summary\n• parasite removed  ",
+            "legacy GitHub release notes");
+        if (vetSummary != "Vet visit summary\n• parasite removed")
+            throw new InvalidOperationException(
+                "Updater regression: versioned vet summary should win over legacy release notes and be trimmed.");
+
+        var legacySummary = ApplicationUpdateService.ResolveVetVisitSummary(
+            "",
+            "  legacy GitHub release notes  ");
+        if (legacySummary != "legacy GitHub release notes")
+            throw new InvalidOperationException(
+                "Updater regression: older releases should fall back to GitHub release notes.");
+
+        var genericSummary = ApplicationUpdateService.ResolveVetVisitSummary(null, null);
+        if (string.IsNullOrWhiteSpace(genericSummary) ||
+            !genericSummary.Contains("release checks", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Updater regression: missing vet/release notes should produce a stable fallback message.");
+
+        var reportUrl = ApplicationUpdateService.BuildDewormingReportUrl("v0.6.0");
+        var passportUrl = ApplicationUpdateService.BuildVetPassportUrl("v0.6.0");
+        if (!reportUrl.EndsWith(
+                "/blob/v0.6.0/release/v0.6.0/DEWORMING_REPORT.md",
+                StringComparison.Ordinal) ||
+            !passportUrl.EndsWith(
+                "/blob/v0.6.0/release/VET_PASSPORT.md",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Updater regression: veterinary record URLs should be pinned to the offered release tag.");
+        }
+
         var directory = Path.Combine(Path.GetTempPath(), "zgitpet-updater-regression-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
@@ -38,6 +71,7 @@ internal static class ApplicationUpdateRegression
             catch { }
         }
 
-        Console.WriteLine("Application updater regression passed (version + SHA-256 rules).");
+        Console.WriteLine(
+            "Application updater regression passed (version + vet-summary fallback + SHA-256 rules).");
     }
 }
