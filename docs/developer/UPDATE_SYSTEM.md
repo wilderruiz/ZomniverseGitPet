@@ -16,7 +16,7 @@ Source: `ApplicationUpdateCoordinator.cs`, `ApplicationUpdateService.cs`, `Appli
 ```mermaid
 sequenceDiagram
     participant App as GitPet (installed build)
-    participant GH as GitHub Releases
+    participant GH as GitHub Releases / tagged source
 
     App->>App: IsInstalledBuild? (sibling unins000.exe)
     Note over App: DEV and portable builds stop here
@@ -24,7 +24,9 @@ sequenceDiagram
     GH-->>App: manifest {Version, Channel, Installer{FileName, Sha256, DownloadUrl}}
     App->>App: compare Version to current (System.Version)
     Note over App: only proceeds if newer
-    App->>App: show ApplicationUpdateForm (release notes, Install/Later)
+    App->>GH: GET release/v<version>/UPDATE_SUMMARY.md from the immutable release tag
+    Note over App: missing old-style record -> fall back to GitHub Release body
+    App->>App: show ApplicationUpdateForm (vet visit summary, Install/Later, record links)
     App->>GH: download installer
     App->>App: SHA-256 the download, compare to manifest hash
     Note over App: mismatch -> delete partial file, abort
@@ -34,9 +36,16 @@ sequenceDiagram
 - Runs only for installed builds (`IsInstalledBuild`: a sibling `unins000.exe` exists). DEV and portable builds never self-update.
 - First check 20 seconds after launch, then every 6 hours.
 - The manifest URL is fixed: a `release-manifest.json` asset attached to the latest GitHub Release of this repository. `Channel` must be `"stable"`.
+- Starting with v0.6.0, each fully charted release has `release/v<version>/UPDATE_SUMMARY.md`. The updater reads that file from the offered **release tag**, not from mutable `main`, so the summary is pinned to the exact generation being offered.
+- For releases that predate the veterinary record system, or if the tagged summary cannot be fetched, the updater falls back to the GitHub Release body. If neither source exists, it shows a stable generic message rather than blocking an otherwise valid update.
+- The update dialog links to the version's `DEWORMING_REPORT.md` and the cumulative `VET_PASSPORT.md` at the same immutable release tag.
 - The installer download is resumable-safe (an already-verified file is reused) and written to a `.download` temp file, renamed only after its hash matches.
 
-See [ADR-0006](../adr/ADR-0006-INSTALLED-ONLY-SELF-UPDATE.md).
+See [ADR-0006](../adr/ADR-0006-INSTALLED-ONLY-SELF-UPDATE.md) and the repository's [`release/`](../../release/README.md) clinic records.
+
+## Compatibility for the first veterinary release
+
+An installed v0.5.0 copy does not yet know how to fetch `release/v0.6.0/UPDATE_SUMMARY.md`. It already knows how to display the GitHub Release body, however. Therefore the v0.6.0 GitHub Release body should use `release/v0.6.0/GITHUB_RELEASE_NOTES.md`, which contains the same user-facing treatment summary and links. This makes the first veterinary release readable by both the old and new updater generations.
 
 ## The user's project "Major Update" / Milestones (`MajorUpdateCoordinator`/`Feature`/`Form`)
 
@@ -47,3 +56,5 @@ A heuristic advisor that inspects the currently open project (file/line churn, d
 ## Publishing an actual GitPet release (`ApplicationReleaseFeature`/`Form`)
 
 This is the third, still-different piece: the maintainer-only tool that actually uploads a new GitPet version to GitHub Releases. It's visible only when the currently open project *is* the GitPet source repository itself, and it's covered in [Build and Release](BUILD_AND_RELEASE.md) since it's part of the release pipeline, not the update system.
+
+Before publishing a charted release, use the matching `release/v<version>/GITHUB_RELEASE_NOTES.md` as the GitHub Release body so older installed generations receive the same visit summary while upgrading.
