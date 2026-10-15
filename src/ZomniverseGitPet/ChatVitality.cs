@@ -151,23 +151,26 @@ public static class ChatVitalityAgentProtocol
 
 public static class ChatVitalityRisk
 {
-    public static int Calculate(ChatVitalitySession session, int interactions, DateTimeOffset now)
+    public static int Calculate(ChatVitalitySession session, int remoteInteractions, DateTimeOffset now)
     {
         var minutes = Math.Max(0, (int)(now - session.StartedAt).TotalMinutes);
         var churn = Math.Max(0L, session.Insertions + session.Deletions);
         var turns = Math.Max(0, session.TotalTurns);
+
+        /*
+         * Owner rule: local GitPet mechanics are not remote-chat interactions.
+         * Save, Send and Reconcile remain useful historical counters, but they
+         * do not increase chat load. Only remote work arriving through Get,
+         * plus conversation age/turns and the size of that incoming work,
+         * contributes to the vitality heuristic.
+         */
         var score =
             Math.Min(20, minutes / 30) +
             Math.Min(20, turns / 6) +
-            Math.Min(20, interactions * 2) +
-            Math.Min(20, session.Saves * 4) +
-            Math.Min(12, session.Gets * 3) +
-            Math.Min(12, session.Sends * 3) +
-            Math.Min(18, session.Reconciles * 6) +
+            Math.Min(20, remoteInteractions * 2) +
+            Math.Min(18, session.Gets * 3) +
             Math.Min(10, session.FilesChanged / 10) +
-            Math.Min(15, (int)(churn / 500)) +
-            Math.Min(15, session.CommitsSeen * 3) +
-            Math.Min(10, session.SyncCycles * 2);
+            Math.Min(15, (int)(churn / 500));
         return Math.Clamp(score, 0, 100);
     }
 
@@ -293,7 +296,7 @@ public sealed class ChatVitalityStore
                     existing.BirthCommit = birthCommit;
                     changed = true;
                 }
-                UpdateDerived(existing, CountEvents(document, existing.Id), timestamp);
+                UpdateDerived(existing, CountRemoteInteractions(document, existing.Id), timestamp);
                 if (changed) Save(document);
                 return Snapshot(document, existing, timestamp);
             }
@@ -360,14 +363,27 @@ public sealed class ChatVitalityStore
 
             switch (type)
             {
-                case ChatVitalityEventType.Get: session.Gets++; session.SyncCycles++; break;
-                case ChatVitalityEventType.Save: session.Saves++; session.CommitsSeen++; break;
-                case ChatVitalityEventType.Send: session.Sends++; session.SyncCycles++; break;
-                case ChatVitalityEventType.Reconcile: session.Reconciles++; session.SyncCycles++; break;
+                case ChatVitalityEventType.Get:
+                    session.Gets++;
+                    session.SyncCycles++;
+                    session.FilesChanged += Math.Max(0, filesChanged);
+                    session.Insertions += Math.Max(0, insertions);
+                    session.Deletions += Math.Max(0, deletions);
+                    break;
+                case ChatVitalityEventType.Save:
+                    session.Saves++;
+                    session.CommitsSeen++;
+                    break;
+                case ChatVitalityEventType.Send:
+                    session.Sends++;
+                    session.SyncCycles++;
+                    break;
+                case ChatVitalityEventType.Reconcile:
+                    session.Reconciles++;
+                    session.SyncCycles++;
+                    break;
             }
-            session.FilesChanged += Math.Max(0, filesChanged);
-            session.Insertions += Math.Max(0, insertions);
-            session.Deletions += Math.Max(0, deletions);
+
             document.Events.Add(new ChatVitalityEvent
             {
                 SessionId = session.Id,
@@ -376,8 +392,8 @@ public sealed class ChatVitalityStore
                 CommitSha = CleanSha(commitSha) ?? "unknown",
                 MetadataJson = string.IsNullOrWhiteSpace(metadataJson) ? "{}" : metadataJson
             });
-            var interactions = CountEvents(document, session.Id);
-            UpdateDerived(session, interactions, timestamp);
+            var remoteInteractions = CountRemoteInteractions(document, session.Id);
+            UpdateDerived(session, remoteInteractions, timestamp);
             Save(document);
             return Snapshot(document, session, timestamp);
         }
@@ -397,7 +413,7 @@ public sealed class ChatVitalityStore
                 .OrderByDescending(x => x.Generation)
                 .FirstOrDefault();
             if (session is null) return null;
-            UpdateDerived(session, CountEvents(document, session.Id), timestamp);
+            UpdateDerived(session, CountRemoteInteractions(document, session.Id), timestamp);
             return Snapshot(document, session, timestamp);
         }
     }
@@ -415,7 +431,7 @@ public sealed class ChatVitalityStore
                 .OrderByDescending(x => x.Generation)
                 .Select(x =>
                 {
-                    UpdateDerived(x, CountEvents(document, x.Id), x.EndedAt ?? timestamp);
+                    UpdateDerived(x, CountRemoteInteractions(document, x.Id), x.EndedAt ?? timestamp);
                     return Snapshot(document, x, timestamp);
                 })
                 .ToArray();
@@ -482,17 +498,18 @@ public sealed class ChatVitalityStore
                 : previousOutcome.Value;
             active.EndedAt = timestamp;
             active.DeathAnchorCommit = CleanSha(previousLastCommit) ?? CleanSha(currentHead);
-            UpdateDerived(active, CountEvents(document, active.Id), timestamp);
+            UpdateDerived(active, CountRemoteInteractions(document, active.Id), timestamp);
         }
     }
 
-    private static int CountEvents(ChatVitalityDocument document, string sessionId) =>
-        document.Events.Count(x => x.SessionId == sessionId);
+    private static int CountRemoteInteractions(ChatVitalityDocument document, string sessionId) =>
+        document.Events.Count(x =>
+            x.SessionId == sessionId && x.Type == ChatVitalityEventType.Get);
 
-    private static void UpdateDerived(ChatVitalitySession session, int interactions, DateTimeOffset now)
+    private static void UpdateDerived(ChatVitalitySession session, int remoteInteractions, DateTimeOffset now)
     {
         session.ElapsedMinutes = Math.Max(0, (int)(now - session.StartedAt).TotalMinutes);
-        session.RiskScore = ChatVitalityRisk.Calculate(session, interactions, now);
+        session.RiskScore = ChatVitalityRisk.Calculate(session, remoteInteractions, now);
     }
 
     private static ChatVitalitySnapshot Snapshot(
@@ -500,10 +517,10 @@ public sealed class ChatVitalityStore
         ChatVitalitySession session,
         DateTimeOffset now)
     {
-        var interactions = CountEvents(document, session.Id);
+        var remoteInteractions = CountRemoteInteractions(document, session.Id);
         var lifecycle = session.Outcome != ChatSessionOutcome.Active
             ? "CLOSED"
-            : interactions == 0 ? "NEWBORN" : "ACTIVE";
+            : remoteInteractions == 0 ? "NEWBORN" : "ACTIVE";
         var currentAnchor = document.Events
             .Where(x => x.SessionId == session.Id)
             .OrderByDescending(x => x.Timestamp)
@@ -511,7 +528,7 @@ public sealed class ChatVitalityStore
             .FirstOrDefault() ?? session.BirthCommit;
         return new ChatVitalitySnapshot(
             session,
-            interactions,
+            remoteInteractions,
             lifecycle,
             ChatVitalityRisk.Classify(session.RiskScore),
             ChatVitalityRisk.Recommendation(session.RiskScore),
