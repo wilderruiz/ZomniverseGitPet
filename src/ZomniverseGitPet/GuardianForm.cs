@@ -33,6 +33,9 @@ public sealed class GuardianForm : Form
     private readonly GuardianStatusChip _healthChip = new();
     private readonly GuardianStatusChip _branchChip = new();
     private readonly GuardianStatusChip _changesChip = new();
+    private readonly ChatVitalityControl _chatVitality = new();
+    private readonly ChatVitalityStore _chatVitalityStore = new();
+    private readonly SemaphoreSlim _chatVitalityRecording = new(1, 1);
     private ContextMenuStrip? _repositoryBranchMenu;
 
     private readonly DataGridView _files = new();
@@ -124,6 +127,8 @@ public sealed class GuardianForm : Form
             if (_branchChip.Interactive && _branchChip.Enabled)
                 await ShowRepositoryBranchMenuAsync();
         };
+        _chatVitality.NewChatRequested += async (_, _) => await RegisterNewChatAsync();
+        _chatVitality.HistoryRequested += (_, _) => ShowChatVitalityHistory();
 
         var menu = BuildMainMenu();
         var header = BuildHeader();
@@ -270,7 +275,7 @@ public sealed class GuardianForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 188,
+            Height = 292,
             Padding = new Padding(10, 10, 10, 10),
             BackColor = GuardianTheme.Window
         };
@@ -399,7 +404,17 @@ public sealed class GuardianForm : Form
         _commitLabel.Font = new Font("Cascadia Mono", 8.5f);
         _commitLabel.TextAlign = ContentAlignment.MiddleLeft;
         _commitLabel.AutoEllipsis = true;
+        _chatVitality.Dock = DockStyle.Right;
+        _chatVitality.Width = 410;
+        _chatVitality.MinimumSize = new Size(410, 118);
+        _chatVitality.Margin = new Padding(18, 0, 0, 0);
+        _toolTips.SetToolTip(_chatVitality,
+            "Chat Vitality\n\nLocal repo activity and handoff risk only.\n" +
+            "Click for generation history or use + NEW CHAT to register a birth.\n\n" +
+            "GitPet does not know hidden token counts, remaining context, or exact model limits.");
+        commitArea.Controls.Add(_chatVitality);
         commitArea.Controls.Add(_commitLabel);
+        _chatVitality.BringToFront();
 
         var repositoryLinkRow = new TableLayoutPanel
         {
@@ -991,6 +1006,7 @@ public sealed class GuardianForm : Form
         var origin = await originTask;
 
         UpdateRepositoryHeader(_status, commit, origin);
+        UpdateChatVitalityWidget(repositoryPath);
         _files.Rows.Clear();
 
         foreach (var file in _status.Files)
@@ -1184,6 +1200,138 @@ public sealed class GuardianForm : Form
         }
     }
 
+    private void UpdateChatVitalityWidget(string repositoryPath)
+    {
+        try { _chatVitality.ShowSnapshot(_chatVitalityStore.GetActive(repositoryPath)); }
+        catch { _chatVitality.ShowSnapshot(null); }
+    }
+
+    private async Task RegisterNewChatAsync()
+    {
+        if (!HasRepository() || _operation is not null) return;
+        var repositoryPath = _config.RepositoryPath!;
+        var head = await _git.RunGitAsync(repositoryPath, ["rev-parse", "HEAD"],
+            TimeSpan.FromSeconds(8), CancellationToken.None);
+        if (!head.Success || string.IsNullOrWhiteSpace(head.Output))
+        {
+            MessageBox.Show(this,
+                "GitPet could not read the current HEAD commit, so no chat birth was recorded.",
+                "Chat Vitality", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var history = _chatVitalityStore.GetHistory(repositoryPath);
+        var nextGeneration = history.Count == 0 ? 1 : history.Max(x => x.Session.Generation) + 1;
+        var active = history.FirstOrDefault(x => x.Session.Outcome == ChatSessionOutcome.Active);
+        using var dialog = new ChatBirthForm(nextGeneration, active is not null, head.Output.Trim());
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        try
+        {
+            var snapshot = _chatVitalityStore.RegisterBirth(
+                repositoryPath, head.Output.Trim(), dialog.Generation,
+                dialog.PreviousOutcome, dialog.PreviousCommit, dialog.Notes);
+            _chatVitality.ShowSnapshot(snapshot);
+            ReportActivity(
+                $"Chat generation {snapshot.Session.Generation:00} registered as NEWBORN at {ShortSha(snapshot.Session.BirthCommit)}.\n" +
+                "Session load uses observable local repository activity only.",
+                GuardianActivityKind.Success);
+            await _audit.WriteAsync("chat_vitality_birth", new
+            {
+                repository = repositoryPath,
+                snapshot.Session.Generation,
+                snapshot.Session.BirthCommit,
+                previousOutcome = dialog.PreviousOutcome?.ToString() ?? "Abandoned"
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Chat Vitality",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void ShowChatVitalityHistory()
+    {
+        if (!HasRepository()) return;
+        var repositoryPath = _config.RepositoryPath!;
+        var history = _chatVitalityStore.GetHistory(repositoryPath);
+        if (history.Count == 0)
+        {
+            MessageBox.Show(this,
+                "No chat generations have been registered for this repository yet.\n\n" +
+                "Use + NEW CHAT in the Chat Vitality widget to register one explicitly.",
+                "Chat Vitality", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var name = _config.GetActiveProject()?.DisplayName ?? Path.GetFileName(repositoryPath);
+        using var form = new ChatVitalityHistoryForm(name, history);
+        form.ShowDialog(this);
+    }
+
+    private async Task RecordChatVitalityEventAsync(GuardianOperationKind operation)
+    {
+        if (string.IsNullOrWhiteSpace(_config.RepositoryPath)) return;
+        var repositoryPath = _config.RepositoryPath!;
+        await _chatVitalityRecording.WaitAsync();
+        try
+        {
+            if (_chatVitalityStore.GetActive(repositoryPath) is null) return;
+            var head = await _git.RunGitAsync(repositoryPath, ["rev-parse", "HEAD"],
+                TimeSpan.FromSeconds(8), CancellationToken.None);
+            var commitSha = head.Success ? head.Output.Trim() : "unknown";
+            var filesChanged = _status?.Files.Count ?? 0;
+            long insertions = 0;
+            long deletions = 0;
+
+            if (operation is GuardianOperationKind.Save or GuardianOperationKind.Get or GuardianOperationKind.Reconcile)
+            {
+                var range = operation == GuardianOperationKind.Save ? "HEAD^" : "ORIG_HEAD";
+                var numstat = await _git.RunGitAsync(repositoryPath,
+                    ["diff", "--numstat", range, "HEAD", "--"],
+                    TimeSpan.FromSeconds(12), CancellationToken.None);
+                if (numstat.Success)
+                    (filesChanged, insertions, deletions) = ParseChatVitalityNumStat(numstat.Output, filesChanged);
+            }
+
+            var type = operation switch
+            {
+                GuardianOperationKind.Get => ChatVitalityEventType.Get,
+                GuardianOperationKind.Send => ChatVitalityEventType.Send,
+                GuardianOperationKind.Reconcile => ChatVitalityEventType.Reconcile,
+                _ => ChatVitalityEventType.Save
+            };
+            var snapshot = _chatVitalityStore.RecordEvent(
+                repositoryPath, type, commitSha, filesChanged, insertions, deletions);
+            if (snapshot is not null && !IsDisposed) _chatVitality.ShowSnapshot(snapshot);
+        }
+        catch (Exception ex)
+        {
+            await _audit.WriteAsync("chat_vitality_event_error",
+                new { operation = operation.ToString(), error = ex.Message });
+        }
+        finally { _chatVitalityRecording.Release(); }
+    }
+
+    internal static (int Files, long Insertions, long Deletions) ParseChatVitalityNumStat(
+        string output, int fallbackFiles = 0)
+    {
+        var files = 0;
+        long insertions = 0;
+        long deletions = 0;
+        foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = line.Split('\t');
+            if (fields.Length < 3) continue;
+            files++;
+            if (long.TryParse(fields[0], out var added)) insertions += added;
+            if (long.TryParse(fields[1], out var removed)) deletions += removed;
+        }
+        return (files == 0 ? Math.Max(0, fallbackFiles) : files, insertions, deletions);
+    }
+
+    private static string ShortSha(string value) => value.Length <= 8 ? value : value[..8];
+
     private void SetNoProjectHeader()
     {
         _projectTitle.Text = "NO PROJECT";
@@ -1197,6 +1345,7 @@ public sealed class GuardianForm : Form
         _changesChip.Tone = GuardianChipTone.Neutral;
         _commitLabel.Text = "LATEST  Choose or prepare a project to begin.";
         _watchingLabel.Text = "Choose a project to begin";
+        _chatVitality.ShowSnapshot(null);
         SetRepositoryWebAddress(null);
         _emptyState.Visible = true;
         _emptyState.Text =
@@ -1973,6 +2122,7 @@ public sealed class GuardianForm : Form
             result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
         _saveOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
             result.Success ? "Changes saved locally." : result.Message);
+        if (result.Success) _ = RecordChatVitalityEventAsync(GuardianOperationKind.Save);
 
             /*
             PATCH: THEMED SAVE RESULT
@@ -2132,6 +2282,7 @@ public sealed class GuardianForm : Form
             result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
         _getOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
             result.Success ? "Updates received successfully." : "Get stopped safely.");
+        if (result.Success) _ = RecordChatVitalityEventAsync(GuardianOperationKind.Get);
 
         MessageBox.Show(
             this,
@@ -2355,6 +2506,7 @@ public sealed class GuardianForm : Form
             result.Success ? GuardianActivityKind.Success : GuardianActivityKind.Error);
         _sendOperation.Transition(result.Success ? SaveOperationPhase.Completed : SaveOperationPhase.Failed,
             result.Success ? "Saved updates were sent successfully." : "Send failed.");
+        if (result.Success) _ = RecordChatVitalityEventAsync(GuardianOperationKind.Send);
 
         /*
         PATCH: THEMED SEND RESULT
@@ -2590,6 +2742,8 @@ public sealed class GuardianForm : Form
     {
         var text = message ?? SaveOperationStateController.DefaultMessage(phase, GuardianOperationKind.Reconcile);
         _reconcileOperation.Transition(phase, message);
+        if (phase == SaveOperationPhase.Completed)
+            _ = RecordChatVitalityEventAsync(GuardianOperationKind.Reconcile);
         if (phase == SaveOperationPhase.Idle) return;
         ShowActivityPanel();
         if (phase == SaveOperationPhase.Preparing)

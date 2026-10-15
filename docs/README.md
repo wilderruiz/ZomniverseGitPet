@@ -46,6 +46,7 @@ flowchart LR
 | [Publishing Architecture](developer/PUBLISHING_ARCHITECTURE.md) | Standalone logical-project publishing, the isolated workspace, and content fingerprinting. |
 | [Update System](developer/UPDATE_SYSTEM.md) | GitPet's own self-update mechanism, separate from the user-project "Major Update" feature. |
 | [UI Architecture](developer/UI_ARCHITECTURE.md) | WinForms shell conventions: theme, window chrome, custom controls, the Guardian workboard. |
+| [Chat Vitality](developer/CHAT_VITALITY.md) | Repo-scoped coding-chat generations, local persistence, lifecycle, event counters, and heuristic handoff risk. |
 | [Testing](developer/TESTING.md) | The project's bespoke regression-test architecture and how to run it. |
 | [Build and Release](developer/BUILD_AND_RELEASE.md) | `build-release.ps1`, the installer, release manifests, and provenance validation. |
 

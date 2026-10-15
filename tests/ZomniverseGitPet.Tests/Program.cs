@@ -1116,6 +1116,7 @@ await ReconcileActiveMergedConflictRegression.RunAsync();
 await ReconcileValidationRegression.RunAsync();
 await LongPathRegression.RunAsync();
 await WindowsFileLockRegression.RunAsync();
+await ChatVitalityRegression.RunAsync();
 
 if (failures.Count > 0)
 {
