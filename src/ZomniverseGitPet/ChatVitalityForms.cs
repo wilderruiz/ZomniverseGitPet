@@ -56,7 +56,7 @@ internal sealed class ChatBirthForm : Form
         {
             Text = hasActiveSession
                 ? "The active previous generation will be closed. If no outcome is selected, GitPet conservatively records ABANDONED. Commits are history anchors; they are never described as dead."
-                : "This creates the first explicit repo-scoped chat generation. GitPet does not infer hidden token counts, context remaining, or model limits.",
+                : "Manual recovery birth. Normal coding agents should announce birth automatically from their first conversational turn; GitPet never infers hidden token counts or context remaining.",
             ForeColor = GuardianTheme.MutedInk,
             Dock = DockStyle.Fill,
             AutoSize = false
@@ -93,13 +93,13 @@ internal sealed class ChatVitalityHistoryForm : Form
     {
         Text = "Chat Vitality history";
         StartPosition = FormStartPosition.CenterParent;
-        Size = new Size(980, 520);
-        MinimumSize = new Size(760, 420);
+        Size = new Size(1100, 520);
+        MinimumSize = new Size(820, 420);
         BackColor = GuardianTheme.Window;
         ForeColor = GuardianTheme.Ink;
         WindowChrome.ApplyGuardianChrome(this);
 
-        var title = new Label { Dock = DockStyle.Top, Height = 66, Padding = new Padding(20, 16, 0, 0), Text = $"CHAT VITALITY — {repositoryName.ToUpperInvariant()}\r\nLocal, observable repository activity only", ForeColor = GuardianTheme.Violet, Font = new Font("Cascadia Mono", 10, FontStyle.Bold) };
+        var title = new Label { Dock = DockStyle.Top, Height = 66, Padding = new Padding(20, 16, 0, 0), Text = $"CHAT VITALITY — {repositoryName.ToUpperInvariant()}\r\nConversation birth + observable repository activity", ForeColor = GuardianTheme.Violet, Font = new Font("Cascadia Mono", 10, FontStyle.Bold) };
         var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, BackgroundColor = GuardianTheme.Window, BorderStyle = BorderStyle.None, RowHeadersVisible = false, EnableHeadersVisualStyles = false };
         grid.ColumnHeadersDefaultCellStyle.BackColor = GuardianTheme.SurfaceRaised;
         grid.ColumnHeadersDefaultCellStyle.ForeColor = GuardianTheme.SoftInk;
@@ -107,13 +107,24 @@ internal sealed class ChatVitalityHistoryForm : Form
         grid.DefaultCellStyle.ForeColor = GuardianTheme.Ink;
         grid.DefaultCellStyle.SelectionBackColor = GuardianTheme.SurfaceSoft;
         grid.DefaultCellStyle.SelectionForeColor = GuardianTheme.Ink;
-        grid.Columns.Add("generation", "GENERATION"); grid.Columns.Add("born", "BORN"); grid.Columns.Add("ended", "ENDED");
-        grid.Columns.Add("duration", "DURATION"); grid.Columns.Add("outcome", "OUTCOME"); grid.Columns.Add("birth", "BIRTH COMMIT");
-        grid.Columns.Add("death", "DEATH ANCHOR"); grid.Columns.Add("risk", "FINAL RISK");
+        grid.Columns.Add("generation", "GENERATION"); grid.Columns.Add("born", "BORN"); grid.Columns.Add("contact", "FIRST REPO");
+        grid.Columns.Add("turns", "TURNS"); grid.Columns.Add("ended", "ENDED"); grid.Columns.Add("duration", "DURATION");
+        grid.Columns.Add("outcome", "OUTCOME"); grid.Columns.Add("birth", "BIRTH COMMIT"); grid.Columns.Add("death", "DEATH ANCHOR");
+        grid.Columns.Add("risk", "FINAL RISK");
         foreach (var item in history)
         {
             var s = item.Session;
-            grid.Rows.Add(s.Generation, s.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), s.EndedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "ACTIVE", $"{s.ElapsedMinutes} min", FormatOutcome(s.Outcome), Short(s.BirthCommit), Short(s.DeathAnchorCommit), $"{s.RiskScore} · {item.RiskClass}");
+            grid.Rows.Add(
+                s.Generation,
+                s.FirstTurnAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+                s.FirstRepoContactAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—",
+                s.TotalTurns,
+                s.EndedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "ACTIVE",
+                $"{s.ElapsedMinutes} min",
+                FormatOutcome(s.Outcome),
+                Short(s.BirthCommit),
+                Short(s.DeathAnchorCommit),
+                $"{s.RiskScore} · {item.RiskClass}");
         }
         Controls.Add(grid); Controls.Add(title);
     }
