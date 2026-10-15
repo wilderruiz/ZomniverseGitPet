@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ZomniverseGitPet;
 
 internal static class ChatVitalityRegression
@@ -20,6 +21,8 @@ internal static class ChatVitalityRegression
             Require(first.Session.Generation == 1, "First generation should be 1.");
             Require(first.LifecycleState == "NEWBORN", "A birth without events should be NEWBORN.");
             Require(first.Session.BirthCommit == "aaaaaaaaaaaaaaaa", "Birth anchor was not preserved.");
+            Require(first.Session.FirstTurnAt == bornAt && first.Session.FirstRepoContactAt == bornAt,
+                "Manual birth should preserve its explicit birth/contact timestamp.");
 
             var active = store.RecordEvent(repoA, ChatVitalityEventType.Save, "bbbbbbbbbbbbbbbb",
                 filesChanged: 4, insertions: 120, deletions: 30, now: bornAt.AddMinutes(35));
@@ -64,9 +67,84 @@ internal static class ChatVitalityRegression
             Require(abandoned.Session.Generation == 3 && abandonedPrevious.Session.Outcome == ChatSessionOutcome.Abandoned,
                 "An omitted previous outcome must conservatively close ACTIVE as ABANDONED.");
 
+            var repoC = Path.Combine(root, "RepoC");
+            Directory.CreateDirectory(Path.Combine(repoC, ".zgitpet"));
+            var agentBirthAt = bornAt.AddHours(4);
+            var envelopePath = Path.Combine(repoC, ChatVitalityAgentProtocol.RelativeEnvelopePath);
+            File.WriteAllText(envelopePath, JsonSerializer.Serialize(new ChatVitalityAgentEnvelope
+            {
+                Protocol = ChatVitalityAgentProtocol.ProtocolName,
+                Event = ChatVitalityAgentProtocol.BirthEvent,
+                BirthId = "repo-c-chat-1",
+                Repository = "example/repo-c",
+                FirstTurnAt = agentBirthAt,
+                BirthCommit = "1212121212121212",
+                UserTurns = 1,
+                AssistantTurns = 1,
+                TotalTurns = 2,
+                Notes = "agent announced birth"
+            }));
+
+            var imported = reloaded.GetActive(repoC, agentBirthAt.AddMinutes(5));
+            Require(imported is not null && imported.Session.Generation == 1,
+                "Agent birth envelope should create the first repo-scoped generation automatically.");
+            Require(imported!.Session.AgentBirthId == "repo-c-chat-1",
+                "Agent birth id was not preserved for idempotency.");
+            Require(imported.Session.StartedAt == agentBirthAt && imported.Session.FirstTurnAt == agentBirthAt,
+                "Agent birth must use first conversational turn rather than first repository contact.");
+            Require(imported.Session.FirstRepoContactAt == agentBirthAt.AddMinutes(5),
+                "First repository contact should be stored separately from chat birth.");
+            Require(imported.Session.TotalTurns == 2 && imported.Session.UserTurns == 1 && imported.Session.AssistantTurns == 1,
+                "Initial conversation turn counters were not imported.");
+            Require(imported.Session.BirthCommit == "1212121212121212",
+                "Agent-supplied repository birth anchor was not preserved.");
+
+            var importedAgain = reloaded.GetActive(repoC, agentBirthAt.AddMinutes(6));
+            Require(reloaded.GetHistory(repoC).Count == 1 && importedAgain?.Session.AgentBirthId == "repo-c-chat-1",
+                "Re-reading the same birth envelope must be idempotent.");
+
+            File.WriteAllText(envelopePath, JsonSerializer.Serialize(new ChatVitalityAgentEnvelope
+            {
+                Protocol = ChatVitalityAgentProtocol.ProtocolName,
+                Event = ChatVitalityAgentProtocol.BirthEvent,
+                BirthId = "repo-c-chat-1",
+                Repository = "example/repo-c",
+                FirstTurnAt = agentBirthAt,
+                BirthCommit = "1212121212121212",
+                UserTurns = 5,
+                AssistantTurns = 5,
+                TotalTurns = 10
+            }));
+            var pulsed = reloaded.GetActive(repoC, agentBirthAt.AddMinutes(7));
+            Require(pulsed?.Session.TotalTurns == 10 && pulsed.Session.UserTurns == 5 && pulsed.Session.AssistantTurns == 5,
+                "Later observation of the same birth id should monotonically raise turn counters.");
+
+            File.WriteAllText(envelopePath, JsonSerializer.Serialize(new ChatVitalityAgentEnvelope
+            {
+                Protocol = ChatVitalityAgentProtocol.ProtocolName,
+                Event = ChatVitalityAgentProtocol.BirthEvent,
+                BirthId = "repo-c-chat-2",
+                Repository = "example/repo-c",
+                FirstTurnAt = agentBirthAt.AddHours(1),
+                BirthCommit = "3434343434343434",
+                UserTurns = 1,
+                AssistantTurns = 1,
+                TotalTurns = 2,
+                PreviousOutcome = "MAX_LENGTH",
+                PreviousDeathAnchor = "2323232323232323"
+            }));
+            var nextAgentBirth = reloaded.GetActive(repoC, agentBirthAt.AddHours(1).AddMinutes(1));
+            Require(nextAgentBirth?.Session.Generation == 2,
+                "A new agent birth id should create the next repository generation.");
+            var closedAgent = reloaded.GetHistory(repoC).Single(x => x.Session.Generation == 1);
+            Require(closedAgent.Session.Outcome == ChatSessionOutcome.MaxLength &&
+                    closedAgent.Session.DeathAnchorCommit == "2323232323232323",
+                "Agent birth should explicitly close the previous generation with its supplied outcome/anchor.");
+
             var heavy = new ChatVitalitySession
             {
                 StartedAt = bornAt,
+                TotalTurns = 180,
                 Saves = 8,
                 Gets = 6,
                 Sends = 6,
@@ -84,7 +162,7 @@ internal static class ChatVitalityRegression
             var parsed = GuardianForm.ParseChatVitalityNumStat("12\t3\ta.cs\n-\t-\timage.bin\n8\t0\tb.cs\n");
             Require(parsed == (3, 20, 3), "Numstat accumulation did not preserve files and numeric churn.");
 
-            Console.WriteLine("Chat Vitality storage, lifecycle, scoring, and event regressions passed.");
+            Console.WriteLine("Chat Vitality storage, lifecycle, agent birth, scoring, and event regressions passed.");
             return Task.CompletedTask;
         }
         finally
