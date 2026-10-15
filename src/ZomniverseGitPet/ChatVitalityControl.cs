@@ -85,7 +85,7 @@ internal sealed class ChatVitalityControl : Control
             $"SESSION LOAD: {snapshot.RiskClass}  {session.RiskScore}/100",
             smallFont, new Point(12, 68), GuardianTheme.SoftInk);
         TextRenderer.DrawText(e.Graphics,
-            $"{session.TotalTurns} turns · {snapshot.InteractionCount} repo events · {session.Saves} checkpoints · {anchor}",
+            $"{session.TotalTurns} turns · {snapshot.InteractionCount} remote gets · {session.Saves} local checkpoints · {anchor}",
             smallFont, new Point(12, 88), GuardianTheme.MutedInk);
         if (!string.IsNullOrWhiteSpace(snapshot.Recommendation))
             TextRenderer.DrawText(e.Graphics, snapshot.Recommendation, smallFont,
