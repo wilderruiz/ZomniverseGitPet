@@ -56,7 +56,7 @@ internal sealed class ChatVitalityControl : Control
         if (_snapshot is null)
         {
             TextRenderer.DrawText(e.Graphics, "NO ACTIVE GENERATION", mainFont, new Point(12, 48), GuardianTheme.FaintInk);
-            TextRenderer.DrawText(e.Graphics, "Start explicitly; nothing is inferred", smallFont, new Point(12, 74), GuardianTheme.MutedInk);
+            TextRenderer.DrawText(e.Graphics, "Awaiting agent birth or manual start", smallFont, new Point(12, 74), GuardianTheme.MutedInk);
             return;
         }
 
@@ -85,7 +85,7 @@ internal sealed class ChatVitalityControl : Control
             $"SESSION LOAD: {snapshot.RiskClass}  {session.RiskScore}/100",
             smallFont, new Point(12, 68), GuardianTheme.SoftInk);
         TextRenderer.DrawText(e.Graphics,
-            $"{snapshot.InteractionCount} interactions · {session.Saves} checkpoints · {session.Gets} receives · {anchor}",
+            $"{session.TotalTurns} turns · {snapshot.InteractionCount} repo events · {session.Saves} checkpoints · {anchor}",
             smallFont, new Point(12, 88), GuardianTheme.MutedInk);
         if (!string.IsNullOrWhiteSpace(snapshot.Recommendation))
             TextRenderer.DrawText(e.Graphics, snapshot.Recommendation, smallFont,
