@@ -6,7 +6,7 @@ Chat Vitality is a local, repository-scoped record of coding-chat generations an
 
 Data is stored atomically in `%LOCALAPPDATA%\ZomniverseGitPet\chat-vitality.json`, following GitPet's established local JSON-store pattern. Nothing is written into a managed project repository by GitPet itself and the feature makes no network calls. A SHA-256 digest of the normalized repository path is the repository key; the local path is retained only in GitPet's own private state.
 
-Each session records its generation, chat-first-turn timestamp, first repository contact timestamp, birth commit, optional death-anchor commit, outcome, conversation-turn counters, repository-operation counters, observed changed-file/churn counts, elapsed minutes, and current heuristic score. Commits are anchors in repository history; commits themselves never become "dead."
+Each session records its generation, chat-first-turn timestamp, first repository contact timestamp, birth commit, optional death-anchor commit, outcome, conversation-turn counters, repository-operation counters, observed incoming changed-file/churn counts, elapsed minutes, and current heuristic score. Commits are anchors in repository history; commits themselves never become "dead."
 
 ## Automatic agent birth protocol
 
@@ -53,6 +53,17 @@ Rules:
 
 A repository with a shared agent startup document should place this instruction at the beginning of the agent read order: **announce/register this chat birth before doing repository work, then continue the normal handoff read sequence.**
 
+## Repository-operation semantics
+
+GitPet still records **Get, Save, Send and Reconcile** because they are useful session history, but they do not mean the same thing for remote-chat load.
+
+- **Get** is the only GitPet operation treated as a remote-agent interaction. It is the operation that brings work authored by the remote coding chat onto this PC.
+- **Save** is a local checkpoint. It does not increase chat load.
+- **Send** publishes already-saved local work. It does not increase chat load.
+- **Reconcile** is a local repository-history operation. It does not increase chat load.
+
+Only changed-file/churn statistics attached to **Get** are accumulated into the chat-load workload proxy. Local Save/Send/Reconcile churn is deliberately excluded.
+
 ## Lifecycle
 
 Agent-announced birth is preferred. Manual **+ NEW CHAT** remains available when no agent envelope exists.
@@ -61,13 +72,20 @@ Agent-announced birth is preferred. Manual **+ NEW CHAT** remains available when
 2. On first repository contact, ZGitPet records `FirstRepoContactAt` and associates the repository/birth commit.
 3. Generation increments independently for that repository.
 4. If an active previous generation exists, an explicit `CLEAN_HANDOFF`, `HARD_HANG`, `MAX_LENGTH`, or `ABANDONED` may close it. Missing/unknown outcome is recorded conservatively as `ABANDONED`; GitPet never infers `HARD_HANG`.
-5. A new generation is `NEWBORN` until its first completed Get, Save, Send, or Reconcile repo event, then becomes `ACTIVE`.
+5. A new generation remains `NEWBORN` until its first completed **Get** from the remote repository. Local Save, Send or Reconcile operations do not activate it.
 6. Click the widget body to inspect current and closed generations.
 
-Example for Millenova: a fresh chat announces generation 8 with the timestamp of the user's first turn and `MAX_LENGTH` for generation 7. Once the envelope arrives locally, ZGitPet closes generation 7, starts generation 8, displays the connected-node newborn indicator, and preserves conversation-turn counters separately from repository interaction counters.
+Example for Millenova: a fresh chat announces generation 8 with the timestamp of the user's first turn and `MAX_LENGTH` for generation 7. Once the envelope arrives locally, ZGitPet closes generation 7 and starts generation 8. The first Get carrying that agent's work moves the generation from `NEWBORN` to `ACTIVE`.
 
 ## Heuristic score
 
-`ChatVitalityRisk` owns the deterministic 0–100 calculation. Inputs include elapsed time, conversation turns, completed repository interactions, Gets, Saves/checkpoints, Sends, Reconciles, observed file/churn totals, commits seen, and synchronization cycles. Weights are deliberately isolated for later calibration against longitudinal `MAX_LENGTH`, `HARD_HANG`, and `CLEAN_HANDOFF` evidence.
+`ChatVitalityRisk` owns the deterministic 0–100 calculation. The score is intentionally based on signals plausibly related to the remote coding chat itself:
+
+- elapsed chat age;
+- conversation-turn count;
+- number of remote Gets;
+- number/size of files and line churn observed on those Gets.
+
+Save/checkpoint count, Send count, Reconcile count, local commit count and local synchronization mechanics are retained for history but **do not add to session load**.
 
 Classes are `LOW` (0–29), `MODERATE` (30–49), `ELEVATED` (50–69), `HIGH` (70–84), and `HANDOFF RECOMMENDED` (85–100). These are initial product heuristics, not scientifically validated probabilities or model telemetry. `HIGH` recommends handoff after the next clean checkpoint; 85+ recommends creating a clean checkpoint and handing off now.
