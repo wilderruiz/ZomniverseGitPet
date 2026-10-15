@@ -19,28 +19,47 @@ internal static class ChatVitalityRegression
             var bornAt = new DateTimeOffset(2026, 10, 15, 8, 0, 0, TimeSpan.Zero);
             var first = store.RegisterBirth(repoA, "aaaaaaaaaaaaaaaa", now: bornAt);
             Require(first.Session.Generation == 1, "First generation should be 1.");
-            Require(first.LifecycleState == "NEWBORN", "A birth without events should be NEWBORN.");
+            Require(first.LifecycleState == "NEWBORN", "A birth without remote Gets should be NEWBORN.");
             Require(first.Session.BirthCommit == "aaaaaaaaaaaaaaaa", "Birth anchor was not preserved.");
             Require(first.Session.FirstTurnAt == bornAt && first.Session.FirstRepoContactAt == bornAt,
                 "Manual birth should preserve its explicit birth/contact timestamp.");
 
-            var active = store.RecordEvent(repoA, ChatVitalityEventType.Save, "bbbbbbbbbbbbbbbb",
-                filesChanged: 4, insertions: 120, deletions: 30, now: bornAt.AddMinutes(35));
-            Require(active is not null && active.LifecycleState == "ACTIVE", "First event should activate the newborn session.");
-            Require(active!.InteractionCount == 1 && active.Session.Saves == 1 && active.Session.CommitsSeen == 1,
-                "Save event counters were not accumulated.");
-            Require(active.CurrentAnchorCommit == "bbbbbbbbbbbbbbbb",
-                "Current anchor should advance to the latest observable event commit.");
-            Require(active.Session.FilesChanged == 4 && active.Session.Insertions == 120 && active.Session.Deletions == 30,
-                "Observable change metrics were not accumulated.");
+            var beforeLocalOpsScore = first.Session.RiskScore;
+            var afterSave = store.RecordEvent(repoA, ChatVitalityEventType.Save, "bbbbbbbbbbbbbbbb",
+                filesChanged: 4, insertions: 120, deletions: 30, now: bornAt);
+            Require(afterSave is not null && afterSave.LifecycleState == "NEWBORN",
+                "A local Save must not activate the remote chat generation.");
+            Require(afterSave!.InteractionCount == 0 && afterSave.Session.Saves == 1 && afterSave.Session.CommitsSeen == 1,
+                "Save should remain a historical local counter, not a remote interaction.");
+            Require(afterSave.Session.FilesChanged == 0 && afterSave.Session.Insertions == 0 && afterSave.Session.Deletions == 0,
+                "Local Save churn must not be accumulated into remote-chat workload.");
+            Require(afterSave.Session.RiskScore == beforeLocalOpsScore,
+                "Local Save must not increase chat load.");
 
-            store.RecordEvent(repoA, ChatVitalityEventType.Get, "cccccccccccccccc", now: bornAt.AddMinutes(40));
-            store.RecordEvent(repoA, ChatVitalityEventType.Send, "cccccccccccccccc", now: bornAt.AddMinutes(41));
-            store.RecordEvent(repoA, ChatVitalityEventType.Reconcile, "dddddddddddddddd", now: bornAt.AddMinutes(42));
+            var afterSend = store.RecordEvent(repoA, ChatVitalityEventType.Send, "bbbbbbbbbbbbbbbb", now: bornAt);
+            var afterReconcile = store.RecordEvent(repoA, ChatVitalityEventType.Reconcile, "bbbbbbbbbbbbbbbb", now: bornAt);
+            Require(afterSend is not null && afterReconcile is not null &&
+                    afterSend.InteractionCount == 0 && afterReconcile.InteractionCount == 0,
+                "Send/Reconcile must not count as remote chat interactions.");
+            Require(afterReconcile!.Session.RiskScore == beforeLocalOpsScore,
+                "Send/Reconcile must not increase chat load.");
+
+            var active = store.RecordEvent(repoA, ChatVitalityEventType.Get, "cccccccccccccccc",
+                filesChanged: 4, insertions: 120, deletions: 30, now: bornAt.AddMinutes(40));
+            Require(active is not null && active.LifecycleState == "ACTIVE",
+                "First remote Get should activate the newborn session.");
+            Require(active!.InteractionCount == 1 && active.Session.Gets == 1,
+                "Get should be the remote interaction counter.");
+            Require(active.Session.FilesChanged == 4 && active.Session.Insertions == 120 && active.Session.Deletions == 30,
+                "Incoming Get change metrics were not accumulated.");
+            Require(active.CurrentAnchorCommit == "cccccccccccccccc",
+                "Current anchor should advance to the latest observable event commit.");
+
             var beforeHandoff = store.GetActive(repoA, bornAt.AddMinutes(45));
-            Require(beforeHandoff is not null && beforeHandoff.InteractionCount == 4,
-                "Get, Send, and Reconcile events were not accumulated.");
-            Require(beforeHandoff!.Session.SyncCycles == 3, "Sync-cycle counter should include Get, Send, and Reconcile.");
+            Require(beforeHandoff is not null && beforeHandoff.InteractionCount == 1,
+                "Only Get should contribute to remote interaction count.");
+            Require(beforeHandoff!.Session.SyncCycles == 3,
+                "Sync-cycle history may still include Get, Send, and Reconcile.");
 
             var second = store.RegisterBirth(
                 repoA, "eeeeeeeeeeeeeeee", previousOutcome: ChatSessionOutcome.MaxLength,
@@ -141,28 +160,37 @@ internal static class ChatVitalityRegression
                     closedAgent.Session.DeathAnchorCommit == "2323232323232323",
                 "Agent birth should explicitly close the previous generation with its supplied outcome/anchor.");
 
+            var localOnly = new ChatVitalitySession
+            {
+                StartedAt = bornAt,
+                TotalTurns = 2,
+                Saves = 50,
+                Sends = 50,
+                Reconciles = 50,
+                CommitsSeen = 50,
+                SyncCycles = 100
+            };
+            var localOnlyScore = ChatVitalityRisk.Calculate(localOnly, 0, bornAt);
+            Require(localOnlyScore == 0,
+                "Local Save/Send/Reconcile activity must not increase chat load.");
+
             var heavy = new ChatVitalitySession
             {
                 StartedAt = bornAt,
                 TotalTurns = 180,
-                Saves = 8,
                 Gets = 6,
-                Sends = 6,
-                Reconciles = 4,
-                CommitsSeen = 8,
                 FilesChanged = 200,
                 Insertions = 10000,
-                Deletions = 5000,
-                SyncCycles = 16
+                Deletions = 5000
             };
-            var score = ChatVitalityRisk.Calculate(heavy, 30, bornAt.AddHours(12));
-            Require(score == 100 && ChatVitalityRisk.Classify(score) == "HANDOFF RECOMMENDED",
-                "Heuristic scoring/classification should be deterministic and clamped.");
+            var score = ChatVitalityRisk.Calculate(heavy, 6, bornAt.AddHours(12));
+            Require(score >= 85 && ChatVitalityRisk.Classify(score) == "HANDOFF RECOMMENDED",
+                "Remote-chat age, turns, Gets, and incoming churn should drive handoff risk.");
 
             var parsed = GuardianForm.ParseChatVitalityNumStat("12\t3\ta.cs\n-\t-\timage.bin\n8\t0\tb.cs\n");
             Require(parsed == (3, 20, 3), "Numstat accumulation did not preserve files and numeric churn.");
 
-            Console.WriteLine("Chat Vitality storage, lifecycle, agent birth, scoring, and event regressions passed.");
+            Console.WriteLine("Chat Vitality storage, lifecycle, agent birth, Get-only load, scoring, and event regressions passed.");
             return Task.CompletedTask;
         }
         finally
