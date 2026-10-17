@@ -8,8 +8,9 @@ Fast, unversioned, no test run, no clean-tree check:
 
 1. `dotnet publish` (`-r win-x64 --self-contained true -p:PublishSingleFile=true`, Release).
 2. Copies the result to `%LOCALAPPDATA%\ZomniverseGitPet\DEV\DEV-ZomniverseGitPet.exe` — the `DEV-` prefix is what [DEV-build detection](APPLICATION_LIFECYCLE.md#dev-vs-installed-vs-portable) looks for.
-3. Refreshes a `DEV-ZGitPet.lnk` Start Menu shortcut.
-4. Removes older, now-legacy DEV artifact locations from prior versions of this script.
+3. Refreshes the `DEV-ZGitPet.lnk` Start Menu and desktop shortcuts using the versioned external DEV icon.
+4. If GitPet is already pinned, refreshes that existing taskbar shortcut too; it never creates a pin without the user's action.
+5. Removes older, now-legacy DEV artifact locations from prior versions of this script.
 
 This script never touches the installer or the release-manifest pipeline below.
 

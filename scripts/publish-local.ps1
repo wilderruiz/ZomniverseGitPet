@@ -39,6 +39,8 @@ Create a permanent DEV launcher and remove legacy ambiguity.
 #>
 $startMenuPrograms = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $devShortcut = Join-Path $startMenuPrograms 'DEV-ZGitPet.lnk'
+$taskbarPins = Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar'
+$pinnedDevShortcut = Join-Path $taskbarPins 'DEV-ZGitPet.lnk'
 $desktopDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
 $desktopShortcut = if ([string]::IsNullOrWhiteSpace($desktopDirectory)) {
     $null
@@ -103,6 +105,13 @@ try {
         $shortcutPaths += $desktopShortcut
     }
 
+    # Windows copies a shortcut when it is pinned. Refresh that existing copy as
+    # well, otherwise it can keep the old executable-resource icon indefinitely.
+    # Do not create a taskbar pin on the user's behalf.
+    if (Test-Path -LiteralPath $pinnedDevShortcut -PathType Leaf) {
+        $shortcutPaths += $pinnedDevShortcut
+    }
+
     foreach ($shortcutPath in $shortcutPaths) {
         $shortcut = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = $shortcutTarget
@@ -111,6 +120,11 @@ try {
         $shortcut.Description = 'DEV-ZGitPet - local development build'
         $shortcut.Save()
     }
+
+    # Notify Explorer that shortcut metadata changed so the taskbar can discard
+    # its stale icon entry without requiring an Explorer restart.
+    $shell = New-Object -ComObject Shell.Application
+    $shell.NameSpace(0).Self.InvokeVerb('refresh')
 }
 catch {
     Write-Warning "DEV build succeeded, but its shortcuts could not be refreshed: $($_.Exception.Message)"

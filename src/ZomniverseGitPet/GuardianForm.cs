@@ -315,11 +315,13 @@ public sealed class GuardianForm : Form
         var summary = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
+            ColumnCount = 2,
             RowCount = 4,
             Margin = new Padding(0, 0, 28, 0),
             BackColor = GuardianTheme.Surface
         };
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 428));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -404,17 +406,14 @@ public sealed class GuardianForm : Form
         _commitLabel.Font = new Font("Cascadia Mono", 8.5f);
         _commitLabel.TextAlign = ContentAlignment.MiddleLeft;
         _commitLabel.AutoEllipsis = true;
-        _chatVitality.Dock = DockStyle.Right;
-        _chatVitality.Width = 410;
-        _chatVitality.MinimumSize = new Size(410, 118);
+        _chatVitality.Dock = DockStyle.Fill;
+        _chatVitality.MinimumSize = new Size(410, 220);
         _chatVitality.Margin = new Padding(18, 0, 0, 0);
         _toolTips.SetToolTip(_chatVitality,
             "Chat Vitality\n\nLocal repo activity and handoff risk only.\n" +
             "Click for generation history or use + NEW CHAT to register a birth.\n\n" +
             "GitPet does not know hidden token counts, remaining context, or exact model limits.");
-        commitArea.Controls.Add(_chatVitality);
         commitArea.Controls.Add(_commitLabel);
-        _chatVitality.BringToFront();
 
         var repositoryLinkRow = new TableLayoutPanel
         {
@@ -470,6 +469,8 @@ public sealed class GuardianForm : Form
         summary.Controls.Add(overview, 0, 1);
         summary.Controls.Add(commitArea, 0, 2);
         summary.Controls.Add(repositoryLinkRow, 0, 3);
+        summary.Controls.Add(_chatVitality, 1, 0);
+        summary.SetRowSpan(_chatVitality, 4);
 
         /* ==========================================================================
            PATCH: SUBTLE STATUS CARD STRUCTURE

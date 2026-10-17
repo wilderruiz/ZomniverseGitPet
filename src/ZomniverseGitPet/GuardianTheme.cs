@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 
 namespace ZomniverseGitPet;
 
@@ -58,6 +59,18 @@ internal static class GuardianTheme
     }
 
     public static ToolStripRenderer CreateMenuRenderer() => new GuardianMenuRenderer();
+
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetWindowTheme(
+        IntPtr windowHandle,
+        string? subApplicationName,
+        string? subIdentifierList);
+
+    public static void ApplyDarkScrollbarTheme(Control control)
+    {
+        if (!OperatingSystem.IsWindows() || !control.IsHandleCreated) return;
+        _ = SetWindowTheme(control.Handle, "DarkMode_Explorer", null);
+    }
 
     private sealed class GuardianMenuRenderer : ToolStripProfessionalRenderer
     {
