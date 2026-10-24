@@ -7,8 +7,123 @@ internal static class WindowsFileLockRegression
     {
         if (!OperatingSystem.IsWindows()) return;
 
-        var root = Path.Combine(Path.GetTempPath(), "ZomniverseGitPet.LockTest", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        StaleIndexLockIsRemoved();
+        ActiveIndexLockIsPreserved();
+        await GitAddRecoversStaleIndexLockAsync();
+        await GitAddPreservesActiveIndexLockAsync();
+        await RestartManagerFindsLockOwnerAsync();
+
+        Console.WriteLine("Windows file-lock + Git index-lock regressions passed.");
+    }
+
+    private static void StaleIndexLockIsRemoved()
+    {
+        var root = CreateTempRoot("StaleIndexLock");
+        var lockPath = Path.Combine(root, "index.lock");
+        File.WriteAllBytes(lockPath, []);
+
+        try
+        {
+            var result = GitService.TryRecoverStaleIndexLockFile(lockPath);
+            if (!result.Success || !result.Found || !result.Removed || File.Exists(lockPath))
+                throw new InvalidOperationException("An unheld stale index.lock was not removed safely.");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static void ActiveIndexLockIsPreserved()
+    {
+        var root = CreateTempRoot("ActiveIndexLock");
+        var lockPath = Path.Combine(root, "index.lock");
+        File.WriteAllText(lockPath, "active");
+
+        try
+        {
+            using var holder = new FileStream(
+                lockPath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None);
+            var result = GitService.TryRecoverStaleIndexLockFile(lockPath);
+            if (result.Success || !result.Found || result.Removed || !File.Exists(lockPath))
+                throw new InvalidOperationException("An actively held index.lock was deleted or treated as stale.");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task GitAddRecoversStaleIndexLockAsync()
+    {
+        var root = CreateTempRoot("GitAddStaleIndexLock");
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(root, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize stale-index-lock fixture: " + init.Output);
+
+            File.WriteAllText(Path.Combine(root, "fixture.txt"), "fixture");
+            var lockPath = Path.Combine(root, ".git", "index.lock");
+            File.WriteAllBytes(lockPath, []);
+
+            var add = await service.RunGitAsync(root, ["add", "--", "fixture.txt"]);
+            if (!add.Success || File.Exists(lockPath))
+                throw new InvalidOperationException(
+                    "git add did not recover an unheld stale index.lock before staging. " + add.Output);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task GitAddPreservesActiveIndexLockAsync()
+    {
+        var root = CreateTempRoot("GitAddActiveIndexLock");
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(root, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize active-index-lock fixture: " + init.Output);
+
+            File.WriteAllText(Path.Combine(root, "fixture.txt"), "fixture");
+            var lockPath = Path.Combine(root, ".git", "index.lock");
+            File.WriteAllText(lockPath, "active");
+
+            using var holder = new FileStream(
+                lockPath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None);
+            var add = await service.RunGitAsync(root, ["add", "--", "fixture.txt"]);
+            if (
+                add.Success
+                || !File.Exists(lockPath)
+                || !add.Output.Contains("currently in use", StringComparison.OrdinalIgnoreCase)
+                || !add.Output.Contains("Nothing was deleted", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw new InvalidOperationException(
+                    "git add did not preserve/report an actively held index.lock correctly. " + add.Output);
+            }
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task RestartManagerFindsLockOwnerAsync()
+    {
+        var root = CreateTempRoot("LockTest");
         var path = Path.Combine(root, "locked.txt");
         File.WriteAllText(path, "locked");
         Process? holder = null;
@@ -35,8 +150,6 @@ internal static class WindowsFileLockRegression
             var blockers = WindowsFileLockService.FindLockingProcesses(root, ["locked.txt"]);
             if (!blockers.Any(process => process.ProcessId == holder.Id))
                 throw new InvalidOperationException("Restart Manager did not identify the process holding the file.");
-
-            Console.WriteLine("Windows file-lock owner regression passed.");
         }
         finally
         {
@@ -46,7 +159,25 @@ internal static class WindowsFileLockRegression
             }
             catch { }
             holder?.Dispose();
-            try { Directory.Delete(root, true); } catch { }
+            TryDelete(root);
         }
+    }
+
+    private static string CreateTempRoot(string name)
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "ZomniverseGitPet." + name,
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    private static GitService CreateService(string root) => new(new AuditLog(
+        Path.Combine(root, "audit.jsonl")));
+
+    private static void TryDelete(string root)
+    {
+        try { Directory.Delete(root, true); } catch { }
     }
 }
