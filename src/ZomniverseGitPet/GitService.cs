@@ -17,6 +17,126 @@ public sealed class GitService(AuditLog audit)
     private readonly List<string> _launchedGitSubcommands = [];
     internal IReadOnlyList<string> LaunchedGitSubcommands => _launchedGitSubcommands;
 
+    // PATCH: GET INDEX LOCK HARDENING 2026-10-25
+    internal sealed record IndexLockRecoveryResult(
+        bool Success,
+        bool Found,
+        bool Removed,
+        string Error = "");
+
+    internal static IndexLockRecoveryResult TryRecoverStaleIndexLockFile(string lockPath)
+    {
+        if (string.IsNullOrWhiteSpace(lockPath))
+            return new(false, false, false, "Git index lock path is empty.");
+        if (!File.Exists(lockPath))
+            return new(true, false, false);
+
+        try
+        {
+            // FileShare.Delete permits this process to delete the exact file while
+            // retaining exclusive read/write ownership. Another Git writer cannot
+            // acquire the lock between ownership proof and removal.
+            using var stream = new FileStream(
+                lockPath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.Delete);
+            File.Delete(lockPath);
+            return new(true, true, true);
+        }
+        catch (FileNotFoundException)
+        {
+            return new(true, false, false);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new(true, false, false);
+        }
+        catch (IOException ex)
+        {
+            return new(false, true, false, ex.Message);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return new(false, true, false, ex.Message);
+        }
+    }
+
+    private async Task<CommandResult?> RecoverStaleIndexLockBeforeMutationAsync(
+        string repositoryPath,
+        string operation,
+        CancellationToken token)
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+
+        var located = await RunProcessAsync(
+            "git.exe",
+            ["rev-parse", "--git-path", "index.lock"],
+            repositoryPath,
+            TimeSpan.FromSeconds(10),
+            token);
+        if (!located.Success || string.IsNullOrWhiteSpace(located.Output))
+            return null;
+
+        string lockPath;
+        try
+        {
+            var reported = located.Output.Trim();
+            lockPath = Path.IsPathRooted(reported)
+                ? Path.GetFullPath(reported)
+                : Path.GetFullPath(Path.Combine(
+                    repositoryPath,
+                    reported.Replace('/', Path.DirectorySeparatorChar)));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            await audit.WriteAsync("git_index_lock_path_invalid", new
+            {
+                repository = Path.GetFileName(Path.GetFullPath(repositoryPath)),
+                operation,
+                error = ex.Message
+            });
+            return new(-1,
+                "GitPet could not safely resolve Git's index lock path. Nothing was deleted.\r\n\r\n" +
+                ex.Message);
+        }
+
+        var recovery = TryRecoverStaleIndexLockFile(lockPath);
+        if (!recovery.Found) return null;
+
+        if (recovery.Success && recovery.Removed)
+        {
+            await audit.WriteAsync("stale_git_index_lock_recovered", new
+            {
+                repository = Path.GetFileName(Path.GetFullPath(repositoryPath)),
+                operation,
+                lockPath
+            });
+            return null;
+        }
+
+        await audit.WriteAsync("git_index_lock_active", new
+        {
+            repository = Path.GetFileName(Path.GetFullPath(repositoryPath)),
+            operation,
+            lockPath,
+            error = recovery.Error
+        });
+
+        var retryAction = operation.Equals("pull", StringComparison.OrdinalIgnoreCase)
+            ? "Get"
+            : operation.Equals("add", StringComparison.OrdinalIgnoreCase)
+                ? "Save"
+                : "the Git operation";
+
+        return new(-1,
+            "GitPet found an existing Git index lock and verified that it is currently in use. " +
+            "Nothing was deleted.\r\n\r\n" +
+            lockPath + "\r\n\r\n" +
+            $"Finish the other Git operation and try {retryAction} again.\r\n\r\n" +
+            recovery.Error);
+    }
+
     public async Task<CommandResult> RunGitAsync(
         string repositoryPath,
         IEnumerable<string> arguments,
@@ -27,14 +147,25 @@ public sealed class GitService(AuditLog audit)
         await _gitGate.WaitAsync(cancellationToken);
         try
         {
+            var operation = GetGitSubcommand(args);
+            if (operation.Equals("add", StringComparison.OrdinalIgnoreCase) ||
+                operation.Equals("pull", StringComparison.OrdinalIgnoreCase))
+            {
+                var lockFailure = await RecoverStaleIndexLockBeforeMutationAsync(
+                    repositoryPath,
+                    operation,
+                    cancellationToken);
+                if (lockFailure is not null) return lockFailure;
+            }
+
             var started = Stopwatch.StartNew();
             GitProcessLaunchCount++;
-            _launchedGitSubcommands.Add(GetGitSubcommand(args));
+            _launchedGitSubcommands.Add(operation);
             var result = await RunProcessAsync("git.exe", args, repositoryPath,
                 timeout ?? TimeSpan.FromSeconds(30), cancellationToken);
             await audit.WriteAsync("git_operation", new
             {
-                operation = GetGitSubcommand(args),
+                operation,
                 success = result.Success,
                 result.ExitCode,
                 result.TimedOut,
@@ -167,7 +298,7 @@ public sealed class GitService(AuditLog audit)
 
         var arguments = new List<string>
         {
-            "status", "--porcelain=v2", "--branch", "--untracked-files=all"
+            "--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all"
         };
         var pathspecs = LogicalProjectScopeRuntime.GetPathspecs(repositoryPath, includeRootGitIgnore: true);
         if (pathspecs.Count > 0)
@@ -188,7 +319,7 @@ public sealed class GitService(AuditLog audit)
         CancellationToken token = default) =>
         RunGitAsync(
             repositoryPath,
-            ["status", "--porcelain=v2", "--branch", "--untracked-files=no"],
+            ["--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=no"],
             TimeSpan.FromSeconds(20),
             token);
 

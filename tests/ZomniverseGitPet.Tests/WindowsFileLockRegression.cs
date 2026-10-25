@@ -11,6 +11,8 @@ internal static class WindowsFileLockRegression
         ActiveIndexLockIsPreserved();
         await GitAddRecoversStaleIndexLockAsync();
         await GitAddPreservesActiveIndexLockAsync();
+        await GitPullRecoversStaleIndexLockAsync();
+        await GitPullPreservesActiveIndexLockAsync();
         await RestartManagerFindsLockOwnerAsync();
 
         Console.WriteLine("Windows file-lock + Git index-lock regressions passed.");
@@ -113,6 +115,88 @@ internal static class WindowsFileLockRegression
             {
                 throw new InvalidOperationException(
                     "git add did not preserve/report an actively held index.lock correctly. " + add.Output);
+            }
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task GitPullRecoversStaleIndexLockAsync()
+    {
+        var root = CreateTempRoot("GitPullStaleIndexLock");
+        var repository = Path.Combine(root, "repo");
+        Directory.CreateDirectory(repository);
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(repository, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize stale pull-lock fixture: " + init.Output);
+
+            var remote = Path.Combine(root, "remote.git");
+            var initRemote = await service.RunGitAsync(root, ["init", "--bare", remote]);
+            if (!initRemote.Success)
+                throw new InvalidOperationException("Could not initialize pull-lock remote fixture: " + initRemote.Output);
+
+            await service.RunGitAsync(repository, ["config", "user.name", "GitPet Test"]);
+            await service.RunGitAsync(repository, ["config", "user.email", "gitpet@example.invalid"]);
+            File.WriteAllText(Path.Combine(repository, "fixture.txt"), "fixture");
+            var add = await service.RunGitAsync(repository, ["add", "--", "fixture.txt"]);
+            var commit = await service.RunGitAsync(repository, ["commit", "-m", "fixture"]);
+            var remoteAdd = await service.RunGitAsync(repository, ["remote", "add", "origin", remote]);
+            var push = await service.RunGitAsync(repository, ["push", "-u", "origin", "main"]);
+            if (!add.Success || !commit.Success || !remoteAdd.Success || !push.Success)
+                throw new InvalidOperationException("Could not prepare stale pull-lock fixture.");
+
+            var lockPath = Path.Combine(repository, ".git", "index.lock");
+            File.WriteAllBytes(lockPath, []);
+
+            var pull = await service.PullFromOriginAsync(repository, "main");
+            if (!pull.Success || File.Exists(lockPath))
+                throw new InvalidOperationException(
+                    "Get did not recover an unheld stale index.lock before pull. " + pull.Output);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task GitPullPreservesActiveIndexLockAsync()
+    {
+        var root = CreateTempRoot("GitPullActiveIndexLock");
+        var repository = Path.Combine(root, "repo");
+        Directory.CreateDirectory(repository);
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(repository, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize active pull-lock fixture: " + init.Output);
+
+            var lockPath = Path.Combine(repository, ".git", "index.lock");
+            File.WriteAllText(lockPath, "active");
+            using var holder = new FileStream(
+                lockPath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None);
+
+            var pull = await service.PullFromOriginAsync(repository, "main");
+            if (
+                pull.Success
+                || !File.Exists(lockPath)
+                || !pull.Output.Contains("currently in use", StringComparison.OrdinalIgnoreCase)
+                || !pull.Output.Contains("Nothing was deleted", StringComparison.OrdinalIgnoreCase)
+                || !pull.Output.Contains("try Get again", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Get did not preserve/report an actively held index.lock correctly. " + pull.Output);
             }
         }
         finally
