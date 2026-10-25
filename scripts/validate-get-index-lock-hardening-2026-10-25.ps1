@@ -15,7 +15,7 @@ $tests = [System.IO.File]::ReadAllText($testPath)
 
 function Assert-Contains {
     param([string]$Text, [string]$Needle, [string]$Message)
-    if (-not $Text.Contains($Needle, [System.StringComparison]::Ordinal)) {
+    if ($Text.IndexOf($Needle, [System.StringComparison]::Ordinal) -lt 0) {
         throw $Message
     }
 }
