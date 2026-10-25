@@ -14,6 +14,11 @@ $gitService = [System.IO.File]::ReadAllText($gitServicePath)
 $tests = [System.IO.File]::ReadAllText($testPath)
 $marker = 'PATCH: GET INDEX LOCK HARDENING 2026-10-25'
 
+function Test-ContainsOrdinal {
+    param([string]$Text, [string]$Needle)
+    return $Text.IndexOf($Needle, [System.StringComparison]::Ordinal) -ge 0
+}
+
 function Replace-ExactOnce {
     param(
         [string]$Text,
@@ -30,10 +35,12 @@ function Replace-ExactOnce {
         throw "Expected exactly one anchor for $Label; found $($matches.Count). No file was written."
     }
 
-    return $Text.Replace($Old, $New, [System.StringComparison]::Ordinal)
+    # String.Replace(old,new,StringComparison) is unavailable in Windows PowerShell 5.1.
+    # Anchor count above already proves the exact case-sensitive target occurs once.
+    return $Text.Replace($Old, $New)
 }
 
-if ($gitService.Contains($marker, [System.StringComparison]::Ordinal)) {
+if (Test-ContainsOrdinal $gitService $marker) {
     Write-Host 'PASS Get index-lock hardening already applied.'
     exit 0
 }
@@ -57,7 +64,7 @@ $gitService = Replace-ExactOnce $gitService @'
             ["--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=no"],
 '@ 'ValidateRepositoryState no-optional-locks'
 
-if (-not $gitService.Contains('TryRecoverStaleIndexLockFile', [System.StringComparison]::Ordinal)) {
+if (-not (Test-ContainsOrdinal $gitService 'TryRecoverStaleIndexLockFile')) {
     $helperAnchor = @'
     internal IReadOnlyList<string> LaunchedGitSubcommands => _launchedGitSubcommands;
 
@@ -237,7 +244,7 @@ if (-not $gitService.Contains('TryRecoverStaleIndexLockFile', [System.StringComp
 
     $gitService = Replace-ExactOnce $gitService $runAnchor $runReplacement 'central add/pull index-lock guard'
 }
-elseif ($gitService.Contains('RecoverStaleIndexLockBeforeStagingAsync', [System.StringComparison]::Ordinal)) {
+elseif (Test-ContainsOrdinal $gitService 'RecoverStaleIndexLockBeforeStagingAsync') {
     throw 'The older Save-only stale-index-lock patch is present. Apply scripts/apply-stale-index-lock-recovery.ps1 state must be reconciled before this hardening patch.'
 }
 else {
@@ -245,7 +252,7 @@ else {
 }
 
 # Add real Get regressions to the existing Windows lock suite.
-if (-not $tests.Contains('GitPullRecoversStaleIndexLockAsync', [System.StringComparison]::Ordinal)) {
+if (-not (Test-ContainsOrdinal $tests 'GitPullRecoversStaleIndexLockAsync')) {
     $runTestsAnchor = @'
         await GitAddRecoversStaleIndexLockAsync();
         await GitAddPreservesActiveIndexLockAsync();
@@ -350,12 +357,6 @@ if (-not $tests.Contains('GitPullRecoversStaleIndexLockAsync', [System.StringCom
 '@
     $tests = Replace-ExactOnce $tests $methodAnchor $methodReplacement 'Get index-lock regression methods'
 }
-
-# Marker is intentionally added only after every exact anchor above succeeds.
-$gitService = $gitService.Replace(
-    '// PATCH: GET INDEX LOCK HARDENING 2026-10-25',
-    '// PATCH: GET INDEX LOCK HARDENING 2026-10-25',
-    [System.StringComparison]::Ordinal)
 
 [System.IO.File]::WriteAllText(
     $gitServicePath,
