@@ -1,6 +1,6 @@
 # ZGit Pet Post-Check `index.lock` Race Hardening Plan
 
-**Status:** IMPLEMENTATION ACTIVE  
+**Status:** PATCH READY — LOCAL APPLY + REGRESSION SMOKE PENDING  
 **Observed:** 2026-10-28 on Millenova during **Get ↓**  
 
 ## Problem reproduced
@@ -29,9 +29,27 @@ For guarded mutations (`git add` and `git pull`):
 6. if the lock vanished between failure and inspection, retry once because the competing operation has completed;
 7. never loop, never force, never delete another path, and never weaken `pull --ff-only`.
 
+## Prepared implementation
+
+The guarded applicator is:
+
+```text
+scripts/apply-postcheck-index-lock-race-hardening-2026-10-28.ps1
+```
+
+It updates the shared `GitService.RunGitAsync` mutation path rather than only the Get UI, so the same race protection covers both `git pull` and `git add`.
+
+The structural validator is:
+
+```text
+scripts/validate-postcheck-index-lock-race-hardening-2026-10-28.ps1
+```
+
+The applicator is exact-anchor guarded and refuses to write if the expected Oct 25 hardening state is not present.
+
 ## Regression coverage
 
-Add deterministic coverage for:
+The patch adds deterministic coverage for:
 
 - identifying an `index.lock` collision without misclassifying unrelated Git failures;
 - first mutation fails with stale lock → lock recovery succeeds → exactly one retry succeeds;
@@ -41,4 +59,4 @@ Add deterministic coverage for:
 
 ## Exit gate
 
-A stale `index.lock` appearing in the gap between GitPet's pre-check and `git pull` / `git add` self-heals once, while a genuinely active Git writer remains protected and blocks the mutation.
+Run the applicator, structural validator, Release build, and full regression suite. A stale `index.lock` appearing in the gap between GitPet's pre-check and `git pull` / `git add` must self-heal once, while a genuinely active Git writer remains protected and blocks the mutation.
