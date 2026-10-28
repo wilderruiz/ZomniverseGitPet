@@ -1,7 +1,7 @@
 # ZGit Pet responsive repository header
 
 **Date:** 2026-10-28  
-**Status:** IMPLEMENTATION PLANNED
+**Status:** PATCH READY — LOCAL APPLY + VISUAL SMOKE PENDING
 
 ## Problem
 
@@ -52,43 +52,51 @@ Primary file:
 
 - `src/ZomniverseGitPet/GuardianForm.cs`
 
-Expected changes:
+Prepared patch support:
+
+- `scripts/apply-responsive-repository-header-2026-10-28.ps1`
+- `scripts/validate-responsive-repository-header-2026-10-28.ps1`
+
+The applicator is guarded and idempotent. It applies only when the expected current header anchors are present.
+
+Expected source changes:
 
 - make the repository card contain a two-row outer layout;
 - place the current project/chat/status composition in row 0;
 - place `repositoryLinkRow` in row 1 spanning the full card width;
 - remove the repository row from the summary table;
 - resize summary row definitions accordingly;
-- remove the fixed Chat Vitality minimum width that prevents useful compression;
-- add a small layout helper/event that chooses Chat Vitality and status-card widths from the current available width;
+- replace the fixed Chat Vitality minimum with a compressible 280 px floor;
+- add a live resize helper that scales Chat Vitality and status-card widths down to practical floors;
 - allow the repository URL label to ellipsize visually while preserving the full target URL.
 
 No Git behavior, repository selection behavior, Chat Vitality data, branch controls, Save/Get/Send/Reconcile behavior, or network behavior changes in this phase.
 
 ## Responsive sizing guardrails
 
-The adaptive calculation should reserve practical minimums rather than allowing one panel to consume all width.
+The adaptive calculation reserves practical minimums rather than allowing one panel to consume all width.
 
-Suggested floors:
+Prepared floors:
 
-- project/checkpoint area: ~250 px;
-- Chat Vitality: ~280 px;
-- status card: ~300 px.
+- project/checkpoint area: protected by the remaining flexible column;
+- Chat Vitality: 280 px;
+- status card: 300 px.
 
-At wider sizes, grow toward the existing ~428 px Chat Vitality / ~410 px status card proportions.
+At wide sizes the layout returns to the existing 428 px Chat Vitality / 410 px status card proportions.
 
 Do not make the form minimum width larger merely to preserve the old fixed layout.
 
 ## Regression gates
 
+- `powershell -ExecutionPolicy Bypass -File scripts/validate-responsive-repository-header-2026-10-28.ps1` passes after apply.
 - `dotnet build ZomniverseGitPet.sln -c Release` passes.
 - Existing test suite passes.
 - `git diff --check` passes.
 - Structural regression confirms:
   - repository identity row is no longer inside the summary table;
   - repository strip spans the full repository card width;
-  - fixed `Absolute, 428` Chat Vitality sizing is removed;
-  - fixed `Absolute, 410` status sizing is no longer the only layout mode;
+  - Chat Vitality can compress to its 280 px floor;
+  - status width adapts down to its 300 px floor;
   - repository link supports visual ellipsis while retaining the full URL value.
 
 ## Manual visual checks
