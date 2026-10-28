@@ -316,7 +316,7 @@ public sealed class GuardianForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 4,
+            RowCount = 3,
             Margin = new Padding(0, 0, 28, 0),
             BackColor = GuardianTheme.Surface
         };
@@ -325,7 +325,6 @@ public sealed class GuardianForm : Form
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         summary.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        summary.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
 
         /* ==========================================================================
            PATCH: BUILD CURRENT PROJECT PILL HEADER
@@ -407,7 +406,7 @@ public sealed class GuardianForm : Form
         _commitLabel.TextAlign = ContentAlignment.MiddleLeft;
         _commitLabel.AutoEllipsis = true;
         _chatVitality.Dock = DockStyle.Fill;
-        _chatVitality.MinimumSize = new Size(410, 220);
+        _chatVitality.MinimumSize = new Size(280, 0);
         _chatVitality.Margin = new Padding(18, 0, 0, 0);
         _toolTips.SetToolTip(_chatVitality,
             "Chat Vitality\n\nLocal repo activity and handoff risk only.\n" +
@@ -451,7 +450,7 @@ public sealed class GuardianForm : Form
 
         _repositoryWebLink.Dock = DockStyle.Fill;
         _repositoryWebLink.Margin = new Padding(0, 6, 0, 0);
-        _repositoryWebLink.AutoEllipsis = false;
+        _repositoryWebLink.AutoEllipsis = true;
         _repositoryWebLink.LinkColor = GuardianTheme.Healthy;
         _repositoryWebLink.ActiveLinkColor = Color.White;
         _repositoryWebLink.VisitedLinkColor = GuardianTheme.Healthy;
@@ -468,9 +467,8 @@ public sealed class GuardianForm : Form
         summary.Controls.Add(projectHeading, 0, 0);
         summary.Controls.Add(overview, 0, 1);
         summary.Controls.Add(commitArea, 0, 2);
-        summary.Controls.Add(repositoryLinkRow, 0, 3);
         summary.Controls.Add(_chatVitality, 1, 0);
-        summary.SetRowSpan(_chatVitality, 4);
+        summary.SetRowSpan(_chatVitality, 3);
 
         /* ==========================================================================
            PATCH: SUBTLE STATUS CARD STRUCTURE
@@ -603,7 +601,64 @@ public sealed class GuardianForm : Form
 
         repositoryLayout.Controls.Add(summary, 0, 0);
         repositoryLayout.Controls.Add(statusCard, 1, 0);
-        repositoryCard.Controls.Add(repositoryLayout);
+
+        // ZGITPET_RESPONSIVE_REPOSITORY_HEADER_2026_10_28
+        // Repository identity is primary context, so it gets a dedicated row
+        // that never competes with Chat Vitality or the status card for width.
+        var repositoryCardLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = GuardianTheme.Surface
+        };
+        repositoryCardLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        repositoryCardLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        repositoryCardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+
+        repositoryLinkRow.Margin = new Padding(0, 4, 0, 0);
+        repositoryLinkRow.Padding = new Padding(0, 4, 0, 0);
+        repositoryLinkRow.Paint += (_, e) =>
+        {
+            using var separator = new Pen(GuardianTheme.BorderSoft);
+            e.Graphics.DrawLine(separator, 0, 0, repositoryLinkRow.ClientSize.Width, 0);
+        };
+
+        repositoryCardLayout.Controls.Add(repositoryLayout, 0, 0);
+        repositoryCardLayout.Controls.Add(repositoryLinkRow, 0, 1);
+        repositoryCard.Controls.Add(repositoryCardLayout);
+
+        void UpdateResponsiveRepositoryHeader()
+        {
+            var availableWidth = Math.Max(
+                1,
+                repositoryCard.ClientSize.Width - repositoryCard.Padding.Horizontal);
+
+            // Keep the existing roomy desktop proportions, but protect practical
+            // floors at the 920 px minimum window instead of squeezing project/repo context.
+            var wide = availableWidth >= 1080;
+            var statusWidth = wide
+                ? 410
+                : Math.Clamp((int)Math.Round(availableWidth * 0.34), 300, 410);
+
+            repositoryLayout.ColumnStyles[1].SizeType = SizeType.Absolute;
+            repositoryLayout.ColumnStyles[1].Width = statusWidth;
+
+            var summaryWidth = Math.Max(1, availableWidth - statusWidth);
+            var chatWidth = wide
+                ? 428
+                : Math.Clamp((int)Math.Round(summaryWidth * 0.47), 280, 428);
+
+            summary.ColumnStyles[1].SizeType = SizeType.Absolute;
+            summary.ColumnStyles[1].Width = chatWidth;
+        }
+
+        repositoryCard.Resize += (_, _) => UpdateResponsiveRepositoryHeader();
+        repositoryCardLayout.Layout += (_, _) => UpdateResponsiveRepositoryHeader();
+        UpdateResponsiveRepositoryHeader();
+
         panel.Controls.Add(repositoryCard);
 
         _toolTips.SetToolTip(_projectTitle,
