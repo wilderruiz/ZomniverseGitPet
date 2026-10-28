@@ -13,6 +13,11 @@ internal static class WindowsFileLockRegression
         await GitAddPreservesActiveIndexLockAsync();
         await GitPullRecoversStaleIndexLockAsync();
         await GitPullPreservesActiveIndexLockAsync();
+        IndexLockCollisionClassification();
+        await PostCheckStaleIndexLockRetriesOnceAsync();
+        await PostCheckActiveIndexLockDoesNotRetryAsync();
+        await PostCheckVanishedIndexLockRetriesOnceAsync();
+        await PostCheckRetryFailureStopsAfterOneRetryAsync();
         await RestartManagerFindsLockOwnerAsync();
 
         Console.WriteLine("Windows file-lock + Git index-lock regressions passed.");
@@ -198,6 +203,185 @@ internal static class WindowsFileLockRegression
                 throw new InvalidOperationException(
                     "Get did not preserve/report an actively held index.lock correctly. " + pull.Output);
             }
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static void IndexLockCollisionClassification()
+    {
+        var collision = new CommandResult(
+            128,
+            "fatal: Unable to create 'C:/repo/.git/index.lock': File exists.");
+        var unrelated = new CommandResult(
+            1,
+            "fatal: unable to access 'https://example.invalid/repo': network unavailable");
+        var success = new CommandResult(0, "index.lock File exists");
+
+        if (!GitService.IsIndexLockCollision(collision) ||
+            GitService.IsIndexLockCollision(unrelated) ||
+            GitService.IsIndexLockCollision(success))
+        {
+            throw new InvalidOperationException(
+                "Post-check index-lock collision classification is not deterministic.");
+        }
+    }
+
+    private static async Task PostCheckStaleIndexLockRetriesOnceAsync()
+    {
+        var root = CreateTempRoot("PostCheckStaleIndexLock");
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(root, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize post-check stale-lock fixture: " + init.Output);
+
+            var lockPath = Path.Combine(root, ".git", "index.lock");
+            File.WriteAllBytes(lockPath, []);
+            var retries = 0;
+            var first = new CommandResult(
+                128,
+                $"fatal: Unable to create '{lockPath}': File exists.");
+
+            var result = await service.RetryIndexLockCollisionOnceAsync(
+                root,
+                "pull",
+                first,
+                () =>
+                {
+                    retries++;
+                    return Task.FromResult(new CommandResult(0, "retry succeeded"));
+                },
+                CancellationToken.None);
+
+            if (!result.Success || retries != 1 || File.Exists(lockPath))
+                throw new InvalidOperationException(
+                    "A stale post-check index.lock was not recovered and retried exactly once. " + result.Output);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task PostCheckActiveIndexLockDoesNotRetryAsync()
+    {
+        var root = CreateTempRoot("PostCheckActiveIndexLock");
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(root, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize post-check active-lock fixture: " + init.Output);
+
+            var lockPath = Path.Combine(root, ".git", "index.lock");
+            File.WriteAllText(lockPath, "active");
+            using var holder = new FileStream(
+                lockPath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None);
+            var retries = 0;
+            var first = new CommandResult(
+                128,
+                $"fatal: Unable to create '{lockPath}': File exists.");
+
+            var result = await service.RetryIndexLockCollisionOnceAsync(
+                root,
+                "pull",
+                first,
+                () =>
+                {
+                    retries++;
+                    return Task.FromResult(new CommandResult(0, "must not run"));
+                },
+                CancellationToken.None);
+
+            if (result.Success || retries != 0 || !File.Exists(lockPath) ||
+                !result.Output.Contains("currently in use", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "An actively held post-check index.lock was deleted or retried. " + result.Output);
+            }
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task PostCheckVanishedIndexLockRetriesOnceAsync()
+    {
+        var root = CreateTempRoot("PostCheckVanishedIndexLock");
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(root, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize vanished-lock fixture: " + init.Output);
+
+            var retries = 0;
+            var first = new CommandResult(
+                128,
+                "fatal: Unable to create '.git/index.lock': File exists.");
+            var result = await service.RetryIndexLockCollisionOnceAsync(
+                root,
+                "add",
+                first,
+                () =>
+                {
+                    retries++;
+                    return Task.FromResult(new CommandResult(0, "competing writer finished"));
+                },
+                CancellationToken.None);
+
+            if (!result.Success || retries != 1)
+                throw new InvalidOperationException(
+                    "A vanished post-check index.lock did not permit exactly one retry. " + result.Output);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static async Task PostCheckRetryFailureStopsAfterOneRetryAsync()
+    {
+        var root = CreateTempRoot("PostCheckRetryStops");
+        var service = CreateService(root);
+
+        try
+        {
+            var init = await service.RunGitAsync(root, ["init", "-b", "main"]);
+            if (!init.Success)
+                throw new InvalidOperationException("Could not initialize retry-stop fixture: " + init.Output);
+
+            var retries = 0;
+            var first = new CommandResult(
+                128,
+                "fatal: Unable to create '.git/index.lock': File exists.");
+            var result = await service.RetryIndexLockCollisionOnceAsync(
+                root,
+                "pull",
+                first,
+                () =>
+                {
+                    retries++;
+                    return Task.FromResult(new CommandResult(
+                        128,
+                        "fatal: Unable to create '.git/index.lock': File exists."));
+                },
+                CancellationToken.None);
+
+            if (result.Success || retries != 1 || !GitService.IsIndexLockCollision(result))
+                throw new InvalidOperationException(
+                    "Post-check index-lock retry did not stop after exactly one failed retry.");
         }
         finally
         {

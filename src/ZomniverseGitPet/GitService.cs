@@ -137,6 +137,56 @@ public sealed class GitService(AuditLog audit)
             recovery.Error);
     }
 
+    // PATCH: POST-CHECK INDEX LOCK RACE HARDENING 2026-10-28
+    internal static bool IsIndexLockCollision(CommandResult result)
+    {
+        if (result.Success || string.IsNullOrWhiteSpace(result.Output)) return false;
+
+        return result.Output.Contains("index.lock", StringComparison.OrdinalIgnoreCase) &&
+               (result.Output.Contains("Unable to create", StringComparison.OrdinalIgnoreCase) ||
+                result.Output.Contains("File exists", StringComparison.OrdinalIgnoreCase) ||
+                result.Output.Contains("another git process seems to be running", StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal async Task<CommandResult> RetryIndexLockCollisionOnceAsync(
+        string repositoryPath,
+        string operation,
+        CommandResult firstResult,
+        Func<Task<CommandResult>> retry,
+        CancellationToken token)
+    {
+        if (!OperatingSystem.IsWindows() || !IsIndexLockCollision(firstResult))
+            return firstResult;
+
+        var lockFailure = await RecoverStaleIndexLockBeforeMutationAsync(
+            repositoryPath,
+            operation,
+            token);
+        if (lockFailure is not null)
+            return lockFailure;
+
+        await audit.WriteAsync("git_index_lock_collision_retry", new
+        {
+            repository = Path.GetFileName(Path.GetFullPath(repositoryPath)),
+            operation
+        });
+
+        var retried = await retry();
+        await audit.WriteAsync(
+            retried.Success
+                ? "git_index_lock_collision_retry_succeeded"
+                : "git_index_lock_collision_retry_failed",
+            new
+            {
+                repository = Path.GetFileName(Path.GetFullPath(repositoryPath)),
+                operation,
+                retried.ExitCode,
+                retried.TimedOut,
+                error = retried.Success ? "" : retried.Output
+            });
+        return retried;
+    }
+
     public async Task<CommandResult> RunGitAsync(
         string repositoryPath,
         IEnumerable<string> arguments,
@@ -148,8 +198,10 @@ public sealed class GitService(AuditLog audit)
         try
         {
             var operation = GetGitSubcommand(args);
-            if (operation.Equals("add", StringComparison.OrdinalIgnoreCase) ||
-                operation.Equals("pull", StringComparison.OrdinalIgnoreCase))
+            var guardedIndexMutation =
+                operation.Equals("add", StringComparison.OrdinalIgnoreCase) ||
+                operation.Equals("pull", StringComparison.OrdinalIgnoreCase);
+            if (guardedIndexMutation)
             {
                 var lockFailure = await RecoverStaleIndexLockBeforeMutationAsync(
                     repositoryPath,
@@ -159,10 +211,31 @@ public sealed class GitService(AuditLog audit)
             }
 
             var started = Stopwatch.StartNew();
-            GitProcessLaunchCount++;
-            _launchedGitSubcommands.Add(operation);
-            var result = await RunProcessAsync("git.exe", args, repositoryPath,
-                timeout ?? TimeSpan.FromSeconds(30), cancellationToken);
+            var commandTimeout = timeout ?? TimeSpan.FromSeconds(30);
+
+            async Task<CommandResult> ExecuteOnceAsync()
+            {
+                GitProcessLaunchCount++;
+                _launchedGitSubcommands.Add(operation);
+                return await RunProcessAsync(
+                    "git.exe",
+                    args,
+                    repositoryPath,
+                    commandTimeout,
+                    cancellationToken);
+            }
+
+            var result = await ExecuteOnceAsync();
+            if (guardedIndexMutation && IsIndexLockCollision(result))
+            {
+                result = await RetryIndexLockCollisionOnceAsync(
+                    repositoryPath,
+                    operation,
+                    result,
+                    ExecuteOnceAsync,
+                    cancellationToken);
+            }
+
             await audit.WriteAsync("git_operation", new
             {
                 operation,
