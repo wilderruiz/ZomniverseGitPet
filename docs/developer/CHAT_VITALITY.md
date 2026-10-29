@@ -1,12 +1,16 @@
 # Chat Vitality
 
-Chat Vitality is a local, repository-scoped record of coding-chat generations and observable repository activity. It estimates **session load / handoff risk**. It does not know or claim hidden token counts, context remaining, model limits, or remaining lifespan.
+Chat Vitality is a ZGitPet-owned, cross-repository engine whose births and histories remain repository-scoped. It estimates **session load / handoff risk** from empirical completed intervals and observable activity. It does not know or claim hidden token counts, context remaining, model limits, or remaining lifespan.
 
 ## Persistence and privacy
 
 Data is stored atomically in `%LOCALAPPDATA%\ZomniverseGitPet\chat-vitality.json`, following GitPet's established local JSON-store pattern. Nothing is written into a managed project repository by GitPet itself and the feature makes no network calls. A SHA-256 digest of the normalized repository path is the repository key; the local path is retained only in GitPet's own private state.
 
-Each session records its generation, chat-first-turn timestamp, first repository contact timestamp, birth commit, optional death-anchor commit, outcome, conversation-turn counters, repository-operation counters, observed incoming changed-file/churn counts, elapsed minutes, and current heuristic score. Commits are anchors in repository history; commits themselves never become "dead."
+Each session records repository identity, generation, chat-first-turn timestamp, first repository contact timestamp, birth commit, optional death-anchor commit, outcome, conversation-turn counters, repository-operation counters, observed incoming changed-file/churn counts, elapsed minutes, and current heuristic score. A birth closes only the previous active interval for the same repository. Commits are anchors in repository history; commits themselves never become "dead."
+
+Completed intervals are retained with repository identity. ZGitPet exposes both per-repository statistics and pooled statistics across all managed repositories. The initial empirical seed is eight completed Millenova chats: `32.3, 58.0, 61.1, 61.4, 17.2, 23.1, 10.6, 45.3` hours (shortest 10.6, longest 61.4, mean 38.6, median 38.8). Those observations remain tagged `wilderruiz/millenova`; they are seed evidence, not universal truth for every repository.
+
+The initial provisional guidance bands are GREEN 0–10h, YELLOW 10–24h, ORANGE 24–40h, RED 40–55h and CRITICAL from 55h onward (55–62h is the currently observed critical range, not a cap). The bands are explicitly provisional and must evolve as cross-repository evidence accumulates. A current snapshot includes chat age, band, repository statistics, pooled statistics, observable activity pressure and provenance. Unobservable pressure candidates such as screenshots or debugging loops are labeled unobserved rather than guessed. Chat death is nondeterministic; no token/context percentage or death deadline is produced.
 
 ## Automatic agent birth protocol
 
@@ -50,6 +54,10 @@ Rules:
 6. The envelope is transport data, not the authoritative long-term database. ZGitPet's local private store remains authoritative for the UI/history.
 7. Agents must not create a Git commit for every turn. A birth envelope is mandatory once; occasional later pulse updates may refresh turn totals when a normal repository write/checkpoint already occurs.
 8. `+ NEW CHAT` remains a manual recovery/fallback control.
+
+## Cross-repository living-handoff rule
+
+Every agent-originated remote write to repository X must refresh repository X's living next-agent handoff in the same remote write sequence. This applies to code, tools, tests, validators, docs, plans, checkpoints, infrastructure, operational policy and ZGitPet changes. Do not update unrelated repositories' handoffs. If one operation legitimately changes several repositories, refresh the handoff in every affected repository. The handoff must preserve changed scope, checkpoint, evidence, blockers, exact next action, do-not-repeat guidance and safety constraints.
 
 A repository with a shared agent startup document should place this instruction at the beginning of the agent read order: **announce/register this chat birth before doing repository work, then continue the normal handoff read sequence.**
 

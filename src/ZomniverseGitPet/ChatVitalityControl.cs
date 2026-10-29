@@ -138,7 +138,7 @@ internal sealed class ChatVitalityControl : Control
             var snapshot = _snapshot;
             var session = snapshot.Session;
             var stateColor = snapshot.LifecycleState == "NEWBORN" ? GuardianTheme.Violet :
-                session.RiskScore >= 70 ? GuardianTheme.Warning : GuardianTheme.Healthy;
+                snapshot.Lifespan.EmpiricalBand is "RED" or "CRITICAL" ? GuardianTheme.Warning : GuardianTheme.Healthy;
 
             if (snapshot.LifecycleState == "NEWBORN")
             {
@@ -156,7 +156,7 @@ internal sealed class ChatVitalityControl : Control
 
             var loadTop = ContentTop + mainFont.Height + 8;
             TextRenderer.DrawText(e.Graphics,
-                $"SESSION LOAD: {snapshot.RiskClass}  {session.RiskScore}/100",
+                $"CHAT AGE: {snapshot.Lifespan.EmpiricalBand}  {snapshot.Lifespan.CurrentAgeHours:0.0}h",
                 smallFont, new Point(ContentLeft, loadTop), GuardianTheme.SoftInk);
 
             var metricsTop = loadTop + smallFont.Height + 8;

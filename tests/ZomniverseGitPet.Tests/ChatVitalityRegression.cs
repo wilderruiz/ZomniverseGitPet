@@ -72,9 +72,16 @@ internal static class ChatVitalityRegression
                 "Explicit previous outcome was not preserved.");
             Require(closed.Session.DeathAnchorCommit == "dddddddddddddddd",
                 "Explicit death anchor was not preserved.");
+            var repoAStats = store.GetRepositoryStatistics(repoA);
+            Require(repoAStats.CompletedChats == 1 && repoAStats.MeanHours == 2.0,
+                "A new birth must record the prior interval only for that repository.");
 
             var independent = store.RegisterBirth(repoB, "1111111111111111", now: bornAt);
             Require(independent.Session.Generation == 1, "Generations must be independent per repository.");
+            Require(store.GetActive(repoA, bornAt)?.Session.Generation == 2,
+                "A birth in repository B must not close repository A's active interval.");
+            Require(store.GetRepositoryStatistics(repoB).CompletedChats == 0,
+                "Millenova seed evidence must not become repository B evidence.");
 
             var reloaded = new ChatVitalityStore(storePath);
             Require(reloaded.GetActive(repoA, bornAt.AddHours(2))?.Session.Generation == 2,
@@ -160,6 +167,23 @@ internal static class ChatVitalityRegression
                     closedAgent.Session.DeathAnchorCommit == "2323232323232323",
                 "Agent birth should explicitly close the previous generation with its supplied outcome/anchor.");
 
+            var millenova = Path.Combine(root, "millenova");
+            Directory.CreateDirectory(millenova);
+            var millenovaStats = reloaded.GetRepositoryStatistics(millenova);
+            Require(millenovaStats == new ChatLifespanStatistics(8, 10.6, 61.4, 38.6, 38.8),
+                "The initial eight observations must remain associated with Millenova.");
+            var globalStats = reloaded.GetGlobalStatistics();
+            Require(globalStats.CompletedChats >= 10 && globalStats.LongestHours == 61.4,
+                "Pooled statistics must combine seed and newly completed repository intervals.");
+            Require(nextAgentBirth!.Lifespan.CurrentAgeHours >= 0 &&
+                    nextAgentBirth.Lifespan.BirthTimestamp == agentBirthAt.AddHours(1) &&
+                    nextAgentBirth.Lifespan.EmpiricalBand == "GREEN" &&
+                    nextAgentBirth.Lifespan.GuidanceBasis.Contains("wilderruiz/millenova", StringComparison.Ordinal),
+                "Active snapshots must expose age and provisional empirical guidance provenance.");
+            Require(nextAgentBirth.Lifespan.NondeterministicStatement.Contains("nondeterministic", StringComparison.OrdinalIgnoreCase) &&
+                    !nextAgentBirth.Lifespan.NondeterministicStatement.Contains("percent", StringComparison.OrdinalIgnoreCase),
+                "Lifespan guidance must not fabricate context percentages or deterministic death predictions.");
+
             var localOnly = new ChatVitalitySession
             {
                 StartedAt = bornAt,
@@ -190,7 +214,7 @@ internal static class ChatVitalityRegression
             var parsed = GuardianForm.ParseChatVitalityNumStat("12\t3\ta.cs\n-\t-\timage.bin\n8\t0\tb.cs\n");
             Require(parsed == (3, 20, 3), "Numstat accumulation did not preserve files and numeric churn.");
 
-            Console.WriteLine("Chat Vitality storage, lifecycle, agent birth, Get-only load, scoring, and event regressions passed.");
+            Console.WriteLine("Chat Vitality cross-repository history, empirical lifespan, birth, Get-only load, scoring, and event regressions passed.");
             return Task.CompletedTask;
         }
         finally

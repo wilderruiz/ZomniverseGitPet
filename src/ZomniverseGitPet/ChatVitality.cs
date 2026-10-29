@@ -27,6 +27,7 @@ public sealed class ChatVitalitySession
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string RepoKey { get; set; } = "";
     public string RepositoryPath { get; set; } = "";
+    public string RepositoryIdentity { get; set; } = "";
     public int Generation { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset FirstTurnAt { get; set; }
@@ -72,7 +73,102 @@ public sealed record ChatVitalitySnapshot(
     string LifecycleState,
     string RiskClass,
     string Recommendation,
-    string CurrentAnchorCommit);
+    string CurrentAnchorCommit,
+    ChatLifespanAssessment Lifespan);
+
+public sealed class ChatLifespanObservation
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string? SessionId { get; set; }
+    public string RepoKey { get; set; } = "";
+    public string RepositoryIdentity { get; set; } = "";
+    public double Hours { get; set; }
+    public string Source { get; set; } = "observed_birth_interval";
+}
+
+public sealed record ChatLifespanStatistics(
+    int CompletedChats,
+    double? ShortestHours,
+    double? LongestHours,
+    double? MeanHours,
+    double? MedianHours);
+
+public sealed record ChatActivityPressure(
+    string Level,
+    bool Warning,
+    IReadOnlyList<string> ObservedSignals,
+    IReadOnlyList<string> UnobservedSignals);
+
+public sealed record ChatLifespanAssessment(
+    DateTimeOffset BirthTimestamp,
+    double CurrentAgeHours,
+    string EmpiricalBand,
+    string GuidanceBasis,
+    ChatLifespanStatistics RepositoryStatistics,
+    ChatLifespanStatistics GlobalStatistics,
+    ChatActivityPressure ActivityPressure,
+    string NondeterministicStatement);
+
+public static class ChatLifespanModel
+{
+    public const string GuidanceBasis =
+        "Provisional bands seeded from completed wilderruiz/millenova observations; evolve with cross-repository evidence.";
+    public const string NondeterministicStatement =
+        "Chat death is nondeterministic. Age and observable activity indicate handoff risk, not remaining context or a death deadline.";
+    public static readonly IReadOnlyList<(string RepositoryIdentity, string Source, double Hours)> InitialSeedObservations =
+        new[] { 32.3, 58.0, 61.1, 61.4, 17.2, 23.1, 10.6, 45.3 }
+            .Select(hours => (
+                RepositoryIdentity: "wilderruiz/millenova",
+                Source: "millenova_initial_empirical_dataset_2026_10_29",
+                Hours: hours))
+            .ToArray();
+
+    public static string Band(double hours) => hours switch
+    {
+        < 10 => "GREEN",
+        < 24 => "YELLOW",
+        < 40 => "ORANGE",
+        < 55 => "RED",
+        _ => "CRITICAL"
+    };
+
+    public static ChatLifespanStatistics Statistics(IEnumerable<double> values)
+    {
+        var ordered = values.Where(x => x >= 0 && double.IsFinite(x)).Order().ToArray();
+        if (ordered.Length == 0) return new(0, null, null, null, null);
+        var middle = ordered.Length / 2;
+        var median = ordered.Length % 2 == 0
+            ? (ordered[middle - 1] + ordered[middle]) / 2
+            : ordered[middle];
+        return new(
+            ordered.Length,
+            Math.Round(ordered[0], 1),
+            Math.Round(ordered[^1], 1),
+            Math.Round(ordered.Average(), 1),
+            Math.Round(median, 1));
+    }
+
+    public static ChatActivityPressure ActivityPressure(ChatVitalitySession session)
+    {
+        var observed = new List<string>();
+        if (session.TotalTurns > 0) observed.Add($"conversation_turns={session.TotalTurns}");
+        if (session.Gets > 0) observed.Add($"remote_gets={session.Gets}");
+        if (session.FilesChanged > 0) observed.Add($"incoming_files={session.FilesChanged}");
+        var churn = Math.Max(0L, session.Insertions + session.Deletions);
+        if (churn > 0) observed.Add($"incoming_line_churn={churn}");
+
+        var score = Math.Min(4, session.TotalTurns / 20) +
+                    Math.Min(4, session.Gets) +
+                    Math.Min(4, session.FilesChanged / 25) +
+                    Math.Min(4, (int)(churn / 1000));
+        var level = score >= 9 ? "HIGH" : score >= 4 ? "ELEVATED" : "NORMAL";
+        return new(
+            level,
+            level != "NORMAL",
+            observed,
+            ["screenshots", "large_message_dumps", "debugging_loops", "architecture_pivots"]);
+    }
+}
 
 public sealed class ChatVitalityAgentEnvelope
 {
@@ -193,9 +289,10 @@ public static class ChatVitalityRisk
 
 internal sealed class ChatVitalityDocument
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public List<ChatVitalitySession> Sessions { get; set; } = [];
     public List<ChatVitalityEvent> Events { get; set; } = [];
+    public List<ChatLifespanObservation> LifespanObservations { get; set; } = [];
 }
 
 public sealed class ChatVitalityStore
@@ -247,6 +344,7 @@ public sealed class ChatVitalityStore
             {
                 RepoKey = repoKey,
                 RepositoryPath = NormalizePath(repositoryPath),
+                RepositoryIdentity = Path.GetFileName(NormalizePath(repositoryPath)),
                 Generation = generation,
                 StartedAt = timestamp,
                 FirstTurnAt = timestamp,
@@ -284,6 +382,12 @@ public sealed class ChatVitalityStore
             if (existing is not null)
             {
                 var changed = ApplyAgentTurnCounts(existing, envelope);
+                var repositoryIdentity = NormalizeRepositoryIdentity(envelope.Repository, repositoryPath);
+                if (!string.Equals(existing.RepositoryIdentity, repositoryIdentity, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing.RepositoryIdentity = repositoryIdentity;
+                    changed = true;
+                }
                 if (existing.FirstRepoContactAt is null)
                 {
                     existing.FirstRepoContactAt = timestamp;
@@ -321,6 +425,7 @@ public sealed class ChatVitalityStore
             {
                 RepoKey = repoKey,
                 RepositoryPath = NormalizePath(repositoryPath),
+                RepositoryIdentity = NormalizeRepositoryIdentity(envelope.Repository, repositoryPath),
                 Generation = generation,
                 StartedAt = startedAt,
                 FirstTurnAt = startedAt,
@@ -438,6 +543,30 @@ public sealed class ChatVitalityStore
         }
     }
 
+    public ChatLifespanStatistics GetRepositoryStatistics(string repositoryPath)
+    {
+        lock (_gate)
+        {
+            var document = Load();
+            var repoKey = CreateRepoKey(repositoryPath);
+            var identity = document.Sessions
+                .Where(x => x.RepoKey == repoKey && !string.IsNullOrWhiteSpace(x.RepositoryIdentity))
+                .OrderByDescending(x => x.Generation)
+                .Select(x => x.RepositoryIdentity)
+                .FirstOrDefault() ?? Path.GetFileName(NormalizePath(repositoryPath));
+            return ChatLifespanModel.Statistics(RepositoryObservations(document, repoKey, identity).Select(x => x.Hours));
+        }
+    }
+
+    public ChatLifespanStatistics GetGlobalStatistics()
+    {
+        lock (_gate)
+        {
+            var document = Load();
+            return ChatLifespanModel.Statistics(document.LifespanObservations.Select(x => x.Hours));
+        }
+    }
+
     public static string CreateRepoKey(string repositoryPath)
     {
         var normalized = NormalizePath(repositoryPath).ToUpperInvariant();
@@ -446,6 +575,14 @@ public sealed class ChatVitalityStore
 
     private static string NormalizePath(string path) =>
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(path.Trim()));
+
+    private static string NormalizeRepositoryIdentity(string? identity, string repositoryPath)
+    {
+        var value = string.IsNullOrWhiteSpace(identity)
+            ? Path.GetFileName(NormalizePath(repositoryPath))
+            : identity.Trim().Replace('\\', '/').Trim('/');
+        return value.ToLowerInvariant();
+    }
 
     private static string? CleanSha(string? value)
     {
@@ -499,6 +636,16 @@ public sealed class ChatVitalityStore
             active.EndedAt = timestamp;
             active.DeathAnchorCommit = CleanSha(previousLastCommit) ?? CleanSha(currentHead);
             UpdateDerived(active, CountRemoteInteractions(document, active.Id), timestamp);
+            if (!document.LifespanObservations.Any(x => x.SessionId == active.Id))
+            {
+                document.LifespanObservations.Add(new ChatLifespanObservation
+                {
+                    SessionId = active.Id,
+                    RepoKey = active.RepoKey,
+                    RepositoryIdentity = active.RepositoryIdentity,
+                    Hours = Math.Round(Math.Max(0, (timestamp - active.StartedAt).TotalHours), 3)
+                });
+            }
         }
     }
 
@@ -526,18 +673,51 @@ public sealed class ChatVitalityStore
             .OrderByDescending(x => x.Timestamp)
             .Select(x => x.CommitSha)
             .FirstOrDefault() ?? session.BirthCommit;
+        var identity = session.RepositoryIdentity;
+        var repositoryStatistics = ChatLifespanModel.Statistics(
+            RepositoryObservations(document, session.RepoKey, identity).Select(x => x.Hours));
+        var globalStatistics = ChatLifespanModel.Statistics(
+            document.LifespanObservations.Select(x => x.Hours));
+        var ageHours = Math.Round(Math.Max(0, (now - session.StartedAt).TotalHours), 1);
         return new ChatVitalitySnapshot(
             session,
             remoteInteractions,
             lifecycle,
             ChatVitalityRisk.Classify(session.RiskScore),
             ChatVitalityRisk.Recommendation(session.RiskScore),
-            currentAnchor);
+            currentAnchor,
+            new ChatLifespanAssessment(
+                session.FirstTurnAt,
+                ageHours,
+                ChatLifespanModel.Band(ageHours),
+                ChatLifespanModel.GuidanceBasis,
+                repositoryStatistics,
+                globalStatistics,
+                ChatLifespanModel.ActivityPressure(session),
+                ChatLifespanModel.NondeterministicStatement));
+    }
+
+    private static IEnumerable<ChatLifespanObservation> RepositoryObservations(
+        ChatVitalityDocument document,
+        string repoKey,
+        string repositoryIdentity)
+    {
+        var normalized = repositoryIdentity.Trim().Replace('\\', '/').Trim('/').ToLowerInvariant();
+        var leaf = normalized.Split('/').LastOrDefault() ?? normalized;
+        return document.LifespanObservations.Where(x =>
+            x.RepoKey == repoKey ||
+            string.Equals(x.RepositoryIdentity, normalized, StringComparison.OrdinalIgnoreCase) ||
+            (normalized == leaf && x.RepositoryIdentity.EndsWith('/' + leaf, StringComparison.OrdinalIgnoreCase)));
     }
 
     private ChatVitalityDocument Load()
     {
-        if (!File.Exists(_storePath)) return new ChatVitalityDocument();
+        if (!File.Exists(_storePath))
+        {
+            var fresh = new ChatVitalityDocument();
+            EnsureSeedObservations(fresh);
+            return fresh;
+        }
         try
         {
             var document = JsonSerializer.Deserialize<ChatVitalityDocument>(
@@ -551,11 +731,40 @@ public sealed class ChatVitalityStore
                 }
                 document.SchemaVersion = 2;
             }
+            if (document.SchemaVersion < 3)
+            {
+                foreach (var session in document.Sessions)
+                {
+                    if (string.IsNullOrWhiteSpace(session.RepositoryIdentity))
+                        session.RepositoryIdentity = Path.GetFileName(session.RepositoryPath).ToLowerInvariant();
+                }
+                document.SchemaVersion = 3;
+            }
+            EnsureSeedObservations(document);
             return document;
         }
         catch
         {
-            return new ChatVitalityDocument();
+            var fresh = new ChatVitalityDocument();
+            EnsureSeedObservations(fresh);
+            return fresh;
+        }
+    }
+
+    private static void EnsureSeedObservations(ChatVitalityDocument document)
+    {
+        foreach (var seed in ChatLifespanModel.InitialSeedObservations)
+        {
+            if (document.LifespanObservations.Any(x =>
+                    x.Source == seed.Source &&
+                    string.Equals(x.RepositoryIdentity, seed.RepositoryIdentity, StringComparison.OrdinalIgnoreCase) &&
+                    x.Hours == seed.Hours)) continue;
+            document.LifespanObservations.Add(new ChatLifespanObservation
+            {
+                RepositoryIdentity = seed.RepositoryIdentity,
+                Hours = seed.Hours,
+                Source = seed.Source
+            });
         }
     }
 
